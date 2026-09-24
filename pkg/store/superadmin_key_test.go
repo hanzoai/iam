@@ -61,6 +61,31 @@ func TestSuperAdminKey_EverySpellingOfTheHolder(t *testing.T) {
 	}
 }
 
+// No secret key resolves to a SuperAdmin, home key or member key, however it came
+// to exist; the reason names it. An ordinary member's keys resolve as before.
+func TestHolderByAccessKey_NoKeySpeaksForASuperAdmin(t *testing.T) {
+	ctx := context.Background()
+	db := operatorKeys(t)
+	seedKey(t, db, "hanzo", "z-home", "z", "pk-live-ZHOME", "sk-live-ZHOME")
+	seedKey(t, db, "hanzo", "z-folded", "hanzo/Z", "pk-live-ZFOLD", "sk-live-ZFOLD")
+	seedKey(t, db, "orgb", "z-member", "hanzo/z", "pk-live-ZMEMBER", "sk-live-ZMEMBER")
+	seedKey(t, db, policy.AdminOrg, "root-home", "root", "pk-live-ROOT", "sk-live-ROOT")
+	seedKey(t, db, "hanzo", "alice-home", "alice", "pk-live-AHOME", "sk-live-AHOME")
+	seedKey(t, db, "orgb", "alice-member", "hanzo/alice", "pk-live-AMEMBER", "sk-live-AMEMBER")
+
+	for _, sk := range []string{"sk-live-ZHOME", "sk-live-ZFOLD", "sk-live-ZMEMBER", "sk-live-ROOT"} {
+		h, err := HolderByAccessKey(ctx, db, sk)
+		if !errors.Is(err, orm.ErrNotFound) || h.User != nil || Reason(err) != KeySuperAdmin {
+			t.Errorf("%s resolved to %+v (err=%v, reason=%q), want nobody and %q", sk, h.User, err, Reason(err), KeySuperAdmin)
+		}
+	}
+	for _, sk := range []string{"sk-live-AHOME", "sk-live-AMEMBER"} {
+		if h, err := HolderByAccessKey(ctx, db, sk); err != nil || h.User == nil || h.User.Name != "alice" {
+			t.Errorf("%s = %+v, %v; want hanzo/alice", sk, h.User, err)
+		}
+	}
+}
+
 // The write gates refuse on a true, so a membership set SuperAdminKey cannot read
 // is reported, never answered.
 func TestSuperAdminKey_AnUnreadableRosterIsNotAnAnswer(t *testing.T) {
@@ -68,5 +93,17 @@ func TestSuperAdminKey_AnUnreadableRosterIsNotAnAnswer(t *testing.T) {
 	blind, err := SuperAdminKey(context.Background(), testdb.Unreadable(db, "memberships"), &schema.Key{Owner: "hanzo", User: "z"})
 	if !errors.Is(err, testdb.ErrUnreadable) || blind {
 		t.Fatalf("SuperAdminKey over an unreadable roster = %v, %v; want the read error", blind, err)
+	}
+}
+
+// Resolution refuses on a true, so a membership set it cannot read is a store
+// fault, never a holder and never a named refusal a caller would read as final.
+func TestHolderByAccessKey_AnUnreadableRosterIsNotAnAnswer(t *testing.T) {
+	db := operatorKeys(t)
+	seedKey(t, db, "hanzo", "z-home", "z", "pk-live-ZHOME", "sk-live-ZHOME")
+
+	h, err := HolderByAccessKey(context.Background(), testdb.Unreadable(db, "memberships"), "sk-live-ZHOME")
+	if !errors.Is(err, testdb.ErrUnreadable) || h.User != nil || Reason(err) != "" {
+		t.Fatalf("an unreadable roster answered %+v (err=%v, reason=%q), want the read error", h.User, err, Reason(err))
 	}
 }

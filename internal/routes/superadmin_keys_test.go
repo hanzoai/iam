@@ -5,7 +5,7 @@ package routes_test
 
 // No secret key speaks for a SuperAdmin. A SuperAdmin signs in and holds
 // short-lived tokens; the rule is asked of whoever writes the key, however the
-// holder is spelled, on both write surfaces.
+// holder is spelled, on both write surfaces, and again at resolution.
 
 import (
 	"context"
@@ -131,5 +131,42 @@ func TestTheMintIssuesNoSuperAdminASecretKey(t *testing.T) {
 	}
 	if got := whoHolds(t, h, mint(t, h, userKeys)); got.Data.Owner != "hanzo" || got.Data.Name != "alice" {
 		t.Fatalf("an ordinary member's minted key resolved to %q/%q", got.Data.Owner, got.Data.Name)
+	}
+}
+
+// A secret key that already names a SuperAdmin — planted before the write gate
+// refused it, or held by someone made an operator since — resolves to nobody, and
+// resolves again once the membership that made them one is gone.
+func TestASuperAdminsKeyResolvesToNobody(t *testing.T) {
+	h := newHarness(t)
+	operatorFixtures(t, h)
+	mintFixtures(t, h)
+
+	plant := func(name, user, secret string) {
+		t.Helper()
+		k := orm.New[schema.Key](h.db)
+		k.Owner, k.Name, k.User = "hanzo", name, user
+		k.AccessKey, k.AccessSecret = "pk-"+name, secret
+		k.SetId("hanzo/" + name)
+		if err := k.CreateCtx(context.Background()); err != nil {
+			t.Fatalf("plant %s: %v", name, err)
+		}
+	}
+	plant("bare", "z", "sk-planted-bare-0001")
+	plant("folded", "hanzo/Z", "sk-planted-folded-01")
+
+	for _, secret := range []string{"sk-planted-bare-0001", "sk-planted-folded-01"} {
+		got := whoHolds(t, h, secret)
+		if got.Code != string(store.KeySuperAdmin) || got.Data.Name != "" {
+			t.Fatalf("%s resolved to %q/%q (code %q), want key_superadmin", secret, got.Data.Owner, got.Data.Name, got.Code)
+		}
+	}
+
+	if _, err := store.DeleteMembership(context.Background(), h.db, "hanzo/z", "admin"); err != nil {
+		t.Fatalf("revoke: %v", err)
+	}
+	if got := whoHolds(t, h, "sk-planted-bare-0001"); got.Data.Owner != "hanzo" || got.Data.Name != "z" {
+		t.Fatalf("after the operator membership ended the key resolved to %q/%q (code %q)",
+			got.Data.Owner, got.Data.Name, got.Code)
 	}
 }

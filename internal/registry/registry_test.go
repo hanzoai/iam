@@ -447,27 +447,24 @@ func TestToken_HanzoOrgAdmin_CanPush(t *testing.T) {
 	}
 }
 
-// TestToken_SuperAdminKey_CanPush proves a SuperAdmin (admin org) pushes via its
-// HIGH-ENTROPY machine credential — an API key — and is privileged (owner==admin).
-// This is the reserved-org push identity that remains after the password path is
-// narrowed to non-reserved orgs (see TestToken_SuperAdminPassword_Denied).
-func TestToken_SuperAdminKey_CanPush(t *testing.T) {
+// TestToken_SuperAdminKey_Denied: no durable key speaks for a SuperAdmin
+// (store.SuperAdminKey), so an sk- row naming one authenticates nothing here —
+// whether the SuperAdmin is homed in the reserved org or holds a membership there.
+// A platform push identity is a confidential application on the push list
+// (TestToken_ServiceAccount_PullPush).
+func TestToken_SuperAdminKey_Denied(t *testing.T) {
 	app, db, _ := newServer(t)
-	// owner==admin ⇒ SuperAdmin
 	seedKeyRow(t, db, "admin", "z", true, "pk-SUPERADMINkey0001", "sk-SUPERADMINkey0001")
+	seedKeyRow(t, db, "hanzo", "op", true, "pk-OPERATORkey00001", "sk-OPERATORkey00001")
+	if _, err := store.EnsureMembership(context.Background(), db, "hanzo/op", "admin", store.RoleMember); err != nil {
+		t.Fatalf("grant: %v", err)
+	}
 
-	status, body, _ := tokenGET(t, app, "z", "sk-SUPERADMINkey0001",
-		testService, "repository:hanzo/app:pull,push")
-	if status != 200 {
-		t.Fatalf("status = %d, body %v", status, body)
-	}
-	claims := verifyClaims(t, app, body["token"].(string))
-	if claims["sub"] != "admin/z" {
-		t.Fatalf("sub = %v, want admin/z", claims["sub"])
-	}
-	acc := accessOf(t, claims)
-	if len(acc) != 1 || !eqStrings(acc[0].Actions, []string{"pull", "push"}) {
-		t.Fatalf("superadmin key access = %v, want pull+push", acc)
+	for _, who := range [][2]string{{"z", "sk-SUPERADMINkey0001"}, {"op", "sk-OPERATORkey00001"}} {
+		status, body, _ := tokenGET(t, app, who[0], who[1], testService, "repository:hanzo/app:pull,push")
+		if status != 401 || body["token"] != nil {
+			t.Fatalf("%s: a SuperAdmin's key was a registry credential: status=%d body=%v", who[0], status, body)
+		}
 	}
 }
 
@@ -475,8 +472,8 @@ func TestToken_SuperAdminKey_CanPush(t *testing.T) {
 // (SuperAdmin) WEB PASSWORD is NOT a registry credential. Even the CORRECT password
 // is refused (401, no token) — a guessable password never authenticates the platform
 // root identity on a public realm, and verifying it can never drive its lockout
-// counter (no unauth DoS on the super). The SuperAdmin pushes via its API key /
-// service account instead (TestToken_SuperAdminKey_CanPush).
+// counter (no unauth DoS on the super). A platform push identity is a
+// confidential application instead (TestToken_ServiceAccount_PullPush).
 func TestToken_SuperAdminPassword_Denied(t *testing.T) {
 	app, db, _ := newServer(t)
 	seedUser(t, db, "admin", "z", "${SEED_SUPERUSER_PASSWORD}", false) // owner==admin ⇒ SuperAdmin

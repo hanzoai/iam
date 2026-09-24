@@ -85,6 +85,9 @@ const (
 	// expired key is re-minted, a disabled one is switched back on — and told apart
 	// from KeyUnknown because the credential is real and its holder is not guessing.
 	KeyDisabled KeyFailure = "key_disabled"
+	// KeySuperAdmin: an sk- row resolved to a SuperAdmin. No durable key speaks for
+	// one (SuperAdminKey); the holder signs in for a short-lived token instead.
+	KeySuperAdmin KeyFailure = "key_superadmin"
 )
 
 // KeyError is an orm.ErrNotFound that ALSO says why. It Unwraps to orm.ErrNotFound
@@ -247,6 +250,16 @@ func holderOwningKey(ctx context.Context, db orm.DB, secret string) (Holder, err
 	}
 	if u == nil {
 		return Holder{}, notFound(KeyDanglingUser)
+	}
+	// No secret key speaks for a SuperAdmin, however the row came to exist. Asked of
+	// the resolved row on every resolution, so a key written before the write gate
+	// refused it, or made one by a later membership, resolves to nobody.
+	super, err := IsSuperAdmin(ctx, db, u.Owner, u.Name)
+	if err != nil {
+		return Holder{}, err
+	}
+	if super {
+		return Holder{}, notFound(KeySuperAdmin)
 	}
 	if role == "" {
 		role = HomeRole(u)

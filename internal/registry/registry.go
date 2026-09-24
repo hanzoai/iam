@@ -278,11 +278,12 @@ func (h *handler) authenticate(ctx context.Context, id, secret string) *principa
 //  1. API key — a SECRET sk- value (in the secret, or the username for the
 //     token-as-username clients) resolved through store.UserByAccessKey. Keyed by
 //     an unambiguous prefix, so it never captures a password or clientId. A public
-//     pk- is write-only: it authenticates nothing (store.UserByAccessKey refuses it).
+//     pk- is write-only: it authenticates nothing (store.UserByAccessKey refuses it),
+//     and no key speaks for a SuperAdmin (store.SuperAdminKey).
 //  2. User password — resolved within the NON-RESERVED candidate org(s) and
 //     verified through the SAME lockout choke point login uses. A reserved-org
 //     (SuperAdmin) password is NOT a registry credential (see userByPassword);
-//     that principal pushes via its API key or service account (paths 1 and 3).
+//     a platform push identity is a service account (path 3).
 //  3. Service account — a confidential application's clientId:clientSecret,
 //     compared in constant time. This is the CI/machine push identity.
 func (h *handler) resolve(ctx context.Context, id, secret string) *principal {
@@ -338,18 +339,18 @@ func (h *handler) userByKey(ctx context.Context, key string) *schema.User {
 // candidate, so a wrong attempt drives at most ONE row's counter (login-parity, no
 // double-speed lock) and a correct hanzo/<name> password can never touch
 // admin/<name>'s counter (no cross-org coupling — the F-2 bug where z@hanzo.ai
-// collided across admin and hanzo). A reserved-org principal pushes to the registry
-// with its HIGH-ENTROPY machine credential — an API key (userByKey) or a service
-// account (serviceAccount) — which are unaffected here and are the documented CI/
-// SuperAdmin push identity; neither is a guessable web password on a public endpoint.
+// collided across admin and hanzo). A platform push identity is a HIGH-ENTROPY
+// machine credential — a service account (serviceAccount), the documented CI push
+// identity — never a guessable web password on a public endpoint, and never a
+// SuperAdmin's API key, which resolves to nobody (store.SuperAdminKey).
 //
 // PARITY NOTE: legacy's registry token path resolved {admin, hanzo} passwords with
 // NO lockout at all, so this per-account lock on the registry endpoint is NEW surface
 // (added by F-D1). Narrowing the PASSWORD path to non-reserved orgs is a deliberate,
 // tested hardening of that new surface — not an incidental edit — and it aligns the
 // registry with the ROPC grant, which already refuses reserved-org password grants
-// outright (token.go). It does not narrow the API-key or service-account paths, so a
-// SuperAdmin's real machine push identity is unchanged.
+// outright (token.go). It does not narrow the service-account path, which is the
+// platform's machine push identity.
 func (h *handler) userByPassword(ctx context.Context, id, secret string) *schema.User {
 	for _, org := range candidateOrgs() {
 		if policy.IsReservedOrg(org) {
