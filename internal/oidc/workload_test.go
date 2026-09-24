@@ -198,14 +198,16 @@ func present(t *testing.T, app *zip.App, assertion string, extra url.Values) (in
 	return resp.StatusCode, decode(t, body)
 }
 
-// serviceApp seeds an application shaped the way provision.yaml's `type: service`
-// derives one: clientId <org>-<app>, client_credentials the only grant.
+// serviceApp seeds a declared workload application, shaped the way
+// provision.yaml derives one from `type: service` plus
+// `grants: [urn:ietf:params:oauth:grant-type:jwt-bearer]`: clientId
+// <org>-<app>, client_credentials from the type, the workload grant declared.
 func serviceApp(t *testing.T, db orm.DB, clientID string) {
 	t.Helper()
 	seedApp(t, db, appOpts{
 		clientID: clientID,
 		secret:   "a-secret-the-pod-never-holds",
-		grants:   []string{"client_credentials"},
+		grants:   []string{"client_credentials", grantTypeAssertion},
 	})
 }
 
@@ -394,6 +396,57 @@ func TestWorkload_refusesApplicationThatDeclaresNoMachineGrant(t *testing.T) {
 	// A browser client that happens to be named <org>-<account>. It never declared
 	// client_credentials, so it may not be handed that grant's token by another door.
 	seedApp(t, db, appOpts{clientID: "hanzo-pkg", secret: "s", grants: []string{"authorization_code"}})
+
+	status, tok := present(t, app,
+		c.assertion(t, "cluster-key-1", "system:serviceaccount:hanzo:pkg", audience(), time.Hour), nil)
+	if status != 403 || tok["error"] != "unauthorized_client" {
+		t.Fatalf("status/error = %d/%v, want 403 unauthorized_client", status, tok["error"])
+	}
+}
+
+// A machine client that never declared the workload grant — client_credentials
+// only, `type: service` with nothing appended — is refused even though a
+// ServiceAccount in its own org's namespace spells its clientId exactly. Naming
+// an account is all it takes to spell one; the declaration is what the
+// registration says, and only a reviewed document writes it.
+func TestWorkload_refusesAClientCredentialsOnlyApplication(t *testing.T) {
+	c := newCluster(t, "cluster-key-1")
+	c.trust(t, map[string]string{"hanzo": "hanzo"})
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-cloud", secret: "s", grants: []string{"client_credentials"}})
+
+	status, tok := present(t, app,
+		c.assertion(t, "cluster-key-1", "system:serviceaccount:hanzo:cloud", audience(), time.Hour), nil)
+	if status != 403 || tok["error"] != "unauthorized_client" {
+		t.Fatalf("status/error = %d/%v, want 403 unauthorized_client", status, tok["error"])
+	}
+	if rows := auditRows(t, db, schema.ActionWorkloadToken); len(rows) != 0 {
+		t.Fatalf("audit rows = %d for a refused mint, want 0", len(rows))
+	}
+}
+
+// The workload grant alone is not enough either: the token handed back is the
+// one client_credentials mints, so the registration must also declare that.
+func TestWorkload_refusesAWorkloadGrantWithoutClientCredentials(t *testing.T) {
+	c := newCluster(t, "cluster-key-1")
+	c.trust(t, map[string]string{"hanzo": "hanzo"})
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-pkg", secret: "s", grants: []string{grantTypeAssertion}})
+
+	status, tok := present(t, app,
+		c.assertion(t, "cluster-key-1", "system:serviceaccount:hanzo:pkg", audience(), time.Hour), nil)
+	if status != 403 || tok["error"] != "unauthorized_client" {
+		t.Fatalf("status/error = %d/%v, want 403 unauthorized_client", status, tok["error"])
+	}
+}
+
+// A browser client that declares the workload grant is still refused: the
+// declaration opens the door only for an app that is a machine as well.
+func TestWorkload_refusesAWorkloadGrantOnABrowserClient(t *testing.T) {
+	c := newCluster(t, "cluster-key-1")
+	c.trust(t, map[string]string{"hanzo": "hanzo"})
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-pkg", grants: []string{"authorization_code", grantTypeAssertion}})
 
 	status, tok := present(t, app,
 		c.assertion(t, "cluster-key-1", "system:serviceaccount:hanzo:pkg", audience(), time.Hour), nil)

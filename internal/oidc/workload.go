@@ -51,10 +51,13 @@ import (
 // write can choose, and no pattern names "the hanzo org" more precisely than the
 // list of namespaces that are in it.
 //
-// The application is DECLARED, never created here: provision.yaml states it as
-// `type: service`, so `<org>-<name>` either names a reviewed registration or the
-// request is refused. With neither variable set the grant does not exist and the
-// endpoint answers unsupported_grant_type.
+// The application is DECLARED, never created here, and it declares THIS grant:
+// provision.yaml lists urn:ietf:params:oauth:grant-type:jwt-bearer on exactly the
+// registrations a pod speaks for, so `<org>-<name>` either names a reviewed
+// workload registration or the request is refused. A name match alone is not a
+// declaration — any account in a mapped namespace can be given any name, and
+// client_credentials only says the app holds a secret. With neither variable set
+// the grant does not exist and the endpoint answers unsupported_grant_type.
 
 const (
 	// grantTypeAssertion is RFC 7523 §2.1's grant type — the assertion IS the
@@ -123,16 +126,20 @@ func workloadGrant(c *zip.Ctx, db orm.DB) error {
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}
-	// The application must ALREADY exist, declare the grant whose token it is
-	// about to be handed, and belong to the org the namespace maps to. Never
+	// The application must ALREADY exist, belong to the org the namespace maps
+	// to, and declare BOTH grants in play: jwt-bearer, which says a pod may speak
+	// for it, and client_credentials, whose token it is about to be handed. Never
 	// auto-created: a registration that appears because a pod asked for one is a
 	// registration nobody reviewed. The org check is what keeps the mapping
 	// honest — a clientId is a globally unique STRING, so `zoo-pkg` registered
 	// under some other org would otherwise let the zoo namespace mint that org's
-	// token.
+	// token. The jwt-bearer check is what keeps the NAME honest: naming an account
+	// is all it takes to spell a clientId, so a name match cannot be the
+	// declaration.
 	if app == nil || app.Organization != org ||
-		!appGrants(app, "client_credentials") || publicTokenEndpointForbidden(app) {
-		return tokenError(c, 403, "unauthorized_client", clientID+" is not a provisioned service application")
+		!appGrants(app, grantTypeAssertion) || !appGrants(app, "client_credentials") ||
+		publicTokenEndpointForbidden(app) {
+		return tokenError(c, 403, "unauthorized_client", clientID+" is not a declared workload application")
 	}
 
 	// 4) Mint what client_credentials would mint for this application — same
