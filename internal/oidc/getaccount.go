@@ -87,7 +87,7 @@ func getAccounts(db orm.DB) zip.Handler {
 				Name:        u.Name,
 				DisplayName: u.DisplayName,
 				Email:       u.Email,
-				Avatar:      u.Avatar,
+				Avatar:      u.Picture(),
 			})
 		}
 		c.SetHeader("Cache-Control", "no-store")

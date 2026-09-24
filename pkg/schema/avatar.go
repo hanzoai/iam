@@ -4,6 +4,8 @@
 package schema
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 )
@@ -57,6 +59,19 @@ func MarkOf(avatar, emoji string) (Mark, error) {
 		return Mark{}, err
 	}
 	return Mark{Emoji: glyph}, nil
+}
+
+// Gravatar is the image a person who never set one is drawn with: the Gravatar
+// for their address, keyed by the SHA-256 of it trimmed and lowercased, falling
+// back to an identicon when Gravatar holds none, so a signed-in person is never a
+// blank. Empty for an empty address.
+func Gravatar(email string) string {
+	e := strings.ToLower(strings.TrimSpace(email))
+	if e == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(e))
+	return "https://gravatar.com/avatar/" + hex.EncodeToString(sum[:]) + "?d=identicon&s=256"
 }
 
 // AvatarRef validates an image reference. Two forms are usable: an `https` link,

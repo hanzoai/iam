@@ -379,3 +379,12 @@ func (u *User) Machine() bool {
 	}
 	return false
 }
+
+// Picture is how this person is drawn: the image they set, or else their
+// Gravatar. It is published only where the caller already holds the address.
+func (u *User) Picture() string {
+	if u.Avatar != "" {
+		return u.Avatar
+	}
+	return Gravatar(u.Email)
+}

@@ -131,7 +131,13 @@ func buildUserinfo(u *schema.User, claims *Claims, row *schema.Token, iss string
 		putIf(info, "preferred_username", u.Name)
 		putIf(info, "name", u.Name)
 		putIf(info, "displayName", u.DisplayName)
-		putIf(info, "picture", u.Avatar)
+		// The Gravatar fallback is a hash of the address, so it rides only with the
+		// email scope: a client granted profile alone learns nothing new from it.
+		picture := u.Avatar
+		if hasScope(scope, "email") {
+			picture = u.Picture()
+		}
+		putIf(info, "picture", picture)
 		putIf(info, "real_name", u.RealName)
 		// groups is the membership set flattened to bare organization names — the
 		// SAME source, and the same value, the access token's groups claim carries.
