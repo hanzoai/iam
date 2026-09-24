@@ -58,7 +58,6 @@ package authz
 
 import (
 	"context"
-	"crypto/subtle"
 	"errors"
 	"net/http"
 	"os"
@@ -846,7 +845,7 @@ func app(c *zip.Ctx, db orm.DB) (*principal.Principal, bool) {
 	if err != nil || a == nil || a.Name == "" || a.ClientSecret == "" {
 		return nil, false
 	}
-	if subtle.ConstantTimeCompare([]byte(a.ClientSecret), []byte(secret)) != 1 {
+	if !a.Proves(secret) {
 		return nil, false
 	}
 	return appPrincipal(a), true

@@ -55,7 +55,6 @@ package registry
 
 import (
 	"context"
-	"crypto/subtle"
 	"fmt"
 	"net/http"
 	"os"
@@ -385,7 +384,7 @@ func (h *handler) serviceAccount(ctx context.Context, id, secret string) *princi
 	if err != nil || app == nil || app.ClientSecret == "" {
 		return nil
 	}
-	if subtle.ConstantTimeCompare([]byte(app.ClientSecret), []byte(secret)) != 1 {
+	if !app.Proves(secret) {
 		return nil
 	}
 	return &principal{subject: id, owner: app.Owner, privileged: appPrivileged(app)}

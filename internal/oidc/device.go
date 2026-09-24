@@ -214,8 +214,7 @@ func deviceHandler(db orm.DB) zip.Handler {
 		// A confidential client (one with a registered secret) MUST authenticate
 		// (RFC 8628 §3.1 → RFC 6749 §3.2.1). A public device client has no secret
 		// and is identified by its client_id alone.
-		if app.ClientSecret != "" &&
-			subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
+		if !app.Proves(clientSecret) {
 			return tokenErrorClient(c, "client authentication failed")
 		}
 		if !appGrants(app, deviceGrant) {
@@ -308,8 +307,7 @@ func deviceCodeGrant(c *zip.Ctx, db orm.DB) error {
 	// §3.2.1), checked before the pending/mint split so an unauthenticated
 	// confidential poll never even learns the grant's approval state. A public
 	// device client has no secret and is bound by its client_id alone (above).
-	if app.ClientSecret != "" &&
-		subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
+	if !app.Proves(clientSecret) {
 		return tokenErrorClient(c, "client authentication failed")
 	}
 	// Re-gated at redemption, not only at the request: an application whose device

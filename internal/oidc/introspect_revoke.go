@@ -5,7 +5,6 @@ package oidc
 
 import (
 	"context"
-	"crypto/subtle"
 	"net/http"
 
 	"github.com/hanzoai/orm"
@@ -36,7 +35,7 @@ func routeIntrospectRevoke(r *zip.Group, db orm.DB) {
 	r.Raw(http.MethodPost, PathRevoke, revokeHandler(db))
 }
 
-// authTokenClient authenticates the CALLING CLIENT, and only the client.
+// client authenticates the CALLING CLIENT, and only the client.
 // client_id names it. The answer is the registration and whether the caller
 // PROVED everything that registration can demand:
 //
@@ -53,7 +52,7 @@ func routeIntrospectRevoke(r *zip.Group, db orm.DB) {
 // It reads NOTHING about the token, so the status code it produces cannot tell an
 // unauthenticated caller whether the token it sent exists (RFC 7009 §2.2). WHAT a
 // caller may then do is a separate question, answered by each handler below.
-func authTokenClient(ctx context.Context, db orm.DB, c *zip.Ctx) (app *schema.Application, proved, ok bool) {
+func client(ctx context.Context, db orm.DB, c *zip.Ctx) (app *schema.Application, proved, ok bool) {
 	clientID, clientSecret := clientAuth(c)
 	if clientID == "" {
 		return nil, false, false
@@ -68,7 +67,7 @@ func authTokenClient(ctx context.Context, db orm.DB, c *zip.Ctx) (app *schema.Ap
 	if clientSecret == "" && !basicAttempted(c) {
 		return app, false, true
 	}
-	if subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
+	if !app.Proves(clientSecret) {
 		return nil, false, false
 	}
 	return app, true, true
@@ -90,7 +89,7 @@ func introspectHandler(db orm.DB) zip.Handler {
 		// Introspection reports on tokens the caller did not necessarily issue, so
 		// it stays CONFIDENTIAL-only: RFC 7662 §2.1 addresses it to a protected
 		// resource, and a public client_id is unauthenticated by construction.
-		app, proved, ok := authTokenClient(ctx, db, c)
+		app, proved, ok := client(ctx, db, c)
 		if !ok || !proved || app.ClientSecret == "" {
 			return tokenErrorClient(c, "client authentication failed")
 		}
@@ -174,7 +173,7 @@ func revokeHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		setTokenCacheHeaders(c)
 		ctx := c.Context()
-		app, proved, ok := authTokenClient(ctx, db, c)
+		app, proved, ok := client(ctx, db, c)
 		if !ok {
 			return tokenErrorClient(c, "client authentication failed")
 		}

@@ -5,7 +5,6 @@ package oidc
 
 import (
 	"context"
-	"crypto/subtle"
 	"net/http"
 	"os"
 	"strings"
@@ -291,8 +290,7 @@ func authorizeMinter(ctx context.Context, db orm.DB, c *zip.Ctx) (*minter, int, 
 		if err != nil {
 			return nil, 500, "server_error"
 		}
-		if app == nil || app.ClientSecret == "" ||
-			subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
+		if app == nil || app.ClientSecret == "" || !app.Proves(clientSecret) {
 			return nil, 401, "client authentication failed"
 		}
 		if !mintAllowed(app) {

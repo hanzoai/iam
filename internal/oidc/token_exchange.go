@@ -4,7 +4,6 @@
 package oidc
 
 import (
-	"crypto/subtle"
 	"strconv"
 	"strings"
 	"time"
@@ -53,8 +52,7 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}
-	if clientApp == nil || clientApp.ClientSecret == "" ||
-		subtle.ConstantTimeCompare([]byte(clientSecret), []byte(clientApp.ClientSecret)) != 1 {
+	if clientApp == nil || clientApp.ClientSecret == "" || !clientApp.Proves(clientSecret) {
 		return tokenErrorClient(c, "client authentication failed")
 	}
 	if !mintAllowed(clientApp) {

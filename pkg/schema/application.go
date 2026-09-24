@@ -16,6 +16,7 @@
 package schema
 
 import (
+	"crypto/subtle"
 	"net/url"
 
 	"github.com/hanzoai/orm"
@@ -340,6 +341,14 @@ func isLoopbackLiteral(u *url.URL) bool {
 		return true
 	}
 	return false
+}
+
+// Proves reports whether secret proves this registration. One with no secret is
+// public and has nothing to prove; one with a secret is proved by that secret
+// alone, compared in constant time. What a caller may do once proved, or once
+// identified without proof, is the endpoint's question, not this one.
+func (a *Application) Proves(secret string) bool {
+	return a.ClientSecret == "" || subtle.ConstantTimeCompare([]byte(secret), []byte(a.ClientSecret)) == 1
 }
 
 // IsPasswordEnabled reports whether password sign-in is available: the explicit

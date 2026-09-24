@@ -66,10 +66,8 @@ func refreshTokenGrant(c *zip.Ctx, db orm.DB) error {
 	if clientID != "" && subtle.ConstantTimeCompare([]byte(clientID), []byte(app.ClientId)) != 1 {
 		return tokenError(c, 400, "invalid_grant", "client mismatch")
 	}
-	if app.ClientSecret != "" && (clientSecret != "" || !tok.PublicGrant) {
-		if subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
-			return tokenErrorClient(c, "client authentication failed")
-		}
+	if app.ClientSecret != "" && (clientSecret != "" || !tok.PublicGrant) && !app.Proves(clientSecret) {
+		return tokenErrorClient(c, "client authentication failed")
 	}
 
 	// Reuse detection: a consumed token was already rotated. Revoke the whole

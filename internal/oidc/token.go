@@ -210,10 +210,8 @@ func authorizationCodeGrant(c *zip.Ctx, db orm.DB) error {
 	// A code with NO PKCE challenge still requires the secret, so this is not a
 	// downgrade path: an attacker cannot skip client auth by omitting PKCE.
 	clientAuthed := app.ClientSecret != "" && (clientSecret != "" || tok.CodeChallenge == "")
-	if clientAuthed {
-		if subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
-			return tokenErrorClient(c, "client authentication failed")
-		}
+	if clientAuthed && !app.Proves(clientSecret) {
+		return tokenErrorClient(c, "client authentication failed")
 	}
 	// redirect_uri binding (RFC 6749 §4.1.3): if the code carries one, the token
 	// request must present the same one.
@@ -264,8 +262,7 @@ func clientCredentialsGrant(c *zip.Ctx, db orm.DB) error {
 		return tokenError(c, 500, "server_error", "")
 	}
 	// A public client (no secret) can never use client_credentials.
-	if app == nil || app.ClientSecret == "" ||
-		subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
+	if app == nil || app.ClientSecret == "" || !app.Proves(clientSecret) {
 		return tokenErrorClient(c, "client authentication failed")
 	}
 	if publicTokenEndpointForbidden(app) {
@@ -431,8 +428,7 @@ func passwordGrant(c *zip.Ctx, db orm.DB) error {
 		return tokenErrorClient(c, "client authentication failed")
 	}
 	// A confidential client (one that registered a secret) must present it.
-	if app.ClientSecret != "" &&
-		subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
+	if !app.Proves(clientSecret) {
 		return tokenErrorClient(c, "client authentication failed")
 	}
 	// ROPC requires a CONFIDENTIAL client, and this is the check that makes that
