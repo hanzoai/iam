@@ -37,6 +37,7 @@ func Route(app *zip.Group, db orm.DB) {
 	app.Get("/v1/iam/invitations/:owner/:name", h.Get, zip.WithTags("invitations"))
 	app.Put("/v1/iam/invitations/:owner/:name", h.Update, zip.WithTags("invitations"))
 	app.Delete("/v1/iam/invitations/:owner/:name", h.Delete, zip.WithTags("invitations"))
+	app.Post("/v1/iam/invitations/:owner/:name/send", h.Send, zip.WithTags("invitations"))
 }
 
 // Ref addresses one invitation by its owner-scoped natural key.

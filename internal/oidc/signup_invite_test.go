@@ -5,6 +5,7 @@ package oidc
 
 import (
 	"context"
+	"net/url"
 	"testing"
 
 	"github.com/hanzoai/orm"
@@ -288,4 +289,37 @@ func TestSignup_invitation_badCodeDoesNotFound(t *testing.T) {
 func with(inv schema.Invitation, edit func(*schema.Invitation)) schema.Invitation {
 	edit(&inv)
 	return inv
+}
+
+// An account made through an invitation lives in the inviting org and signs in
+// through the same application straight away — naming that org, or naming the
+// application's own, which finds it by the address it registered with.
+func TestSignup_invitation_signsInThroughTheSameApplication(t *testing.T) {
+	app, db := newServer(t)
+	seedAppFull(t, db, fullApp{clientID: "portal", secret: "s3cret", org: "hanzo", orgChoice: "create", signup: true, redirects: []string{testRedirect}})
+	seedOrg(t, db, "hanzo")
+	seedOrg(t, db, "acme")
+	seedInvite(t, db, schema.Invitation{Owner: "acme", Name: "team", Code: "acme-7f3k", Quota: 1, State: "Active"})
+
+	if status, env := signupReq(t, app, map[string]string{
+		"application": "portal", "organization": "acme", "invitationCode": "acme-7f3k",
+		"email": "bob@example.com", "password": invitePassword,
+	}); status != 200 || env["status"] != "ok" {
+		t.Fatalf("invited signup: status=%d env=%v", status, env)
+	}
+	for _, org := range []string{"acme", "hanzo"} {
+		form := url.Values{
+			"organization": {org}, "application": {"portal"}, "clientId": {"portal"},
+			"username": {"bob@example.com"}, "password": {invitePassword}, "type": {"code"},
+			"responseType": {"code"}, "redirectUri": {testRedirect},
+		}
+		resp, body := do(t, app, formReq("POST", PathLogin, form))
+		env := decode(t, body)
+		if resp.StatusCode != 200 || env["status"] != "ok" {
+			t.Fatalf("sign-in naming %s: status=%d body=%s", org, resp.StatusCode, body)
+		}
+		if code, _ := env["data"].(string); code == "" {
+			t.Fatalf("sign-in naming %s minted no code: %s", org, body)
+		}
+	}
 }

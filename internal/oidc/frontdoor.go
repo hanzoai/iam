@@ -87,6 +87,8 @@ func routeFrontDoor(r *zip.Group, db orm.DB) {
 	r.Raw(http.MethodGet, PathConsent, getConsentHandler(db))
 	r.Raw(http.MethodPut, PathConsent, putConsentHandler(db))
 	r.Raw(http.MethodGet, PathLinkedAccounts, linkedAccountsHandler(db))
+	r.Post(PathInvitationsAccept, acceptInvitation(db),
+		zip.WithStatus(200, 400), zip.WithTags("auth"))
 }
 
 // getAppLogin returns everything a login screen needs to draw itself for one

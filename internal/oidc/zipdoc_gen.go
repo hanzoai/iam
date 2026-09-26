@@ -85,6 +85,12 @@ func init() {
 			"Response.code": "Code is a STABLE machine-readable reason, where the human `msg` is\ndeliberately generic. `msg` is prose for a person and several distinct causes\nlegitimately share one sentence; a caller that must BRANCH on the cause — or\ntell its own user which of them happened — cannot parse prose. Optional, so\nevery existing envelope is byte-identical and no SDK changes.",
 		},
 	})
+	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/invitations/accept", zip.Doc{
+		Description: "Joins the caller to an organization through an invitation, for\na person who already has an account. Signing up through the invitation is the\nother way in (signupHandler); this one spends the same seat under the same rules.\n\nOnly the caller joins: the request names nobody. An invitation pinned to an\naddress admits only the account holding that address, proven; one pinned to a\nphone number admits nobody this way, because an account's number is not proven.\nThe membership granted is a member's, never an admin's. Joining an org the\ncaller already belongs to succeeds and spends nothing.",
+		Fields: map[string]string{
+			"Response.code": "Code is a STABLE machine-readable reason, where the human `msg` is\ndeliberately generic. `msg` is prose for a person and several distinct causes\nlegitimately share one sentence; a caller that must BRANCH on the cause — or\ntell its own user which of them happened — cannot parse prose. Optional, so\nevery existing envelope is byte-identical and no SDK changes.",
+		},
+	})
 	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/link", zip.Doc{
 		Description: "Starts connecting another sign-in identity to the account you are already\nsigned in as. It answers with the provider's URL for the browser to follow; when\nthe provider returns, that identity is attached and you come back to returnUri.\n\nYour account is fixed here, from the credential you are already holding, and is\ncarried server-side for the rest of the round-trip — so nothing that happens at\nthe provider can point the link at somebody else.",
 	})

@@ -160,6 +160,11 @@ var browserPaths = map[string]credential{
 	"/v1/iam/organizations": bearer,
 	"/v1/iam/invitations":   bearer,
 
+	// Joining an org through an invitation, for an account that already exists.
+	// The join page on the identity host is same-origin and spends the session
+	// cookie there; a console elsewhere accepts with the bearer it holds.
+	oidc.PathInvitationsAccept: bearer,
+
 	// Sign IN with a typed credential. browser.ts credentialLogin (reached by
 	// loginWithPassword and loginWithCode) posts here with credentials, and the
 	// single-sign-on branch answers a bare code request from the cookie alone.

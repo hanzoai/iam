@@ -38,4 +38,9 @@ type Invitation struct {
 	DefaultCode string `json:"defaultCode"`
 
 	State string `json:"state"`
+
+	// SentTime is when an email about this invitation last went to its pinned
+	// address (RFC 3339), "" when none has. It paces resends, so the send
+	// endpoint cannot be used to mail one address over and over.
+	SentTime string `json:"sentTime"`
 }

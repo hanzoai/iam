@@ -141,6 +141,17 @@ var sender Sender
 // never calling this) leaves code sign-in correctly switched off everywhere.
 func BindSender(s Sender) { sender = s }
 
+// Deliver carries one message that is not a code — an invitation to an org —
+// through the same bound transport the codes use. It answers [ErrNoDelivery] when
+// nothing is bound, so a caller refuses honestly rather than reporting a send that
+// could not happen.
+func Deliver(ctx context.Context, m Message) error {
+	if sender == nil {
+		return ErrNoDelivery
+	}
+	return sender.Send(ctx, m)
+}
+
 // DeliveryConfigured reports whether a code this package mints can actually reach a
 // person. It is the ONE authority for that question, read by the send endpoint AND
 // by the login descriptor AND by the second-factor gate, so a screen can never

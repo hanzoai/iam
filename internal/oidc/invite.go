@@ -66,12 +66,16 @@ func invitation(ctx context.Context, db orm.DB, app *schema.Application, f *sign
 // has a seat left, names this application or none, carries the code the signup
 // brought, and every pin it holds — username, address, number — is this signup's.
 // A signup that states no username takes the one pinned (see signupHandler).
+//
+// app is nil for a signed-in account joining through the invitation
+// (acceptInvitation): no application is signing anyone up, so an invitation
+// pinned to one admits nobody that way.
 func admits(inv *schema.Invitation, app *schema.Application, f *signupForm) bool {
 	switch {
 	case inv.Owner != f.Organization,
 		inv.State != invitationActive,
 		inv.UsedCount >= inv.Quota,
-		inv.Application != "" && inv.Application != "All" && inv.Application != app.Name,
+		inv.Application != "" && inv.Application != "All" && (app == nil || inv.Application != app.Name),
 		!inviteCode(inv, f.Invitation),
 		inv.Email != "" && store.NormalizeEmail(inv.Email) != store.NormalizeEmail(f.Email),
 		inv.Phone != "" && store.NormalizePhone(inv.Phone) != store.NormalizePhone(f.Phone):
@@ -132,4 +136,33 @@ func invitationName(inv *schema.Invitation) string {
 		return ""
 	}
 	return inv.Name
+}
+
+// join spends one of inv's seats and makes userID a member of its org, in one
+// transaction under the invitation's row lock, so a seat is never spent without
+// the membership it paid for and two joins cannot race for the last seat. An
+// account that is already a member spends nothing. Reports whether the account
+// was admitted.
+func join(ctx context.Context, db orm.DB, inv *schema.Invitation, f *signupForm, userID string) (bool, error) {
+	var admitted bool
+	err := db.RunInTransaction(ctx, func(tx orm.DB) error {
+		fresh, err := orm.GetForUpdate[schema.Invitation](tx, inv.Key().Encode())
+		if err != nil {
+			return err
+		}
+		if !admits(fresh, nil, f) {
+			return nil
+		}
+		added, err := store.EnsureMembership(ctx, tx, userID, fresh.Owner, store.RoleMember)
+		if err != nil {
+			return err
+		}
+		admitted = true
+		if !added {
+			return nil
+		}
+		fresh.UsedCount++
+		return fresh.UpdateCtx(ctx)
+	})
+	return admitted, err
 }
