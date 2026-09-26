@@ -191,14 +191,6 @@ func signupHandler(db orm.DB) zip.Handler {
 			if !isEmailValid(email) {
 				return httpx.Err(c, "email is invalid")
 			}
-			// Where a code can reach the address, the address is proven or not taken.
-			// An account holding it unproven is one its owner can never have: they
-			// cannot register it again, a social sign-in will not adopt it, and the
-			// password is someone else's. This is a rule about the request alone, so
-			// it comes before anything reads the directory.
-			if f.Code == "" && sendsCodes(app) {
-				return httpx.Err(c, "the code sent to the email address is required")
-			}
 			// An address that already names an account is taken, and an address that
 			// names TWO is taken twice over — ErrEmailAmbiguous is a uniqueness answer
 			// here, not a lookup failure, so it lands on the uniqueness message rather
@@ -221,6 +213,19 @@ func signupHandler(db orm.DB) zip.Handler {
 				return httpx.Err(c, "email already exists")
 			case err != nil:
 				return httpx.Err(c, err.Error())
+			}
+			// Where a code can reach the address, the address is proven or not taken.
+			// An account holding it unproven is one its owner can never have: they
+			// cannot register it again, a social sign-in will not adopt it, and the
+			// password is someone else's.
+			//
+			// Asked after the address is known to be free, so the first submit, which
+			// carries no code, already answers "email already exists": the person is
+			// sent to sign-in or recovery before a code goes to an address that has an
+			// account. The answer is the one a wrong code has always drawn, since the
+			// code is spent last.
+			if f.Code == "" && sendsCodes(app) {
+				return httpx.Err(c, "the code sent to the email address is required")
 			}
 		}
 

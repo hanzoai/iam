@@ -177,6 +177,28 @@ func TestSignup_NoCodeTakesNoAddressItCouldProve(t *testing.T) {
 	}
 }
 
+// The first submit carries no code, and an address that already has an account
+// is answered there: the person hears it before a code goes to that address.
+func TestSignup_NoCodeHearsTheAddressIsTaken(t *testing.T) {
+	sent := &fakeSender{}
+	bindSender(t, sent)
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-cloud", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, codeSignin: true, orgChoice: "create"})
+	seedOrg(t, db, "hanzo")
+	seedUserInOrg(t, db, "hanzo", "ada", "ada@example.com", "correct horse battery staple")
+
+	_, env := signupReq(t, app, map[string]string{
+		"application": "hanzo-cloud", "organization": "hanzo",
+		"password": "correct horse battery staple", "email": "ada@example.com",
+	})
+	if msg, _ := env["msg"].(string); env["status"] != "error" || msg != "email already exists" {
+		t.Fatalf("a taken address was not reported before the code: %v", env)
+	}
+	if len(sent.sent) != 0 {
+		t.Fatalf("the refusal sent %d messages", len(sent.sent))
+	}
+}
+
 func TestResetByCodeProvesTheAddress(t *testing.T) {
 	const addr = "unproven@example.com"
 	app, db, sent := foundedAccount(t, addr, "correct horse battery staple")
