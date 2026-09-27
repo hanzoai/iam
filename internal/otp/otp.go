@@ -242,6 +242,26 @@ func Receiver(dest string) string {
 // org of its own is sent a code as its application's org, and filing the record
 // there left a code the person held that nothing could spend.
 func Issue(ctx context.Context, db orm.DB, org, dest, remoteAddr string, user *schema.User, now time.Time) error {
+	return IssueFor(ctx, db, PurposeCode, org, dest, remoteAddr, user, now)
+}
+
+// The purposes a code is minted for (schema.VerificationRecord.Purpose). A code
+// spends only for its own: a sign-in code does not join an org, and a join code
+// does not sign anyone in, reset a password, or prove an address at signup.
+const (
+	// PurposeCode is the general code: sign-in, a password reset, a signup's proof
+	// of address, a second factor.
+	PurposeCode = ""
+	// PurposeJoin proves an address for joining an org through an invitation
+	// pinned to it. IAM mints it itself, for the signed-in account, to that
+	// account's own address.
+	PurposeJoin = "join"
+)
+
+// IssueFor is [Issue] for one purpose. The resend interval and the replacement of
+// an outstanding code both apply within the purpose, so a join code neither waits
+// on nor cancels a sign-in code.
+func IssueFor(ctx context.Context, db orm.DB, purpose, org, dest, remoteAddr string, user *schema.User, now time.Time) error {
 	if sender == nil {
 		return ErrNoDelivery
 	}
@@ -250,7 +270,7 @@ func Issue(ctx context.Context, db orm.DB, org, dest, remoteAddr string, user *s
 		owner = user.Owner
 	}
 	receiver := Receiver(dest)
-	outstanding, err := store.GetLatestVerificationRecord(ctx, db, owner, receiver)
+	outstanding, err := store.GetLatestVerificationRecordFor(ctx, db, owner, receiver, purpose)
 	if err != nil {
 		return err
 	}
@@ -274,6 +294,7 @@ func Issue(ctx context.Context, db orm.DB, org, dest, remoteAddr string, user *s
 		Receiver:    receiver,
 		Code:        code,
 		Provider:    "demo",
+		Purpose:     purpose,
 		Time:        now.Unix(),
 		IsUsed:      false,
 	}
@@ -322,10 +343,16 @@ func Issue(ctx context.Context, db orm.DB, org, dest, remoteAddr string, user *s
 // record is a plain false: the caller must not distinguish them, or it answers "that
 // address has a code outstanding" to anyone who asks.
 func Consume(ctx context.Context, db orm.DB, user *schema.User, receiver, code string, now time.Time) (bool, error) {
+	return ConsumeFor(ctx, db, PurposeCode, user, receiver, code, now)
+}
+
+// ConsumeFor is [Consume] for one purpose: only a record minted for that purpose
+// is looked at.
+func ConsumeFor(ctx context.Context, db orm.DB, purpose string, user *schema.User, receiver, code string, now time.Time) (bool, error) {
 	if user == nil {
 		return false, nil
 	}
-	rec, err := live(ctx, db, user.Owner, receiver, code, now)
+	rec, err := live(ctx, db, user.Owner, receiver, purpose, code, now)
 	if err != nil || rec == nil {
 		return false, err
 	}
@@ -348,7 +375,7 @@ func Consume(ctx context.Context, db orm.DB, user *schema.User, receiver, code s
 // between a stranger and somebody else's address, so the guesses are bounded by
 // the same [MaxAttempts].
 func Prove(ctx context.Context, db orm.DB, owner, receiver, code string, now time.Time) (bool, error) {
-	rec, err := live(ctx, db, owner, receiver, code, now)
+	rec, err := live(ctx, db, owner, receiver, PurposeCode, code, now)
 	if err != nil || rec == nil || rec.User != "" {
 		return false, err
 	}
@@ -414,11 +441,11 @@ func spend(ctx context.Context, db orm.DB, rec *schema.VerificationRecord, code 
 // this answered across every tenant at once: a newer foreign record won the
 // ordering, and a person's own live code was not even the row the compare ran
 // against.
-func live(ctx context.Context, db orm.DB, owner, receiver, code string, now time.Time) (*schema.VerificationRecord, error) {
+func live(ctx context.Context, db orm.DB, owner, receiver, purpose, code string, now time.Time) (*schema.VerificationRecord, error) {
 	if owner == "" || receiver == "" || code == "" {
 		return nil, nil
 	}
-	rec, err := store.GetLatestVerificationRecord(ctx, db, owner, Receiver(receiver))
+	rec, err := store.GetLatestVerificationRecordFor(ctx, db, owner, Receiver(receiver), purpose)
 	if err != nil || rec == nil {
 		return nil, err
 	}

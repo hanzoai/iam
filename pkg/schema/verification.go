@@ -32,6 +32,12 @@ type VerificationRecord struct {
 	Code       string `json:"code"`
 	Time       int64  `json:"time"`
 	IsUsed     bool   `json:"isUsed"`
+	// Purpose is what the code may be spent for. "" is the general code — sign-in,
+	// a password reset, a signup's proof of address, a second factor; "join" is a
+	// code IAM sent to prove an address for joining an org through an invitation
+	// pinned to it. A code spends only for its own purpose, and issuing one
+	// replaces only the outstanding code of the same purpose.
+	Purpose string `json:"purpose,omitempty"`
 	// Attempts counts wrong codes submitted against this record. A six-digit code
 	// live for ten minutes is a million guesses if nothing counts them, which is
 	// fine for a code that only gates a signup and NOT fine for one that is a

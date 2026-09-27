@@ -940,17 +940,32 @@ func AddVerificationRecord(ctx context.Context, db orm.DB, rec *schema.Verificat
 // caller resolves the account first and therefore knows the org, so the scope costs
 // nothing and closes it at the lookup rather than by a check each caller must
 // remember.
-func GetLatestVerificationRecord(_ context.Context, db orm.DB, owner, receiver string) (*schema.VerificationRecord, error) {
+func GetLatestVerificationRecord(ctx context.Context, db orm.DB, owner, receiver string) (*schema.VerificationRecord, error) {
+	return GetLatestVerificationRecordFor(ctx, db, owner, receiver, "")
+}
+
+// GetLatestVerificationRecordFor is GetLatestVerificationRecord for one purpose
+// (schema.VerificationRecord.Purpose). The purpose is compared here rather than in
+// the query, so a record written before purposes existed reads as the general one.
+func GetLatestVerificationRecordFor(ctx context.Context, db orm.DB, owner, receiver, purpose string) (*schema.VerificationRecord, error) {
 	if owner == "" || receiver == "" {
 		return nil, nil
 	}
-	rec, err := orm.TypedQuery[schema.VerificationRecord](db).
+	recs, err := orm.TypedQuery[schema.VerificationRecord](db).
 		Filter("Owner=", owner).Filter("Receiver=", receiver).
-		Filter("IsUsed=", false).Order("-Time").First()
+		Filter("IsUsed=", false).Order("-Time").GetAll(ctx)
 	if err == orm.ErrNotFound {
 		return nil, nil
 	}
-	return rec, err
+	if err != nil {
+		return nil, err
+	}
+	for _, rec := range recs {
+		if rec.Purpose == purpose {
+			return rec, nil
+		}
+	}
+	return nil, nil
 }
 
 // PersistFederationState creates a fresh in-flight federation transaction. The

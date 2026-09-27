@@ -223,38 +223,56 @@ func (o *outbox) Send(_ context.Context, m otp.Message) error {
 
 var digits = regexp.MustCompile(`\d{6}`)
 
-// codeFor has IAM send user a code to their own address and returns it.
-func codeFor(t *testing.T, db orm.DB, owner, name string) string {
+// bind puts an outbox under otp for the rest of the test.
+func bind(t *testing.T) *outbox {
 	t.Helper()
 	box := &outbox{}
 	otp.BindSender(box)
 	t.Cleanup(func() { otp.BindSender(nil) })
-	u, err := store.GetUserByName(context.Background(), db, owner, name)
-	if err != nil || u == nil {
-		t.Fatalf("read %s/%s: %v", owner, name, err)
-	}
-	if err := otp.Issue(context.Background(), db, owner, u.Email, "203.0.113.7", u, time.Now()); err != nil {
-		t.Fatalf("issue: %v", err)
-	}
-	return digits.FindString(box.body[len(box.body)-1])
+	return box
 }
 
-// MEDIUM (email pin): the address is proven by IAM for this join. An account's
-// own verified flag — which a tenant's identity provider can set — is not enough.
-func TestAccept_pinnedAddressNeedsACodeSentToIt(t *testing.T) {
+// last is the six digits in the newest message the outbox holds.
+func (o *outbox) last(t *testing.T) string {
+	t.Helper()
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if len(o.body) == 0 {
+		t.Fatal("nothing was sent")
+	}
+	return digits.FindString(o.body[len(o.body)-1])
+}
+
+func (o *outbox) count() int {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return len(o.body)
+}
+
+// The address is proven by IAM for this join: IAM sends the code itself, to the
+// caller's own address, and the account's own verified flag — which a tenant's
+// identity provider can set — is not enough. A second ask inside the resend
+// interval sends nothing and points at the code already sent.
+func TestAccept_pinnedAddressIsProvenByACodeIAMSends(t *testing.T) {
 	r := acceptRig(t)
+	box := bind(t)
 	seedPerson(t, r.db, "hanzo", "ada", "ada@example.com", true)
 	seedPerson(t, r.db, "hanzo", "eve", "eve@example.com", true)
 	seedInvite(t, r.db, invite{owner: "acme", name: "inv-1", code: "K7PQ2M9XRT", email: "Ada@Example.com", state: "Active", quota: 1})
 	body := `{"owner":"acme","code":"K7PQ2M9XRT"}`
 
 	status, e := r.accept(t, r.as(t, "hanzo/eve"), body)
-	if status != 400 || !strings.Contains(e.Msg, "different email address") {
-		t.Fatalf("another address: status=%d answer=%+v", status, e)
+	if status != 400 || !strings.Contains(e.Msg, "different email address") || box.count() != 0 {
+		t.Fatalf("another address: status=%d answer=%+v sent=%d", status, e, box.count())
 	}
 	status, e = r.accept(t, r.as(t, "hanzo/ada"), body)
-	if status != 400 || e.Code != "email_code_required" {
-		t.Fatalf("no code: status=%d answer=%+v, want email_code_required", status, e)
+	if status != 400 || e.Code != "email_code_sent" || e.Msg != "We sent a 6-digit code to ada@example.com. Enter it to join Acme." {
+		t.Fatalf("first ask: status=%d answer=%+v", status, e)
+	}
+	code := box.last(t)
+	status, e = r.accept(t, r.as(t, "hanzo/ada"), body)
+	if status != 400 || e.Code != "email_code_required" || box.count() != 1 {
+		t.Fatalf("second ask inside the interval: status=%d answer=%+v sent=%d", status, e, box.count())
 	}
 	status, e = r.accept(t, r.as(t, "hanzo/ada"), `{"owner":"acme","code":"K7PQ2M9XRT","emailCode":"000000"}`)
 	if status != 400 || !strings.Contains(e.Msg, "incorrect") {
@@ -263,14 +281,72 @@ func TestAccept_pinnedAddressNeedsACodeSentToIt(t *testing.T) {
 	if member(t, r.db, "hanzo/ada", "acme") != nil || used(t, r.db, "acme", "inv-1") != 0 {
 		t.Fatal("a refused accept made a member or spent a seat")
 	}
-
-	code := codeFor(t, r.db, "hanzo", "ada")
 	status, e = r.accept(t, r.as(t, "hanzo/ada"), `{"owner":"acme","code":"K7PQ2M9XRT","emailCode":"`+code+`"}`)
-	if status != 200 || !e.Data.Joined {
+	if status != 200 || !e.Data.Joined || used(t, r.db, "acme", "inv-1") != 1 {
 		t.Fatalf("with the code: status=%d answer=%+v", status, e)
 	}
-	if used(t, r.db, "acme", "inv-1") != 1 {
-		t.Fatal("no seat was spent")
+}
+
+// An account that lives in an org of its own — where onboarding moves people —
+// joins a pinned invitation end to end: the code is bound to its own row.
+func TestAccept_anAccountInItsOwnOrgJoinsThroughTheCode(t *testing.T) {
+	r := acceptRig(t)
+	box := bind(t)
+	seedOrg(t, r.db, "adas")
+	seedPerson(t, r.db, "adas", "ada", "ada@example.com", false)
+	seedInvite(t, r.db, invite{owner: "acme", name: "inv-1", code: "K7PQ2M9XRT", email: "ada@example.com", state: "Active", quota: 1})
+
+	if status, e := r.accept(t, r.as(t, "adas/ada"), `{"owner":"acme","code":"K7PQ2M9XRT"}`); e.Code != "email_code_sent" {
+		t.Fatalf("status=%d answer=%+v", status, e)
+	}
+	status, e := r.accept(t, r.as(t, "adas/ada"), `{"owner":"acme","code":"K7PQ2M9XRT","emailCode":"`+box.last(t)+`"}`)
+	if status != 200 || !e.Data.Joined {
+		t.Fatalf("status=%d answer=%+v", status, e)
+	}
+	if m := member(t, r.db, "adas/ada", "acme"); m == nil || m.Invitation != "inv-1" {
+		t.Fatalf("membership %+v", m)
+	}
+}
+
+// A join code spends for joining only, and a general code — the one sign-in, a
+// password reset and a second factor spend — does not join. Minting one does not
+// cancel the other.
+func TestAccept_codesDoNotCrossPurposes(t *testing.T) {
+	r := acceptRig(t)
+	box := bind(t)
+	seedPerson(t, r.db, "hanzo", "ada", "ada@example.com", true)
+	seedInvite(t, r.db, invite{owner: "acme", name: "inv-1", code: "K7PQ2M9XRT", email: "ada@example.com", state: "Active", quota: 1})
+	ada, _ := store.GetUserByName(context.Background(), r.db, "hanzo", "ada")
+	ctx, now := context.Background(), time.Now()
+
+	if err := otp.Issue(ctx, r.db, "hanzo", "ada@example.com", "203.0.113.7", ada, now); err != nil {
+		t.Fatal(err)
+	}
+	general := box.last(t)
+	if _, e := r.accept(t, r.as(t, "hanzo/ada"), `{"owner":"acme","code":"K7PQ2M9XRT"}`); e.Code != "email_code_sent" {
+		t.Fatalf("answer %+v", e)
+	}
+	join := box.last(t)
+
+	// The join code signs nobody in, resets nothing, proves nothing at signup.
+	if ok, _ := otp.Consume(ctx, r.db, ada, "ada@example.com", join, now); ok && join != general {
+		t.Fatal("a join code was spent as a sign-in or reset code")
+	}
+	if ok, _ := otp.Prove(ctx, r.db, "hanzo", "ada@example.com", join, now); ok {
+		t.Fatal("a join code proved an address at signup")
+	}
+	// The general code does not join.
+	if general != join {
+		if status, e := r.accept(t, r.as(t, "hanzo/ada"), `{"owner":"acme","code":"K7PQ2M9XRT","emailCode":"`+general+`"}`); status != 400 {
+			t.Fatalf("a sign-in code joined: status=%d answer=%+v", status, e)
+		}
+	}
+	// Each still spends for its own purpose.
+	if status, e := r.accept(t, r.as(t, "hanzo/ada"), `{"owner":"acme","code":"K7PQ2M9XRT","emailCode":"`+join+`"}`); status != 200 {
+		t.Fatalf("the join code: status=%d answer=%+v", status, e)
+	}
+	if ok, err := otp.Consume(ctx, r.db, ada, "ada@example.com", general, now); !ok || err != nil {
+		t.Fatalf("the sign-in code no longer signs in: %v", err)
 	}
 }
 

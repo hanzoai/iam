@@ -25,10 +25,16 @@ import (
 // invitation its admin wrote.
 const PathInvitationsAccept = "/v1/iam/invitations/accept"
 
-// CodeEmailCodeRequired is the reason an accept answers when the invitation is
-// pinned to the caller's address and no code sent to that address came with it:
-// the page asks POST /v1/iam/verification-codes for one and sends it as emailCode.
-const CodeEmailCodeRequired = "email_code_required"
+// The reasons an accept answers when the invitation is pinned to the caller's
+// address and no code came with it. IAM sends the code itself, to the caller's
+// own address and bound to the caller's own account, and answers
+// CodeEmailCodeSent; the page asks for it and sends the accept again with it as
+// emailCode. When a join code went out moments ago it is not sent again, and the
+// answer is CodeEmailCodeRequired: the one already sent is the one to enter.
+const (
+	CodeEmailCodeSent     = "email_code_sent"
+	CodeEmailCodeRequired = "email_code_required"
+)
 
 // acceptLimit refused attempts per account per acceptWindow; past it, accept
 // refuses without looking at the invitation.
@@ -142,9 +148,9 @@ func acceptInvitation(db orm.DB) zip.TypedHandler[acceptBody, httpx.Answer] {
 				return refuse("this invitation was sent to a different email address; sign in with the account it was sent to")
 			}
 			if strings.TrimSpace(in.EmailCode) == "" {
-				return httpx.Bad(400, "enter the code sent to "+user.Email+" to join", CodeEmailCodeRequired), nil
+				return joinCode(ctx, db, user, standing)
 			}
-			ok, err := otp.Consume(ctx, db, user, user.Email, strings.TrimSpace(in.EmailCode), nowFunc())
+			ok, err := otp.ConsumeFor(ctx, db, otp.PurposeJoin, user, user.Email, strings.TrimSpace(in.EmailCode), nowFunc())
 			if err != nil {
 				return nil, zip.ErrInternal(err.Error())
 			}
@@ -243,4 +249,43 @@ func invitationByCode(ctx context.Context, db orm.DB, org, code string) (*schema
 		}
 	}
 	return nil, nil
+}
+
+// joinCode sends the caller a code that proves their address for this join, and
+// answers what the page shows next. The code is minted for the caller's own
+// account, to the address on it, and for joining only (otp.PurposeJoin): it signs
+// nobody in, resets nothing, and proves nothing at signup. Sending one is counted
+// with the caller's refused attempts, so the attempt limit also bounds the mail.
+func joinCode(ctx context.Context, db orm.DB, user *schema.User, standing *schema.Organization) (*httpx.Answer, error) {
+	org := orgLabel(standing)
+	err := otp.IssueFor(ctx, db, otp.PurposeJoin, user.Owner, user.Email, "", user, nowFunc())
+	switch {
+	case errors.Is(err, otp.ErrTooSoon):
+		return httpx.Bad(400, "A code was just sent to "+user.Email+". Enter it to join "+org+".", CodeEmailCodeRequired), nil
+	case errors.Is(err, otp.ErrNoDelivery):
+		return httpx.Bad(503, "email codes cannot be sent from here", ""), nil
+	case err != nil:
+		return httpx.Bad(502, "the code could not be sent; try again later", ""), nil
+	}
+	if err := store.Append(ctx, db, &schema.AuditLog{
+		Owner:        user.Owner,
+		Organization: standing.Name,
+		User:         user.Owner + "/" + user.Name,
+		Action:       schema.ActionInviteRefused,
+		Object:       CodeEmailCodeSent,
+		Method:       "POST",
+		RequestUri:   PathInvitationsAccept,
+		StatusCode:   400,
+	}); err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	}
+	return httpx.Bad(400, "We sent a 6-digit code to "+user.Email+". Enter it to join "+org+".", CodeEmailCodeSent), nil
+}
+
+// orgLabel is how an organization is named to a person joining it.
+func orgLabel(o *schema.Organization) string {
+	if s := strings.TrimSpace(o.DisplayName); s != "" {
+		return clip(s, 80)
+	}
+	return o.Name
 }
