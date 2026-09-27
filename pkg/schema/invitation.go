@@ -49,6 +49,12 @@ type Invitation struct {
 	// address (RFC 3339), "" when none has. It paces resends, so the send
 	// endpoint cannot be used to mail one address over and over.
 	SentTime string `json:"sentTime"`
+
+	// Generated reports that IAM minted Code itself, from crypto/rand, when the
+	// invitation was created. Only such a code is compared without limit; any code
+	// a caller wrote is compared only while the org is not being guessed at, however
+	// it looks, because a code that looks random need not be.
+	Generated bool `json:"generated"`
 }
 
 // MaxInviteCode is the longest invitation code IAM reads. A longer one is refused
@@ -93,11 +99,26 @@ func BareAddress(s string) bool {
 		}
 	}
 	at := strings.IndexByte(s, '@')
-	return at > 0 && at < len(s)-1 && strings.Contains(s[at+1:], ".")
+	if at <= 0 {
+		return false
+	}
+	// Every label of the domain is non-empty — no leading, trailing or doubled dot —
+	// so one mailbox has one spelling here.
+	labels := strings.Split(s[at+1:], ".")
+	if len(labels) < 2 {
+		return false
+	}
+	for _, l := range labels {
+		if l == "" {
+			return false
+		}
+	}
+	return true
 }
 
 // PlainName is a name somebody chose, made safe to write into a message people
-// read in a mail client: letters, digits, spaces and the marks , ' & ( ) - are
+// read in a mail client: letters with their combining marks, digits, spaces and
+// the marks , ' & ( ) - are
 // kept, and everything else is dropped — so no dot, colon, slash or @ survives
 // and nothing in it can be read as a link — then runs of space collapse and it is
 // cut to max runes.
@@ -109,7 +130,7 @@ func PlainName(s string, max int) string {
 		case unicode.IsSpace(r):
 			space = b.Len() > 0
 			continue
-		case unicode.IsLetter(r), unicode.IsDigit(r), strings.ContainsRune(",'&()-", r):
+		case unicode.IsLetter(r), unicode.IsMark(r), unicode.IsDigit(r), strings.ContainsRune(",'&()-", r):
 		default:
 			continue
 		}

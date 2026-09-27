@@ -36,7 +36,7 @@ func seedInvite(t *testing.T, db orm.DB, inv schema.Invitation) {
 	row.Quota, row.UsedCount = inv.Quota, inv.UsedCount
 	row.Application = inv.Application
 	row.Username, row.Email, row.Phone = inv.Username, inv.Email, inv.Phone
-	row.State = inv.State
+	row.State, row.Generated = inv.State, inv.Generated
 	row.SetId(inv.Owner + "/" + inv.Name)
 	if err := row.CreateCtx(context.Background()); err != nil {
 		t.Fatalf("seed invitation %s/%s: %v", inv.Owner, inv.Name, err)
@@ -256,16 +256,17 @@ func TestSignup_invitation_patternAdmitsNobody(t *testing.T) {
 }
 
 // A code longer than any invitation carries is refused before a row is read. An
-// org that has refused a hundred codes in an hour stops comparing its WEAK codes —
-// ones issued before the strength rule — for the rest of it, and says so in the
-// words any wrong code gets; a strong code is always compared, so guessing cannot
+// org that has refused a hundred codes in an hour stops comparing every code IAM
+// did not mint — a typed one however strong it looks — for the rest of it, in the
+// words any wrong code gets; a minted code is always compared, so guessing cannot
 // lock anyone out.
 func TestSignup_invitation_guessesAreBounded(t *testing.T) {
 	app, db := newServer(t)
 	seedAppFull(t, db, fullApp{clientID: "portal", secret: "s3cret", org: "hanzo", shared: true, signup: true})
 	seedOrg(t, db, "acme")
-	seedInvite(t, db, schema.Invitation{Owner: "acme", Name: "team", Code: "ACMECODE22", Quota: 5, State: "Active"})
+	seedInvite(t, db, schema.Invitation{Owner: "acme", Name: "team", Code: "K7PQ2M9XRTACMECODE22", Quota: 5, State: "Active", Generated: true})
 	seedInvite(t, db, schema.Invitation{Owner: "acme", Name: "old", Code: "acme-7f3k", Quota: 5, State: "Active"})
+	seedInvite(t, db, schema.Invitation{Owner: "acme", Name: "typed", Code: "Welcome2026", Quota: 5, State: "Active"})
 	form := func(code, name string) map[string]string {
 		return map[string]string{
 			"application": "portal", "organization": "acme", "invitationCode": code,
@@ -288,8 +289,11 @@ func TestSignup_invitation_guessesAreBounded(t *testing.T) {
 	if _, env := signupReq(t, app, form("acme-7f3k", "gus")); env["msg"] != refused {
 		t.Fatalf("past the bound a weak code: env=%v, want the plain refusal", env)
 	}
-	if _, env := signupReq(t, app, form("ACMECODE22", "ivy")); env["status"] != "ok" {
-		t.Fatalf("past the bound a strong code: env=%v, want it to join", env)
+	if _, env := signupReq(t, app, form("Welcome2026", "mallory")); env["msg"] != refused {
+		t.Fatalf("past the bound a typed code that looks strong: env=%v, want the plain refusal", env)
+	}
+	if _, env := signupReq(t, app, form("K7PQ2M9XRTACMECODE22", "ivy")); env["status"] != "ok" {
+		t.Fatalf("past the bound a code IAM minted: env=%v, want it to join", env)
 	}
 }
 

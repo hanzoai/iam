@@ -203,25 +203,25 @@ func join(ctx context.Context, db orm.DB, inv *schema.Invitation, f *signupForm,
 }
 
 // An invitation code is answered by whether it admits, and the caller at signup
-// is anonymous, so a code can be guessed at. A code issued now carries at least
-// 50 bits (schema.InviteCode) and is always compared: guessing one is not a
-// threat, and refusing it would let anyone lock an org's invitations by guessing
-// wrong. A WEAKER code — one issued before that rule — is compared only while the
-// org has refused fewer than weakLimit codes in weakWindow, at signup and at
-// accept together; past it, a weak code simply admits nobody for the rest of the
-// window, and the answer is the same refusal as any wrong code.
+// is anonymous, so a code can be guessed at. A code IAM minted (Generated: 100
+// bits from crypto/rand) is always compared — guessing one is not a threat, and
+// refusing it would let anyone lock an org's invitations by guessing wrong. Any
+// other code, one a caller wrote however random it looks, is compared only while
+// the org has refused fewer than weakLimit codes in weakWindow, at signup and at
+// accept together; past it such a code admits nobody for the rest of the window,
+// and the answer is the same refusal as any wrong code.
 const (
 	weakLimit  = 100
 	weakWindow = time.Hour
 )
 
 // weakGate returns the test a lookup applies to each invitation in org: true when
-// the invitation may be compared. A strong code always may; the refusals are
-// counted once, and only when a weak code is met.
+// the invitation may be compared. A minted code always may; the refusals are
+// counted once, and only when any other code is met.
 func weakGate(ctx context.Context, db orm.DB, org string) func(*schema.Invitation) (bool, error) {
 	counted, closed := false, false
 	return func(inv *schema.Invitation) (bool, error) {
-		if schema.InviteCode(inv.Code) == nil {
+		if inv.Generated && inv.Code != "" {
 			return true, nil
 		}
 		if !counted {

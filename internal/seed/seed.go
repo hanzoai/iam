@@ -234,8 +234,17 @@ func markPlatform(ctx context.Context, db orm.DB, platform map[string]bool) erro
 		if app.Platform == want {
 			continue
 		}
-		app.Platform = want
-		if err := app.UpdateCtx(ctx); err != nil {
+		// Rows are stored whole, so the flag is set on a fresh read under the row's
+		// lock: nothing written to the row meanwhile is overwritten with what the
+		// listing saw.
+		if err := db.RunInTransaction(ctx, func(tx orm.DB) error {
+			fresh, err := orm.GetForUpdate[schema.Application](tx, app.Key().Encode())
+			if err != nil || fresh.Platform == want {
+				return err
+			}
+			fresh.Platform = want
+			return fresh.UpdateCtx(ctx)
+		}); err != nil {
 			return fmt.Errorf("seed: mark application %s/%s: %w", app.Owner, app.Name, err)
 		}
 	}

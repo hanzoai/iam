@@ -274,7 +274,7 @@ func IssueJoin(ctx context.Context, db orm.DB, sender, joining string, user *sch
 			Org:     sender,
 			Channel: channel,
 			To:      to,
-			Subject: "Your code to join " + joining,
+			Subject: "Your code to join an organization",
 			Body: fmt.Sprintf("Your code to join %s is %s. It expires in %d minutes. "+
 				"It only confirms this email address for joining; it does not sign anyone in. "+
 				"If you did not ask to join, ignore this message and do not share the code.",

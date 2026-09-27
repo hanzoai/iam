@@ -41,6 +41,7 @@ const orgSigningKid = "cert-hanzo"
 type orgHarness struct {
 	app *zip.App
 	key *rsa.PrivateKey
+	db  orm.DB
 }
 
 func newOrgHarness(t *testing.T) *orgHarness {
@@ -69,7 +70,7 @@ func newOrgHarness(t *testing.T) *orgHarness {
 	if err := app.Build(); err != nil {
 		t.Fatalf("build: %v", err)
 	}
-	return &orgHarness{app: app, key: key}
+	return &orgHarness{app: app, key: key, db: db}
 }
 
 func (h *orgHarness) token(t *testing.T, sub string) string {
@@ -220,39 +221,44 @@ func TestSharing_OnlyASuperAdminChangesIt(t *testing.T) {
 	}
 }
 
-// Platform marks the platform's own applications, and a tenant marking its own
-// would let it act with its users' tokens where only the platform may.
-func TestPlatform_OnlyASuperAdminChangesIt(t *testing.T) {
+// The platform's own applications are the seed's to name: no API write makes an
+// application the platform's or unmakes one, a SuperAdmin's included.
+func TestPlatform_NoAPIWritesTheFlag(t *testing.T) {
 	h := newOrgHarness(t)
-	boss := h.token(t, "acme/boss")
 	root := h.token(t, "admin/root")
-
-	if st := h.do(t, "POST", "/v1/iam/applications", boss, `{"owner":"acme","name":"acme-app","organization":"acme","clientId":"acme-app","platform":true}`); st != 403 {
-		t.Fatalf("a tenant admin created a platform app: status=%d, want 403", st)
+	platform := func(id string) bool {
+		app, err := orm.Get[schema.Application](h.db, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return app.Platform
 	}
-	if st := h.do(t, "POST", "/v1/iam/applications", boss, `{"owner":"acme","name":"acme-app","organization":"acme","clientId":"acme-app"}`); st != 200 {
-		t.Fatalf("a tenant app: status=%d, want 200", st)
+	if st := h.do(t, "POST", "/v1/iam/applications", root, `{"owner":"acme","name":"acme-app","organization":"acme","clientId":"acme-app","platform":true}`); st != 200 {
+		t.Fatalf("create: status=%d", st)
 	}
-	if st := h.do(t, "PUT", "/v1/iam/applications/acme/acme-app", boss, `{"owner":"acme","name":"acme-app","organization":"acme","clientId":"acme-app","platform":true}`); st != 403 {
-		t.Fatalf("a tenant admin marked an app the platform's: status=%d, want 403", st)
+	if platform("acme/acme-app") {
+		t.Fatal("a create made an application the platform's")
 	}
 	if st := h.do(t, "PUT", "/v1/iam/applications/acme/acme-app", root, `{"owner":"acme","name":"acme-app","organization":"acme","clientId":"acme-app","platform":true}`); st != 200 {
-		t.Fatalf("a SuperAdmin marked an app the platform's: status=%d, want 200", st)
+		t.Fatalf("update: status=%d", st)
 	}
-	if st := h.do(t, "PUT", "/v1/iam/applications/acme/acme-app", boss, `{"owner":"acme","name":"acme-app","organization":"acme","clientId":"acme-app","platform":false}`); st != 403 {
-		t.Fatalf("a tenant admin unmarked an app: status=%d, want 403", st)
+	if platform("acme/acme-app") {
+		t.Fatal("an update made an application the platform's")
 	}
 }
 
 // A platform application is written and removed by a SuperAdmin only — its redirect
 // URIs, secret and grants decide who holds its tokens — even by the admin of the
-// org it serves, and even when the write leaves the flag alone.
+// org it serves, and a SuperAdmin's write keeps it the platform's.
 func TestPlatform_RowIsWrittenBySuperAdminOnly(t *testing.T) {
 	h := newOrgHarness(t)
 	boss := h.token(t, "acme/boss")
 	root := h.token(t, "admin/root")
-	if st := h.do(t, "POST", "/v1/iam/applications", root, `{"owner":"acme","name":"acme-style","organization":"acme","clientId":"acme-style","platform":true}`); st != 200 {
-		t.Fatalf("a SuperAdmin made a platform app: status=%d", st)
+	app := orm.New[schema.Application](h.db)
+	app.Owner, app.Name, app.Organization, app.ClientId, app.Platform = "acme", "acme-style", "acme", "acme-style", true
+	app.SetId("acme/acme-style")
+	if err := app.CreateCtx(context.Background()); err != nil {
+		t.Fatal(err)
 	}
 	for _, body := range []string{
 		`{"owner":"acme","name":"acme-style","organization":"acme","clientId":"acme-style","platform":true,"redirectUris":["https://evil.example/cb"]}`,
@@ -265,7 +271,11 @@ func TestPlatform_RowIsWrittenBySuperAdminOnly(t *testing.T) {
 	if st := h.do(t, "DELETE", "/v1/iam/applications/acme/acme-style", boss, ""); st != 403 {
 		t.Fatalf("the org's admin removed a platform app: status=%d, want 403", st)
 	}
-	if st := h.do(t, "PUT", "/v1/iam/applications/acme/acme-style", root, `{"owner":"acme","name":"acme-style","organization":"acme","clientId":"acme-style","platform":true,"displayName":"Style"}`); st != 200 {
+	if st := h.do(t, "PUT", "/v1/iam/applications/acme/acme-style", root, `{"owner":"acme","name":"acme-style","organization":"acme","clientId":"acme-style","displayName":"Style"}`); st != 200 {
 		t.Fatalf("a SuperAdmin's write: status=%d, want 200", st)
+	}
+	stored, _ := orm.Get[schema.Application](h.db, "acme/acme-style")
+	if !stored.Platform {
+		t.Fatal("a SuperAdmin's write that omitted the flag unmade a platform app")
 	}
 }

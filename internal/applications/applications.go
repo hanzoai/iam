@@ -58,18 +58,6 @@ func authorizeSharing(ctx context.Context, in *schema.Application, was bool) err
 	return zip.ErrForbidden("only a SuperAdmin may change whether an application is shared")
 }
 
-// authorizePlatform gates platform. The platform's own applications are the ones
-// init_data.json declares, and the seed marks them; a tenant marking its own
-// application as the platform's would let it act with its users' tokens where only
-// the platform may. Only a SuperAdmin may change it, and a write that keeps the
-// stored value passes.
-func authorizePlatform(ctx context.Context, in *schema.Application, was bool) error {
-	if in.Platform == was || authz.IsSuper(ctx) {
-		return nil
-	}
-	return zip.ErrForbidden("only a SuperAdmin may change whether an application is the platform's own")
-}
-
 // authorizePlatformRow gates a write to, or the removal of, one of the platform's
 // own applications: only a SuperAdmin makes either. Its redirect URIs, secret and
 // grants decide who can hold its tokens, and its tokens act where only the
@@ -264,9 +252,9 @@ func Create(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 		if err := authorizeSharing(ctx, in, false); err != nil {
 			return nil, err
 		}
-		if err := authorizePlatform(ctx, in, false); err != nil {
-			return nil, err
-		}
+		// Which applications are the platform's own is the seed's to say
+		// (internal/seed markPlatform), and nobody else's: a create never makes one.
+		in.Platform = false
 		if err := authorizeProviders(ctx, in); err != nil {
 			return nil, err
 		}
@@ -335,9 +323,8 @@ func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 		if err := authorizePlatformRow(ctx, existing); err != nil {
 			return nil, err
 		}
-		if err := authorizePlatform(ctx, in, existing.Platform); err != nil {
-			return nil, err
-		}
+		// The flag is the seed's; an update keeps what is stored.
+		in.Platform = existing.Platform
 		if err := authorizeProviders(ctx, in); err != nil {
 			return nil, err
 		}

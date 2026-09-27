@@ -16,6 +16,9 @@ func TestBareAddress(t *testing.T) {
 		"ada@example.com\r\nBcc: x@evil.com":   false,
 		"ada‮@example.com":                     false,
 		"ada@localhost":                        false,
+		"ada@example.com.":                     false,
+		"ada@example..com":                     false,
+		"ada@.example.com":                     false,
 		"":                                     false,
 	} {
 		if got := BareAddress(s); got != want {
@@ -44,6 +47,8 @@ func TestInviteCode(t *testing.T) {
 func TestPlainName(t *testing.T) {
 	for in, want := range map[string]string{
 		"Acme Robotics":              "Acme Robotics",
+		"हिन्दी संगठन":               "हिन्दी संगठन",
+		"Cafe\u0301":                 "Cafe\u0301",
 		"O'Brien & Sons (UK) - Ltd.": "O'Brien & Sons (UK) - Ltd",
 		"hanzo-id.example/verify":    "hanzo-idexampleverify",
 		"https://x.example":          "httpsxexample",

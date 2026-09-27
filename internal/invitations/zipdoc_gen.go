@@ -13,21 +13,24 @@ func init() {
 	zip.Describe("github.com/hanzoai/iam/internal/invitations GET /v1/iam/invitations", zip.Doc{
 		Description: "Returns your organization's invitations, newest first — who has\nbeen asked to join, on what terms, and how many seats each invitation still\nhas left.\n\nYou see the invitations of the organization your credentials run, and no one\nelse's: your own, or one you own or administer.",
 		Fields: map[string]string{
-			"Invitation.sentTime": "SentTime is when an email about this invitation last went to its pinned\naddress (RFC 3339), \"\" when none has. It paces resends, so the send\nendpoint cannot be used to mail one address over and over.",
+			"Invitation.generated": "Generated reports that IAM minted Code itself, from crypto/rand, when the\ninvitation was created. Only such a code is compared without limit; any code\na caller wrote is compared only while the org is not being guessed at, however\nit looks, because a code that looks random need not be.",
+			"Invitation.sentTime":  "SentTime is when an email about this invitation last went to its pinned\naddress (RFC 3339), \"\" when none has. It paces resends, so the send\nendpoint cannot be used to mail one address over and over.",
 			"Model[github.com/hanzoai/iam/pkg/schema.Invitation].id": "Persisted fields",
 		},
 	})
 	zip.Describe("github.com/hanzoai/iam/internal/invitations GET /v1/iam/invitations/:owner/:name", zip.Doc{
 		Description: "Returns one invitation: who it is for, what it grants on acceptance, and\nwhen it expires.",
 		Fields: map[string]string{
-			"Invitation.sentTime": "SentTime is when an email about this invitation last went to its pinned\naddress (RFC 3339), \"\" when none has. It paces resends, so the send\nendpoint cannot be used to mail one address over and over.",
+			"Invitation.generated": "Generated reports that IAM minted Code itself, from crypto/rand, when the\ninvitation was created. Only such a code is compared without limit; any code\na caller wrote is compared only while the org is not being guessed at, however\nit looks, because a code that looks random need not be.",
+			"Invitation.sentTime":  "SentTime is when an email about this invitation last went to its pinned\naddress (RFC 3339), \"\" when none has. It paces resends, so the send\nendpoint cannot be used to mail one address over and over.",
 			"Model[github.com/hanzoai/iam/pkg/schema.Invitation].id": "Persisted fields",
 		},
 	})
 	zip.Describe("github.com/hanzoai/iam/internal/invitations POST /v1/iam/invitations", zip.Doc{
 		Description: "Issues an invitation to join your organization — the code or link a new\nmember redeems, with the role they arrive holding and the date it stops\nworking. A name already used in the organization is refused.",
 		Fields: map[string]string{
-			"Invitation.sentTime": "SentTime is when an email about this invitation last went to its pinned\naddress (RFC 3339), \"\" when none has. It paces resends, so the send\nendpoint cannot be used to mail one address over and over.",
+			"Invitation.generated": "Generated reports that IAM minted Code itself, from crypto/rand, when the\ninvitation was created. Only such a code is compared without limit; any code\na caller wrote is compared only while the org is not being guessed at, however\nit looks, because a code that looks random need not be.",
+			"Invitation.sentTime":  "SentTime is when an email about this invitation last went to its pinned\naddress (RFC 3339), \"\" when none has. It paces resends, so the send\nendpoint cannot be used to mail one address over and over.",
 			"Model[github.com/hanzoai/iam/pkg/schema.Invitation].id": "Persisted fields",
 		},
 	})
@@ -37,7 +40,8 @@ func init() {
 	zip.Describe("github.com/hanzoai/iam/internal/invitations PUT /v1/iam/invitations/:owner/:name", zip.Doc{
 		Description: "Changes an invitation's terms — the role it grants, how many may redeem\nit, or when it expires. What it is called does not change.",
 		Fields: map[string]string{
-			"Invitation.sentTime": "SentTime is when an email about this invitation last went to its pinned\naddress (RFC 3339), \"\" when none has. It paces resends, so the send\nendpoint cannot be used to mail one address over and over.",
+			"Invitation.generated": "Generated reports that IAM minted Code itself, from crypto/rand, when the\ninvitation was created. Only such a code is compared without limit; any code\na caller wrote is compared only while the org is not being guessed at, however\nit looks, because a code that looks random need not be.",
+			"Invitation.sentTime":  "SentTime is when an email about this invitation last went to its pinned\naddress (RFC 3339), \"\" when none has. It paces resends, so the send\nendpoint cannot be used to mail one address over and over.",
 			"Model[github.com/hanzoai/iam/pkg/schema.Invitation].id": "Persisted fields",
 		},
 	})

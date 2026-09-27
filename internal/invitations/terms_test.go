@@ -9,6 +9,7 @@ package invitations
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/hanzoai/orm"
@@ -52,4 +53,36 @@ func TestUpdate_keepsAnOlderInvitationEditable(t *testing.T) {
 	}
 	_, err := h.Update(ctx, &Input{Owner: "acme", Name: "legacy", Code: "short", Quota: 10})
 	wantStatus(t, err, 400)
+}
+
+// A create that names no code gets one IAM mints — 20 characters of an
+// unambiguous alphabet from crypto/rand — and only such a code is marked
+// generated. A code a caller wrote is not, and an update that changes the code
+// takes the mark away.
+func TestCreate_mintsTheCodeWhenNoneIsGiven(t *testing.T) {
+	h, _ := newHandler(t)
+	ctx := context.Background()
+	minted, err := h.Create(ctx, &Input{Owner: "acme", Name: "a", Quota: 1, State: "Active"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !minted.Generated || len(minted.Code) != 20 || strings.Trim(minted.Code, codeAlphabet) != "" {
+		t.Fatalf("minted %q generated=%v", minted.Code, minted.Generated)
+	}
+	other, _ := h.Create(ctx, &Input{Owner: "acme", Name: "b", Quota: 1, State: "Active"})
+	if other.Code == minted.Code {
+		t.Fatal("two mints gave one code")
+	}
+	typed, err := h.Create(ctx, &Input{Owner: "acme", Name: "c", Code: "Welcome2026", Quota: 1})
+	if err != nil || typed.Generated {
+		t.Fatalf("a typed code: %v generated=%v", err, typed != nil && typed.Generated)
+	}
+	kept, err := h.Update(ctx, &Input{Owner: "acme", Name: "a", Code: minted.Code, Quota: 5, State: "Active"})
+	if err != nil || !kept.Generated {
+		t.Fatalf("an edit that keeps the minted code: %v generated=%v", err, kept != nil && kept.Generated)
+	}
+	changed, err := h.Update(ctx, &Input{Owner: "acme", Name: "a", Code: "Welcome2027", Quota: 5, State: "Active"})
+	if err != nil || changed.Generated {
+		t.Fatalf("an edit that writes a code: %v generated=%v", err, changed != nil && changed.Generated)
+	}
 }

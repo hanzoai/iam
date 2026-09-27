@@ -10,6 +10,7 @@ package invitations
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"time"
 
@@ -207,6 +208,13 @@ func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Invitation, er
 		invitation.CreatedTime = time.Now().UTC().Format(time.RFC3339)
 	}
 	apply(invitation, in)
+	if invitation.Code == "" {
+		code, err := MintCode()
+		if err != nil {
+			return nil, zip.ErrInternal(err.Error())
+		}
+		invitation.Code, invitation.Generated = code, true
+	}
 	invitation.SetId(key(in.Owner, in.Name))
 
 	if err := invitation.CreateCtx(ctx); err != nil {
@@ -231,7 +239,9 @@ func (h *Handler) Update(ctx context.Context, in *Input) (*schema.Invitation, er
 	if err := validate(in, invitation); err != nil {
 		return nil, err
 	}
+	generated := invitation.Generated && in.Code == invitation.Code
 	apply(invitation, in)
+	invitation.Generated = generated
 	if err := invitation.UpdateCtx(ctx); err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
@@ -260,4 +270,24 @@ func mapErr(err error) error {
 		return zip.ErrNotFound("invitation not found")
 	}
 	return zip.ErrInternal(err.Error())
+}
+
+// codeAlphabet is 32 letters and digits with none that read alike (no 0/O, 1/I),
+// so a minted code survives being read aloud; 32 divides 256, so a byte maps onto
+// it without bias.
+const codeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+// codeLength is 20 characters of codeAlphabet: 100 bits.
+const codeLength = 20
+
+// MintCode draws an invitation code from crypto/rand.
+func MintCode() (string, error) {
+	b := make([]byte, codeLength)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	for i := range b {
+		b[i] = codeAlphabet[int(b[i])%len(codeAlphabet)]
+	}
+	return string(b), nil
 }

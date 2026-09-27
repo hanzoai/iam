@@ -446,3 +446,42 @@ func TestSend_isRecorded(t *testing.T) {
 		t.Fatal("a send record is not protected from the audit CRUD")
 	}
 }
+
+// POST /v1/iam/invitations with no code answers the created row, carrying the code
+// IAM minted: a console reads it from here rather than minting its own.
+func TestCreate_answersTheMintedCode(t *testing.T) {
+	h, _ := sendRig(t)
+	status, body := h.send(t, h.owner(t), "hanzo.id", "/v1/iam/invitations",
+		`{"owner":"acme","name":"inv-x","email":"ada@example.com","quota":1,"state":"Active"}`)
+	if status != 200 {
+		t.Fatalf("status=%d body=%s", status, body)
+	}
+	var out map[string]any
+	if err := json.Unmarshal([]byte(body), &out); err != nil {
+		t.Fatalf("decode %s: %v", body, err)
+	}
+	code, _ := out["code"].(string)
+	if len(code) != 20 || out["generated"] != true || out["owner"] != "acme" || out["name"] != "inv-x" || out["email"] != "ada@example.com" {
+		t.Fatalf("answer %s", body)
+	}
+	t.Logf("POST /v1/iam/invitations -> %s", body)
+}
+
+// An inviter with no display name is left out of the sentence, never named by a
+// mangled address.
+func TestSend_anInviterWithoutANameIsLeftOut(t *testing.T) {
+	h, box := sendRig(t)
+	u, _ := store.GetUserByName(context.Background(), h.db, "acme", "owner")
+	u.Email, u.DisplayName = "owner@acme.example", ""
+	if err := u.UpdateCtx(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	seedPinned(t, h.db, "inv-1", "ada@example.com")
+	if status, body := h.send(t, h.owner(t), "hanzo.id", sendPath, `{}`); status != 200 {
+		t.Fatalf("status=%d body=%s", status, body)
+	}
+	body := box.messages()[0].Body
+	if !strings.HasPrefix(body, "<p>You have been invited to join Acme Robotics.</p>") || strings.Contains(body, "owner") {
+		t.Fatalf("body %q", body)
+	}
+}

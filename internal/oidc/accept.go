@@ -280,25 +280,21 @@ func joinCode(ctx context.Context, db orm.DB, user *schema.User, standing *schem
 	if sender == "" {
 		return httpx.Bad(403, "open the invitation link to join", ""), nil
 	}
-	err := otp.IssueJoin(ctx, db, sender, org, user, nowFunc())
-	switch {
+	switch err := claimJoinCode(ctx, db, user, standing); {
+	case errors.Is(err, otp.ErrTooSoon):
+		return httpx.Bad(400, "A code was just sent to "+user.Email+". Enter it to join "+org+".", CodeEmailCodeRequired), nil
+	case errors.Is(err, store.ErrMailbox), errors.Is(err, store.ErrMailboxOrg):
+		return httpx.Bad(429, err.Error(), ""), nil
+	case err != nil:
+		return nil, zip.ErrInternal(err.Error())
+	}
+	switch err := otp.IssueJoin(ctx, db, sender, org, user, nowFunc()); {
 	case errors.Is(err, otp.ErrTooSoon):
 		return httpx.Bad(400, "A code was just sent to "+user.Email+". Enter it to join "+org+".", CodeEmailCodeRequired), nil
 	case errors.Is(err, otp.ErrNoDelivery):
 		return httpx.Bad(503, "email codes cannot be sent from here", ""), nil
 	case err != nil:
 		return httpx.Bad(502, "the code could not be sent; try again later", ""), nil
-	}
-	if err := store.Append(ctx, db, &schema.AuditLog{
-		Owner:        user.Owner,
-		Organization: standing.Name,
-		User:         user.Owner + "/" + user.Name,
-		Action:       schema.ActionInviteCodeSent,
-		Method:       "POST",
-		RequestUri:   PathInvitationsAccept,
-		StatusCode:   400,
-	}); err != nil {
-		return nil, zip.ErrInternal(err.Error())
 	}
 	return httpx.Bad(400, "We sent a 6-digit code to "+user.Email+". Enter it to join "+org+".", CodeEmailCodeSent), nil
 }
@@ -309,4 +305,41 @@ func orgLabel(o *schema.Organization) string {
 		return s
 	}
 	return o.Name
+}
+
+// claimJoinCode decides, under the joining organization's row lock, whether a join
+// code may go to user's address, and records it before it goes: a code sent
+// within otp.ResendInterval is not sent again, and the mail is counted in the one
+// per-mailbox ledger invitation emails are (store.MailboxPace) — as mail the
+// joining organization caused — and against the caller's own attempts. Recording
+// first is what keeps concurrent requests from all passing one count.
+func claimJoinCode(ctx context.Context, db orm.DB, user *schema.User, standing *schema.Organization) error {
+	now := nowFunc()
+	userID := user.Owner + "/" + user.Name
+	box := schema.Mailbox(user.Email)
+	return db.RunInTransaction(ctx, func(tx orm.DB) error {
+		if _, err := orm.GetForUpdate[schema.Organization](tx, standing.Key().Encode()); err != nil {
+			return err
+		}
+		last, err := store.GetLatestVerificationRecordFor(ctx, tx, user.Owner, otp.Receiver(user.Email), otp.PurposeJoin)
+		if err != nil {
+			return err
+		}
+		if last != nil && now.Unix()-last.Time < int64(otp.ResendInterval/time.Second) {
+			return otp.ErrTooSoon
+		}
+		if err := store.MailboxPace(ctx, tx, standing.Name, box, now); err != nil {
+			return err
+		}
+		for _, row := range []*schema.AuditLog{
+			{Owner: standing.Name, Organization: standing.Name, User: userID, Action: schema.ActionInviteSend, Object: box, Response: "join-code"},
+			{Owner: user.Owner, Organization: standing.Name, User: userID, Action: schema.ActionInviteCodeSent},
+		} {
+			row.Method, row.RequestUri, row.StatusCode = "POST", PathInvitationsAccept, 202
+			if err := store.Append(ctx, tx, row); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }

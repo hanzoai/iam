@@ -15,6 +15,7 @@ package oidc_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http/httptest"
 	"regexp"
@@ -81,7 +82,7 @@ func seedPerson(t *testing.T, db orm.DB, owner, name, email string, verified boo
 type invite struct {
 	owner, name, code, email, username, state, application string
 	quota, used                                            int
-	pattern                                                bool
+	pattern, generated                                     bool
 }
 
 func seedInvite(t *testing.T, db orm.DB, in invite) {
@@ -89,6 +90,7 @@ func seedInvite(t *testing.T, db orm.DB, in invite) {
 	inv := orm.New[schema.Invitation](db)
 	inv.Owner, inv.Name, inv.Code, inv.Email, inv.Username = in.owner, in.name, in.code, in.email, in.username
 	inv.State, inv.Application, inv.Quota, inv.UsedCount, inv.IsRegexp = in.state, in.application, in.quota, in.used, in.pattern
+	inv.Generated = in.generated
 	inv.SetId(in.owner + "/" + in.name)
 	if err := inv.CreateCtx(context.Background()); err != nil {
 		t.Fatalf("seed invitation: %v", err)
@@ -473,7 +475,8 @@ func TestAccept_weakCodesClosePerOrg(t *testing.T) {
 	seedPerson(t, r.db, "hanzo", "ada", "ada@example.com", false)
 	seedPerson(t, r.db, "hanzo", "bea", "bea@example.com", false)
 	seedInvite(t, r.db, invite{owner: "acme", name: "old", code: "acme-7f3k", state: "Active", quota: 25})
-	seedInvite(t, r.db, invite{owner: "acme", name: "new", code: "LINKCODE22", state: "Active", quota: 25})
+	seedInvite(t, r.db, invite{owner: "acme", name: "typed", code: "Welcome2026", state: "Active", quota: 25})
+	seedInvite(t, r.db, invite{owner: "acme", name: "new", code: "K7PQ2M9XRTLINKCODE22", state: "Active", quota: 25, generated: true})
 	for i := 0; i < 100; i++ {
 		if err := store.Append(context.Background(), r.db, &schema.AuditLog{
 			Owner: "elsewhere", Organization: "acme", User: "elsewhere/guesser", Action: schema.ActionInviteRefused,
@@ -485,8 +488,11 @@ func TestAccept_weakCodesClosePerOrg(t *testing.T) {
 	if status != 400 || e.Msg != "this invitation cannot be used" {
 		t.Fatalf("a weak code past the bound: status=%d answer=%+v", status, e)
 	}
-	if status, e := r.accept(t, r.as(t, "hanzo/bea"), `{"owner":"acme","code":"LINKCODE22"}`); status != 200 || !e.Data.Joined {
-		t.Fatalf("a strong code past the bound: status=%d answer=%+v", status, e)
+	if status, e := r.accept(t, r.as(t, "hanzo/ada"), `{"owner":"acme","code":"Welcome2026"}`); status != 400 || e.Msg != "this invitation cannot be used" {
+		t.Fatalf("a typed code that looks strong, past the bound: status=%d answer=%+v", status, e)
+	}
+	if status, e := r.accept(t, r.as(t, "hanzo/bea"), `{"owner":"acme","code":"K7PQ2M9XRTLINKCODE22"}`); status != 200 || !e.Data.Joined {
+		t.Fatalf("a code IAM minted, past the bound: status=%d answer=%+v", status, e)
 	}
 }
 
@@ -502,11 +508,63 @@ func TestAccept_theJoinCodeSaysWhatItIsFor(t *testing.T) {
 		t.Fatalf("answer %+v", e)
 	}
 	m := box.msgs[len(box.msgs)-1]
-	if m.Subject != "Your code to join Acme" || !strings.Contains(m.Body, "to join Acme is") ||
+	if m.Subject != "Your code to join an organization" || !strings.Contains(m.Body, "to join Acme is") ||
 		!strings.Contains(m.Body, "does not sign anyone in") || strings.Contains(m.Body, "Your verification code") {
 		t.Fatalf("subject %q body %q", m.Subject, m.Body)
 	}
 	if m.Org != "admin" {
 		t.Fatalf("sent as %q, want the platform application's org", m.Org)
+	}
+}
+
+// Join codes are mail the joining org causes, counted in the same per-mailbox
+// ledger invitations are: accounts an attacker points at one address cannot use a
+// pinned invitation to relay the platform's mail to it past three a day.
+func TestAccept_joinCodesArePacedPerMailbox(t *testing.T) {
+	r := acceptRig(t)
+	box := bind(t)
+	seedInvite(t, r.db, invite{owner: "acme", name: "inv-1", code: "K7PQ2M9XRT", email: "victim@example.com", state: "Active", quota: 25})
+	// Four accounts, in four orgs, each claiming the victim's address unproven.
+	for i := 1; i <= 4; i++ {
+		seedPerson(t, r.db, fmt.Sprintf("o%d", i), "v", "victim@example.com", false)
+	}
+	var sent, paced int
+	for i := 1; i <= 4; i++ {
+		_, e := r.accept(t, r.as(t, fmt.Sprintf("o%d/v", i)), `{"owner":"acme","code":"K7PQ2M9XRT"}`)
+		switch e.Code {
+		case "email_code_sent":
+			sent++
+		default:
+			if strings.Contains(e.Msg, "too many times today") {
+				paced++
+			}
+		}
+	}
+	if sent != 3 || paced != 1 || box.count() != 3 {
+		t.Fatalf("sent %d, paced %d, mailed %d; want 3, 1, 3", sent, paced, box.count())
+	}
+	for _, m := range box.msgs {
+		if strings.Contains(m.Subject, "Acme") {
+			t.Fatalf("the subject names the org: %q", m.Subject)
+		}
+	}
+}
+
+// And the mailbox's day across orgs holds for join codes too.
+func TestAccept_joinCodesRespectTheMailboxDay(t *testing.T) {
+	r := acceptRig(t)
+	box := bind(t)
+	seedPerson(t, r.db, "hanzo", "ada", "ada@example.com", false)
+	seedInvite(t, r.db, invite{owner: "acme", name: "inv-1", code: "K7PQ2M9XRT", email: "ada@example.com", state: "Active", quota: 1})
+	for i := 0; i < 20; i++ {
+		if err := store.Append(context.Background(), r.db, &schema.AuditLog{
+			Owner: fmt.Sprintf("org%d", i), Organization: fmt.Sprintf("org%d", i), Action: schema.ActionInviteSend, Object: "ada@example.com",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	status, e := r.accept(t, r.as(t, "hanzo/ada"), `{"owner":"acme","code":"K7PQ2M9XRT"}`)
+	if status != 429 || box.count() != 0 {
+		t.Fatalf("status=%d answer=%+v mailed=%d, want 429 and nothing mailed", status, e, box.count())
 	}
 }

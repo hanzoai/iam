@@ -28,19 +28,14 @@ import (
 // signs the person up, or signs them in, and joins them to the org.
 const PathJoin = "/join"
 
-// The pace invitation email is held to. One invitation is mailed at most once a
-// minute; one organization sends at most OrgHourly an hour, and at most
-// OrgRecipientDaily a day to one mailbox; and one mailbox receives at most
-// RecipientDaily a day from every organization together — well above what one org
-// may send it, so no single org can spend a person's day. A mailbox is the
-// address read as the mailbox it delivers to (schema.Mailbox): tags and Gmail's
-// dots do not make a second person. The sends are counted from their audit rows
-// (schema.ActionInviteSend), which no request may remove.
+// The pace invitation email is held to, beside the per-mailbox limits every
+// invitation email shares (store.MailboxPace): one invitation is mailed at most
+// once a minute, and one organization sends at most OrgHourly an hour. The sends
+// are counted from their audit rows (schema.ActionInviteSend), which no request
+// may remove.
 const (
-	ResendInterval    = 60 * time.Second
-	OrgHourly         = 50
-	OrgRecipientDaily = 3
-	RecipientDaily    = 20
+	ResendInterval = 60 * time.Second
+	OrgHourly      = 50
 )
 
 // now is the clock the send reads, replaceable in tests.
@@ -62,10 +57,8 @@ type SendOutput struct {
 }
 
 var (
-	errTooSoon     = errors.New("this invitation was just sent; wait a minute before sending it again")
-	errOrgPace     = errors.New("this organization has sent too many invitations in the last hour; try again later")
-	errAddressPace = errors.New("this address has been sent too many invitations today; try again tomorrow")
-	errOrgAddress  = errors.New("this organization has invited this address too many times today; try again tomorrow")
+	errTooSoon = errors.New("this invitation was just sent; wait a minute before sending it again")
+	errOrgPace = errors.New("this organization has sent too many invitations in the last hour; try again later")
 )
 
 // Send emails an invitation to the address it is pinned to: who invited them, to
@@ -115,7 +108,7 @@ func (h *Handler) Send(ctx context.Context, in *SendInput) (*SendOutput, error) 
 
 	stamp, prior, err := h.claim(ctx, org, inv, to)
 	switch {
-	case errors.Is(err, errTooSoon), errors.Is(err, errOrgPace), errors.Is(err, errAddressPace), errors.Is(err, errOrgAddress):
+	case errors.Is(err, errTooSoon), errors.Is(err, errOrgPace), errors.Is(err, store.ErrMailbox), errors.Is(err, store.ErrMailboxOrg):
 		return nil, zip.Errorf(429, "%s", err.Error())
 	case err != nil:
 		return nil, zip.ErrInternal(err.Error())
@@ -159,21 +152,13 @@ func (h *Handler) claim(ctx context.Context, org *schema.Organization, inv *sche
 		if last, err := time.Parse(time.RFC3339, fresh.SentTime); err == nil && t.Sub(last) < ResendInterval {
 			return errTooSoon
 		}
-		box, day := schema.Mailbox(to), t.Add(-24*time.Hour)
 		if n, err := store.Recorded(ctx, tx, schema.ActionInviteSend, t.Add(-time.Hour), "Organization", inv.Owner); err != nil {
 			return err
 		} else if n >= OrgHourly {
 			return errOrgPace
 		}
-		if n, err := store.Recorded(ctx, tx, schema.ActionInviteSend, day, "Organization", inv.Owner, "Object", box); err != nil {
+		if err := store.MailboxPace(ctx, tx, inv.Owner, schema.Mailbox(to), t); err != nil {
 			return err
-		} else if n >= OrgRecipientDaily {
-			return errOrgAddress
-		}
-		if n, err := store.Recorded(ctx, tx, schema.ActionInviteSend, day, "Object", box); err != nil {
-			return err
-		} else if n >= RecipientDaily {
-			return errAddressPace
 		}
 		prior = fresh.SentTime
 		fresh.SentTime = stamp
@@ -227,7 +212,7 @@ func label(org *schema.Organization) string {
 }
 
 // inviter is how the person who sent the invitation is named in it: their display
-// name, else their address, else nothing.
+// name, or nothing — an address is not a name, and the sentence reads without one.
 func inviter(ctx context.Context, db orm.DB) string {
 	p, ok := principal.From(ctx)
 	if !ok || p == nil || p.User == "" {
@@ -237,10 +222,7 @@ func inviter(ctx context.Context, db orm.DB) string {
 	if err != nil || u == nil {
 		return ""
 	}
-	if s := strings.TrimSpace(u.DisplayName); s != "" {
-		return s
-	}
-	return u.Email
+	return strings.TrimSpace(u.DisplayName)
 }
 
 // message words the invitation email. The carrier sends a body as HTML. The

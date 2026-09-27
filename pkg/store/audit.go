@@ -76,3 +76,40 @@ func auditName() (string, error) {
 	}
 	return hex.EncodeToString(b), nil
 }
+
+// Mail about invitations — the invitation itself, and the code that proves an
+// address for joining — is paced per mailbox (schema.Mailbox), from one ledger:
+// the schema.ActionInviteSend rows, filed under the organization the mail is
+// about, with the mailbox as their Object. One organization reaches one mailbox
+// at most MailboxOrgDaily times a day, and one mailbox receives at most
+// MailboxDaily a day from every organization together — far above what one
+// organization may send it, so no one organization can spend a person's day.
+const (
+	MailboxOrgDaily = 3
+	MailboxDaily    = 20
+)
+
+var (
+	// ErrMailboxOrg: this organization has reached the mailbox's daily limit.
+	ErrMailboxOrg = errors.New("this organization has written to this address too many times today; try again tomorrow")
+	// ErrMailbox: the mailbox has reached its daily limit across organizations.
+	ErrMailbox = errors.New("this address has been sent too many invitations today; try again tomorrow")
+)
+
+// MailboxPace reports whether org may send box one more invitation email now: nil,
+// ErrMailboxOrg or ErrMailbox. Call it inside the transaction that records the
+// send, with the organization's row locked, so two sends cannot both pass.
+func MailboxPace(ctx context.Context, db orm.DB, org, box string, now time.Time) error {
+	day := now.Add(-24 * time.Hour)
+	if n, err := Recorded(ctx, db, schema.ActionInviteSend, day, "Organization", org, "Object", box); err != nil {
+		return err
+	} else if n >= MailboxOrgDaily {
+		return ErrMailboxOrg
+	}
+	if n, err := Recorded(ctx, db, schema.ActionInviteSend, day, "Object", box); err != nil {
+		return err
+	} else if n >= MailboxDaily {
+		return ErrMailbox
+	}
+	return nil
+}
