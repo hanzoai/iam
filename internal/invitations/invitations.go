@@ -159,6 +159,26 @@ func authorizeRefs(ctx context.Context, method string, in *Input) error {
 	return authz.AuthorizeRef(ctx, method, "groups", in.Owner, in.SignupGroup)
 }
 
+// validate refuses terms no invitation may carry: a pattern, which is retired; a
+// code too short or too plain to stand as the only thing admitting a stranger; and
+// an address that is anything but one bare address, since it is where the
+// invitation is sent. A term an update leaves as it was is not re-judged, so an
+// older invitation can still be edited.
+func validate(in *Input, was *schema.Invitation) error {
+	if in.IsRegexp && (was == nil || !was.IsRegexp) {
+		return zip.ErrBadRequest("pattern invitations are retired; issue a code")
+	}
+	if in.Code != "" && (was == nil || in.Code != was.Code) {
+		if err := schema.InviteCode(in.Code); err != nil {
+			return zip.ErrBadRequest(err.Error())
+		}
+	}
+	if in.Email != "" && (was == nil || in.Email != was.Email) && !schema.BareAddress(in.Email) {
+		return zip.ErrBadRequest("an invitation is pinned to one email address, written bare")
+	}
+	return nil
+}
+
 // Create issues an invitation to join your organization — the code or link a new
 // member redeems, with the role they arrive holding and the date it stops
 // working. A name already used in the organization is refused.
@@ -167,6 +187,9 @@ func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Invitation, er
 		return nil, zip.ErrBadRequest("owner and name are required")
 	}
 	if err := authorizeRefs(ctx, "POST", in); err != nil {
+		return nil, err
+	}
+	if err := validate(in, nil); err != nil {
 		return nil, err
 	}
 	switch _, err := orm.Get[schema.Invitation](h.db, key(in.Owner, in.Name)); {
@@ -204,6 +227,9 @@ func (h *Handler) Update(ctx context.Context, in *Input) (*schema.Invitation, er
 	invitation, err := orm.Get[schema.Invitation](h.db, key(in.Owner, in.Name))
 	if err != nil {
 		return nil, mapErr(err)
+	}
+	if err := validate(in, invitation); err != nil {
+		return nil, err
 	}
 	apply(invitation, in)
 	if err := invitation.UpdateCtx(ctx); err != nil {

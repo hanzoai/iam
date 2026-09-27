@@ -58,6 +58,18 @@ func authorizeSharing(ctx context.Context, in *schema.Application, was bool) err
 	return zip.ErrForbidden("only a SuperAdmin may change whether an application is shared")
 }
 
+// authorizePlatform gates platform. The platform's own applications are the ones
+// init_data.json declares, and the seed marks them; a tenant marking its own
+// application as the platform's would let it act with its users' tokens where only
+// the platform may. Only a SuperAdmin may change it, and a write that keeps the
+// stored value passes.
+func authorizePlatform(ctx context.Context, in *schema.Application, was bool) error {
+	if in.Platform == was || authz.IsSuper(ctx) {
+		return nil
+	}
+	return zip.ErrForbidden("only a SuperAdmin may change whether an application is the platform's own")
+}
+
 // authorizeProviders gates the identity providers an application LINKS. A link is a
 // reference to credentials: the sign-in leg runs on the provider record's own client
 // id and secret (store.EnrichProviders resolves it, federationProvider uses it), and
@@ -241,6 +253,9 @@ func Create(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 		if err := authorizeSharing(ctx, in, false); err != nil {
 			return nil, err
 		}
+		if err := authorizePlatform(ctx, in, false); err != nil {
+			return nil, err
+		}
 		if err := authorizeProviders(ctx, in); err != nil {
 			return nil, err
 		}
@@ -304,6 +319,9 @@ func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 			return nil, err
 		}
 		if err := authorizeSharing(ctx, in, existing.IsShared); err != nil {
+			return nil, err
+		}
+		if err := authorizePlatform(ctx, in, existing.Platform); err != nil {
 			return nil, err
 		}
 		if err := authorizeProviders(ctx, in); err != nil {

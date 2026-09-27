@@ -45,6 +45,10 @@ type Membership struct {
 	Project   string `json:"project" orm:"index"`
 
 	Role string `json:"role"` // owner | admin | member
+
+	// Invitation is the name of the invitation, in Org, the member joined by; ""
+	// for a grant nobody was invited to.
+	Invitation string `json:"invitation"`
 }
 
 // OrgRef is the lightweight (org, role) projection of a Membership that a token

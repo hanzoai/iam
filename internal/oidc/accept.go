@@ -5,13 +5,18 @@ package oidc
 
 import (
 	"context"
+	"errors"
+	"mime"
 	"strings"
+	"time"
 
 	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/httpx"
+	"github.com/hanzoai/iam/internal/otp"
+	"github.com/hanzoai/iam/internal/sessions"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -20,14 +25,30 @@ import (
 // invitation its admin wrote.
 const PathInvitationsAccept = "/v1/iam/invitations/accept"
 
-// acceptBody names the organization and the invitation code, and carries the two
-// credentials a signed-in caller can present: the identity host's session cookie
-// (the join page) or a bearer (an API client).
+// CodeEmailCodeRequired is the reason an accept answers when the invitation is
+// pinned to the caller's address and no code sent to that address came with it:
+// the page asks POST /v1/iam/verification-codes for one and sends it as emailCode.
+const CodeEmailCodeRequired = "email_code_required"
+
+// acceptLimit refused attempts per account per acceptWindow; past it, accept
+// refuses without looking at the invitation.
+const (
+	acceptLimit  = 10
+	acceptWindow = time.Hour
+)
+
+// acceptBody names the organization and the invitation code, the code IAM sent
+// to the caller's address when the invitation is pinned to one, and the request
+// facts that say who is asking: the identity host's session cookie with the
+// browser's fetch metadata and body type, or a bearer.
 type acceptBody struct {
-	Owner  string `json:"owner"`
-	Code   string `json:"code" url:"-"`
-	Cookie string `json:"-" header:"Cookie"`
-	Auth   string `json:"-" header:"Authorization"`
+	Owner     string `json:"owner"`
+	Code      string `json:"code" url:"-"`
+	EmailCode string `json:"emailCode" url:"-"`
+	Cookie    string `json:"-" header:"Cookie"`
+	Auth      string `json:"-" header:"Authorization"`
+	Site      string `json:"-" header:"Sec-Fetch-Site"`
+	Type      string `json:"-" header:"Content-Type"`
 }
 
 // joined is the answer to an accepted invitation.
@@ -45,32 +66,58 @@ const unusable = "this invitation cannot be used"
 // a person who already has an account. Signing up through the invitation is the
 // other way in (signupHandler); this one spends the same seat under the same rules.
 //
-// Only the caller joins: the request names nobody. An invitation pinned to an
-// address admits only the account holding that address, proven; one pinned to a
-// phone number admits nobody this way, because an account's number is not proven.
-// The membership granted is a member's, never an admin's. Joining an org the
-// caller already belongs to succeeds and spends nothing.
+// Only the caller joins, as a member and never more; the request names nobody
+// else. An invitation pinned to an address admits only the account holding that
+// address, and only with a code IAM sent to it for this join — the account's own
+// verified flag is not enough, because a tenant's identity provider can set it. An
+// invitation pinned to a phone number or a username admits no other org's account
+// this way. Joining an org the caller already belongs to succeeds and spends
+// nothing. Every refusal is recorded, and an account refused acceptLimit times in
+// acceptWindow is refused before anything is looked at.
 func acceptInvitation(db orm.DB) zip.TypedHandler[acceptBody, httpx.Answer] {
 	return func(ctx context.Context, in *acceptBody) (*httpx.Answer, error) {
-		owner, name, ok := callerFrom(ctx, db, sessionCookie(in.Cookie), httpx.BearerValue(in.Auth))
-		if !ok {
-			return httpx.Bad(400, "please sign in first", CodeLoginRequired), nil
+		user, answer, err := acceptCaller(ctx, db, in)
+		if answer != nil || err != nil {
+			return answer, err
 		}
+		userID := user.Owner + "/" + user.Name
 		org, code := strings.TrimSpace(in.Owner), strings.TrimSpace(in.Code)
 		if org == "" || code == "" {
 			return httpx.Bad(400, "org and code are required", ""), nil
 		}
-		user, err := store.GetUserByName(ctx, db, owner, name)
+		n, err := store.Recorded(ctx, db, schema.ActionInviteRefused, "User", userID, nowFunc().Add(-acceptWindow))
 		if err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
-		if user == nil || user.IsForbidden || user.IsDeleted {
-			return httpx.Bad(400, "please sign in first", CodeLoginRequired), nil
+		if n >= acceptLimit {
+			return httpx.Bad(429, "too many attempts to join an organization; try again in an hour", ""), nil
 		}
-		if policy.IsReservedOrg(org) {
-			return httpx.Bad(400, unusable, ""), nil
+		refuse := func(msg string) (*httpx.Answer, error) {
+			if err := store.Append(ctx, db, &schema.AuditLog{
+				Owner:        user.Owner,
+				Organization: clip(org, 100),
+				User:         userID,
+				Action:       schema.ActionInviteRefused,
+				Object:       clip(org, 100),
+				Method:       "POST",
+				RequestUri:   PathInvitationsAccept,
+				StatusCode:   400,
+			}); err != nil {
+				return nil, zip.ErrInternal(err.Error())
+			}
+			return httpx.Bad(400, msg, ""), nil
 		}
-		userID := user.Owner + "/" + user.Name
+
+		if len(code) > schema.MaxInviteCode || policy.IsReservedOrg(org) {
+			return refuse(unusable)
+		}
+		standing, err := store.GetOrganizationByName(ctx, db, org)
+		if err != nil {
+			return nil, zip.ErrInternal(err.Error())
+		}
+		if standing == nil {
+			return refuse(unusable)
+		}
 		if user.Owner == org {
 			return httpx.Good(joined{Org: org, Joined: true}), nil
 		}
@@ -84,32 +131,102 @@ func acceptInvitation(db orm.DB) zip.TypedHandler[acceptBody, httpx.Answer] {
 		if err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
-		if inv == nil {
-			return httpx.Bad(400, unusable, ""), nil
+		if inv == nil || inv.Phone != "" || inv.Username != "" {
+			return refuse(unusable)
 		}
 		// The code is right, so the caller holds it; what is left is whether this
-		// account is the one it was written for. Saying which pin failed tells the
-		// holder of the code what to do and tells nobody else anything.
-		if inv.Email != "" && (store.NormalizeEmail(inv.Email) != store.NormalizeEmail(user.Email) || !user.EmailVerified) {
+		// account is the one it was written for. Saying so tells the holder of the
+		// code what to do, and the attempt limit bounds anyone guessing codes.
+		if inv.Email != "" {
 			if store.NormalizeEmail(inv.Email) != store.NormalizeEmail(user.Email) {
-				return httpx.Bad(400, "this invitation was sent to a different email address; sign in with the account it was sent to", ""), nil
+				return refuse("this invitation was sent to a different email address; sign in with the account it was sent to")
 			}
-			return httpx.Bad(400, "confirm your email address to accept this invitation", ""), nil
-		}
-		if inv.Phone != "" {
-			return httpx.Bad(400, unusable, ""), nil
+			if strings.TrimSpace(in.EmailCode) == "" {
+				return httpx.Bad(400, "enter the code sent to "+user.Email+" to join", CodeEmailCodeRequired), nil
+			}
+			ok, err := otp.Consume(ctx, db, user, user.Email, strings.TrimSpace(in.EmailCode), nowFunc())
+			if err != nil {
+				return nil, zip.ErrInternal(err.Error())
+			}
+			if !ok {
+				return refuse("that code is incorrect or has expired")
+			}
 		}
 
 		f := &signupForm{Organization: org, Invitation: code, Email: user.Email, Username: user.Name}
-		admitted, err := join(ctx, db, inv, f, userID)
+		admitted, err := join(ctx, db, inv, f, user)
 		if err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
 		if !admitted {
-			return httpx.Bad(400, unusable, ""), nil
+			return refuse(unusable)
 		}
 		return httpx.Good(joined{Org: org, Joined: true}), nil
 	}
+}
+
+// acceptCaller resolves who is accepting, by one of two credentials:
+//
+//   - A bearer, which must be an access token issued to one of the platform's own
+//     applications (PlatformBearer). A tenant's application holds its users'
+//     tokens and must not be able to join them to its org with them.
+//   - The identity host's session cookie, which a browser attaches to any request
+//     to the host, including one a sibling host's page makes. So the request must
+//     come from the issuer's own pages by the rule session writes use
+//     (sessions.FromIssuer), and carry a JSON body, which a cross-site form cannot.
+//
+// A refusal comes back as the answer to send.
+func acceptCaller(ctx context.Context, db orm.DB, in *acceptBody) (*schema.User, *httpx.Answer, error) {
+	signIn := httpx.Bad(400, "please sign in first", CodeLoginRequired)
+	var owner, name string
+	if bearer := httpx.BearerValue(in.Auth); bearer != "" {
+		claims, _, err := PlatformBearer(ctx, db, bearer)
+		if errors.Is(err, ErrNotPlatform) {
+			return nil, httpx.Bad(403, err.Error(), ""), nil
+		}
+		if err != nil {
+			return nil, nil, zip.ErrInternal(err.Error())
+		}
+		u, err := store.GetUserBySubject(ctx, db, claims.Subject)
+		if err != nil {
+			return nil, nil, zip.ErrInternal(err.Error())
+		}
+		if u == nil {
+			return nil, signIn, nil
+		}
+		owner, name = u.Owner, u.Name
+	} else {
+		if !sessions.FromIssuer(in.Site) || !jsonBody(in.Type) {
+			return nil, httpx.Bad(403, "open the invitation link to join", ""), nil
+		}
+		sc, ok := sessions.CurrentValue(ctx, sessionCookie(in.Cookie), db)
+		if !ok {
+			return nil, signIn, nil
+		}
+		owner, name = sc.Owner, sc.Name
+	}
+	user, err := store.GetUserByName(ctx, db, owner, name)
+	if err != nil {
+		return nil, nil, zip.ErrInternal(err.Error())
+	}
+	if user == nil || user.IsForbidden || user.IsDeleted {
+		return nil, signIn, nil
+	}
+	return user, nil, nil
+}
+
+// jsonBody reports whether a request's Content-Type is JSON.
+func jsonBody(contentType string) bool {
+	t, _, err := mime.ParseMediaType(contentType)
+	return err == nil && t == "application/json"
+}
+
+// clip bounds a caller-supplied string before it is recorded.
+func clip(s string, n int) string {
+	if len(s) > n {
+		return s[:n]
+	}
+	return s
 }
 
 // invitationByCode finds the invitation in org that code names and that is still

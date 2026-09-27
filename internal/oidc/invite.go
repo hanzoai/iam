@@ -5,7 +5,8 @@ package oidc
 
 import (
 	"context"
-	"regexp"
+	"errors"
+	"time"
 
 	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
@@ -45,9 +46,10 @@ const invitationActive = "Active"
 // owned by that org, and /v1/iam/invitations writes it only for the org's admin
 // or a SuperAdmin, so the row is the admin's word. The org is read from the
 // signup and the invitation from that org's own rows: a code written in one org
-// admits nobody to another.
+// admits nobody to another. A code longer than any invitation carries is refused
+// before a row is read.
 func invitation(ctx context.Context, db orm.DB, app *schema.Application, f *signupForm) (*schema.Invitation, error) {
-	if f.Invitation == "" {
+	if f.Invitation == "" || len(f.Invitation) > schema.MaxInviteCode {
 		return nil, nil
 	}
 	rows, err := orm.TypedQuery[schema.Invitation](db).Filter("owner", f.Organization).GetAll(ctx)
@@ -55,22 +57,27 @@ func invitation(ctx context.Context, db orm.DB, app *schema.Application, f *sign
 		return nil, err
 	}
 	for _, inv := range rows {
-		if admits(inv, app, f) {
+		if admits(inv, app, f, f.Organization) {
 			return inv, nil
 		}
 	}
 	return nil, nil
 }
 
-// admits reports whether inv, as it stands, lets this signup in: it is active,
-// has a seat left, names this application or none, carries the code the signup
-// brought, and every pin it holds — username, address, number — is this signup's.
-// A signup that states no username takes the one pinned (see signupHandler).
+// admits reports whether inv, as it stands, lets the account owner/<f.Username>
+// in: it is active, has a seat left, names this application or none, carries the
+// code brought, and every pin it holds — username, address, number — is this
+// account's. owner is the org the account lives in: the invitation's own org for
+// a signup, which makes the account there, and the account's home for a
+// signed-in account joining (acceptInvitation).
 //
-// app is nil for a signed-in account joining through the invitation
-// (acceptInvitation): no application is signing anyone up, so an invitation
-// pinned to one admits nobody that way.
-func admits(inv *schema.Invitation, app *schema.Application, f *signupForm) bool {
+// A username pin names the account inv.Owner/<pin>, so it admits no account that
+// lives anywhere else. A signup that states no username takes the pin (see
+// signupHandler).
+//
+// app is nil for a signed-in account joining: no application is signing anyone
+// up, so an invitation pinned to one admits nobody that way.
+func admits(inv *schema.Invitation, app *schema.Application, f *signupForm, owner string) bool {
 	switch {
 	case inv.Owner != f.Organization,
 		inv.State != invitationActive,
@@ -81,7 +88,13 @@ func admits(inv *schema.Invitation, app *schema.Application, f *signupForm) bool
 		inv.Phone != "" && store.NormalizePhone(inv.Phone) != store.NormalizePhone(f.Phone):
 		return false
 	}
-	if inv.Username == "" || f.Username == "" {
+	if inv.Username == "" {
+		return true
+	}
+	if owner != inv.Owner {
+		return false
+	}
+	if f.Username == "" {
 		return true
 	}
 	pin, err := schema.Username(inv.Username)
@@ -92,17 +105,14 @@ func admits(inv *schema.Invitation, app *schema.Application, f *signupForm) bool
 	return err == nil && name == pin
 }
 
-// inviteCode reports whether code is inv's: the literal, compared in constant
-// time, or a whole match of its pattern when the admin wrote one.
+// inviteCode reports whether code is inv's, compared in constant time. An
+// invitation written as a pattern admits nobody: patterns are retired, and a code
+// longer than any invitation carries is not compared at all.
 func inviteCode(inv *schema.Invitation, code string) bool {
-	if inv.Code == "" || code == "" {
+	if inv.IsRegexp || inv.Code == "" || code == "" || len(code) > schema.MaxInviteCode {
 		return false
 	}
-	if !inv.IsRegexp {
-		return cred.ConstantTimeEqual(inv.Code, code)
-	}
-	re, err := regexp.Compile(`^(?:` + inv.Code + `)$`)
-	return err == nil && re.MatchString(code)
+	return cred.ConstantTimeEqual(inv.Code, code)
 }
 
 // redeem spends one of inv's seats for this signup, under a row lock, and reports
@@ -116,7 +126,7 @@ func redeem(ctx context.Context, db orm.DB, inv *schema.Invitation, app *schema.
 		if err != nil {
 			return err
 		}
-		if !admits(fresh, app, f) {
+		if !admits(fresh, app, f, f.Organization) {
 			return nil
 		}
 		fresh.UsedCount++
@@ -138,19 +148,21 @@ func invitationName(inv *schema.Invitation) string {
 	return inv.Name
 }
 
-// join spends one of inv's seats and makes userID a member of its org, in one
-// transaction under the invitation's row lock, so a seat is never spent without
-// the membership it paid for and two joins cannot race for the last seat. An
-// account that is already a member spends nothing. Reports whether the account
-// was admitted.
-func join(ctx context.Context, db orm.DB, inv *schema.Invitation, f *signupForm, userID string) (bool, error) {
+// join spends one of inv's seats and makes user a member of its org, in one
+// transaction under the invitation's row lock: a seat is never spent without the
+// membership it paid for, two joins cannot race for the last seat, and the audit
+// row that records the join is written with it. The membership names the
+// invitation. An account that is already a member spends nothing. Reports whether
+// the account was admitted.
+func join(ctx context.Context, db orm.DB, inv *schema.Invitation, f *signupForm, user *schema.User) (bool, error) {
+	userID := user.Owner + "/" + user.Name
 	var admitted bool
 	err := db.RunInTransaction(ctx, func(tx orm.DB) error {
 		fresh, err := orm.GetForUpdate[schema.Invitation](tx, inv.Key().Encode())
 		if err != nil {
 			return err
 		}
-		if !admits(fresh, nil, f) {
+		if !admits(fresh, nil, f, user.Owner) {
 			return nil
 		}
 		added, err := store.EnsureMembership(ctx, tx, userID, fresh.Owner, store.RoleMember)
@@ -161,8 +173,62 @@ func join(ctx context.Context, db orm.DB, inv *schema.Invitation, f *signupForm,
 		if !added {
 			return nil
 		}
+		m, err := store.GetMembership(ctx, tx, userID, fresh.Owner)
+		if err != nil || m == nil {
+			return errors.Join(err, errors.New("invitation: the membership just made cannot be read"))
+		}
+		m.Invitation = fresh.Name
+		if err := m.UpdateCtx(ctx); err != nil {
+			return err
+		}
 		fresh.UsedCount++
-		return fresh.UpdateCtx(ctx)
+		if err := fresh.UpdateCtx(ctx); err != nil {
+			return err
+		}
+		return store.Append(ctx, tx, &schema.AuditLog{
+			Owner:        fresh.Owner,
+			Organization: fresh.Owner,
+			User:         userID,
+			Action:       schema.ActionInviteAccept,
+			Object:       fresh.Name,
+			Method:       "POST",
+			RequestUri:   PathInvitationsAccept,
+			StatusCode:   200,
+		})
 	})
 	return admitted, err
+}
+
+// A signup that brings an invitation code answers only whether it admits the
+// signup, and the signup is anonymous: nothing about the caller can be trusted to
+// count them by. So refused codes are counted per ORG they target, and an org that
+// has refused signupInviteLimit codes in signupInviteWindow takes no more for the
+// rest of it. Issued codes carry at least 50 bits (schema.InviteCode), so the cap
+// is what keeps an older, shorter code from being walked.
+const (
+	signupInviteLimit  = 100
+	signupInviteWindow = time.Hour
+)
+
+// inviteGuessed reports whether org has refused signupInviteLimit invitation codes
+// at signup within signupInviteWindow.
+func inviteGuessed(ctx context.Context, db orm.DB, org string) (bool, error) {
+	n, err := store.Recorded(ctx, db, schema.ActionInviteSignupRefused, "Organization", org, nowFunc().Add(-signupInviteWindow))
+	return n >= signupInviteLimit, err
+}
+
+// recordInviteGuess records a code a signup brought for org that admitted nobody.
+// Only an org that stands is recorded, so a request naming nothing leaves nothing.
+func recordInviteGuess(ctx context.Context, db orm.DB, org string) {
+	if o, err := store.GetOrganizationByName(ctx, db, org); err != nil || o == nil {
+		return
+	}
+	store.Record(ctx, db, &schema.AuditLog{
+		Owner:        org,
+		Organization: org,
+		Action:       schema.ActionInviteSignupRefused,
+		Method:       "POST",
+		RequestUri:   PathSignup,
+		StatusCode:   400,
+	})
 }

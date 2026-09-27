@@ -32,10 +32,7 @@ func init() {
 		},
 	})
 	zip.Describe("github.com/hanzoai/iam/internal/invitations POST /v1/iam/invitations/:owner/:name/send", zip.Doc{
-		Description: "Emails an invitation to the address it is pinned to: who invited them,\nto which organization, and the link that joins them. Only the pinned address\never receives it, and one invitation is sent at most once a minute.",
-		Fields: map[string]string{
-			"SendInput.application": "Application is the application the person joins through, \"owner/name\" — the\nsame form POST /v1/iam/verification-codes takes. Its org's email account\nsends the message: notify holds a sending account per org, and a customer\norg has none of its own.",
-		},
+		Description: "Emails an invitation to the address it is pinned to: who invited them, to\nwhich organization, and the link that joins them.\n\nThe caller chooses nothing about how it goes out. It is sent through the\nplatform application the caller's access token was issued to, from that\napplication's org's email account, with a link on the identity host that issued\nthe token — the way the inviter came in. Only the pinned address receives it.",
 	})
 	zip.Describe("github.com/hanzoai/iam/internal/invitations PUT /v1/iam/invitations/:owner/:name", zip.Doc{
 		Description: "Changes an invitation's terms — the role it grants, how many may redeem\nit, or when it expires. What it is called does not change.",

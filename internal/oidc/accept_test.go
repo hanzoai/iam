@@ -4,27 +4,68 @@
 package oidc_test
 
 // POST /v1/iam/invitations/accept joins a signed-in account to an org through an
-// invitation. What it must hold: only the caller joins, as a member and never
-// more; a pinned address admits only the account that holds it, proven; one seat
-// is spent per new member and none for a member already there; and a code that
-// admits nobody answers the same sentence whatever the reason.
+// invitation, here with a bearer (the session-cookie path is accept_cookie_test).
+// What it must hold: the bearer is an access token issued to one of the platform's
+// own applications; only the caller joins, as a member and never more; a pinned
+// address admits only the account that holds it, with a code IAM sent to it for
+// this join; one seat is spent per new member and none for a member already there;
+// a code that admits nobody answers one sentence whatever the reason; and refused
+// attempts are counted per account.
 
 import (
 	"context"
 	"encoding/json"
 	"io"
 	"net/http/httptest"
+	"regexp"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/hanzoai/orm"
 
+	"github.com/hanzoai/iam/internal/otp"
 	"github.com/hanzoai/iam/internal/testhttp"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
 
 const acceptPath = "/v1/iam/invitations/accept"
+
+// acceptRig is the masquerade rig with its console marked as the platform's own,
+// and a tenant's application beside it.
+func acceptRig(t *testing.T) *rig {
+	t.Helper()
+	r := newRig(t)
+	app, err := orm.Get[schema.Application](r.db, "admin/console")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.Platform = true
+	if err := app.UpdateCtx(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	seedApp(t, r.db, "acme", "acme-app", "acme-app", kid)
+	return r
+}
+
+// access signs an access token for sub issued to client.
+func (r *rig) access(t *testing.T, sub, client, kind string) string {
+	t.Helper()
+	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		"sub": sub, "azp": client, "aud": client, "iss": "https://hanzo.id", "tokenType": kind,
+		"iat": time.Now().Add(-time.Minute).Unix(),
+		"exp": time.Now().Add(time.Hour).Unix(),
+	})
+	tok.Header["kid"] = kid
+	s, err := tok.SignedString(r.key)
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	return s
+}
 
 func seedPerson(t *testing.T, db orm.DB, owner, name, email string, verified bool) {
 	t.Helper()
@@ -38,15 +79,16 @@ func seedPerson(t *testing.T, db orm.DB, owner, name, email string, verified boo
 }
 
 type invite struct {
-	owner, name, code, email, state, application string
-	quota, used                                  int
+	owner, name, code, email, username, state, application string
+	quota, used                                            int
+	pattern                                                bool
 }
 
 func seedInvite(t *testing.T, db orm.DB, in invite) {
 	t.Helper()
 	inv := orm.New[schema.Invitation](db)
-	inv.Owner, inv.Name, inv.Code, inv.Email = in.owner, in.name, in.code, in.email
-	inv.State, inv.Application, inv.Quota, inv.UsedCount = in.state, in.application, in.quota, in.used
+	inv.Owner, inv.Name, inv.Code, inv.Email, inv.Username = in.owner, in.name, in.code, in.email, in.username
+	inv.State, inv.Application, inv.Quota, inv.UsedCount, inv.IsRegexp = in.state, in.application, in.quota, in.used, in.pattern
 	inv.SetId(in.owner + "/" + in.name)
 	if err := inv.CreateCtx(context.Background()); err != nil {
 		t.Fatalf("seed invitation: %v", err)
@@ -71,150 +113,251 @@ func member(t *testing.T, db orm.DB, user, org string) *schema.Membership {
 	return m
 }
 
-// envelope is the public surface's answer: status, a refusal's msg, and data.
+// envelope is the public surface's answer: status, a refusal's msg and code, and data.
 type envelope struct {
 	Status string `json:"status"`
 	Msg    string `json:"msg"`
+	Code   string `json:"code"`
 	Data   struct {
 		Org    string `json:"org"`
 		Joined bool   `json:"joined"`
 	} `json:"data"`
 }
 
-func (r *rig) accept(t *testing.T, sub, body string) (int, envelope) {
+// accept drives one accept with bearer and returns the status and the envelope.
+func (r *rig) accept(t *testing.T, bearer, body string) (int, envelope) {
 	t.Helper()
-	status, raw := r.post(t, acceptPath, sub, body)
-	var e envelope
-	if err := json.Unmarshal([]byte(raw), &e); err != nil {
-		t.Fatalf("decode %s: %v", raw, err)
-	}
-	return status, e
-}
-
-func TestAccept_joinsAsAMemberAndSpendsOneSeat(t *testing.T) {
-	r := newRig(t)
-	seedPerson(t, r.db, "hanzo", "ada", "ada@example.com", true)
-	seedInvite(t, r.db, invite{owner: "acme", name: "inv-1", code: "K7PQ2M9XRT", email: "Ada@Example.com", state: "Active", quota: 1})
-
-	status, e := r.accept(t, "hanzo/ada", `{"owner":"acme","code":"K7PQ2M9XRT"}`)
-	if status != 200 || e.Status != "ok" || e.Data.Org != "acme" || !e.Data.Joined {
-		t.Fatalf("status=%d answer=%+v", status, e)
-	}
-	m := member(t, r.db, "hanzo/ada", "acme")
-	if m == nil || m.Role != store.RoleMember {
-		t.Fatalf("membership %+v, want a member row", m)
-	}
-	if n := used(t, r.db, "acme", "inv-1"); n != 1 {
-		t.Fatalf("used %d seats, want 1", n)
-	}
-}
-
-// A link nobody is pinned to admits every signed-in account, one seat each.
-func TestAccept_aSharedLinkAdmitsEachAccountOnce(t *testing.T) {
-	r := newRig(t)
-	seedPerson(t, r.db, "hanzo", "ada", "ada@example.com", false)
-	seedPerson(t, r.db, "hanzo", "bea", "bea@example.com", true)
-	seedInvite(t, r.db, invite{owner: "acme", name: "link", code: "LINKCODE22", state: "Active", quota: 25})
-
-	for _, sub := range []string{"hanzo/ada", "hanzo/bea", "hanzo/ada"} {
-		if status, e := r.accept(t, sub, `{"owner":"acme","code":"LINKCODE22"}`); status != 200 || !e.Data.Joined {
-			t.Fatalf("%s: status=%d answer=%+v", sub, status, e)
-		}
-	}
-	if n := used(t, r.db, "acme", "link"); n != 2 {
-		t.Fatalf("used %d seats, want 2 — a member joining again spends nothing", n)
-	}
-}
-
-// An account already in the org — at home or by membership — spends nothing.
-func TestAccept_alreadyAMemberSpendsNothing(t *testing.T) {
-	r := newRig(t)
-	seedInvite(t, r.db, invite{owner: "hanzo", name: "inv-1", code: "HOMECODE22", state: "Active", quota: 1})
-	if status, e := r.accept(t, "hanzo/boss", `{"owner":"hanzo","code":"HOMECODE22"}`); status != 200 || !e.Data.Joined {
-		t.Fatalf("status=%d answer=%+v", status, e)
-	}
-	if n := used(t, r.db, "hanzo", "inv-1"); n != 0 {
-		t.Fatalf("used %d seats on the org the account lives in", n)
-	}
-	if m := member(t, r.db, "hanzo/boss", "hanzo"); m != nil && m.Role != store.RoleOwner && m.Role != store.RoleAdmin && m.Role != store.RoleMember {
-		t.Fatalf("unexpected role %q", m.Role)
-	}
-}
-
-// The pinned address admits only the account holding it, and only once proven.
-// The holder of the code is told which, since the code already came to them.
-func TestAccept_pinnedAddress(t *testing.T) {
-	r := newRig(t)
-	seedPerson(t, r.db, "hanzo", "ada", "ada@example.com", false)
-	seedPerson(t, r.db, "hanzo", "eve", "eve@example.com", true)
-	seedInvite(t, r.db, invite{owner: "acme", name: "inv-1", code: "K7PQ2M9XRT", email: "ada@example.com", state: "Active", quota: 1})
-
-	status, e := r.accept(t, "hanzo/eve", `{"owner":"acme","code":"K7PQ2M9XRT"}`)
-	if status != 400 || !strings.Contains(e.Msg, "different email address") {
-		t.Fatalf("another address: status=%d answer=%+v", status, e)
-	}
-	status, e = r.accept(t, "hanzo/ada", `{"owner":"acme","code":"K7PQ2M9XRT"}`)
-	if status != 400 || !strings.Contains(e.Msg, "confirm your email") {
-		t.Fatalf("unproven address: status=%d answer=%+v", status, e)
-	}
-	if member(t, r.db, "hanzo/eve", "acme") != nil || member(t, r.db, "hanzo/ada", "acme") != nil {
-		t.Fatal("a refused accept made a member")
-	}
-	if n := used(t, r.db, "acme", "inv-1"); n != 0 {
-		t.Fatalf("a refused accept spent %d seats", n)
-	}
-}
-
-// A wrong code, a withdrawn, spent or application-pinned invitation, an org that
-// does not stand and a reserved org read identically.
-func TestAccept_unusableIsOneSentence(t *testing.T) {
-	r := newRig(t)
-	seedPerson(t, r.db, "hanzo", "ada", "ada@example.com", true)
-	seedInvite(t, r.db, invite{owner: "acme", name: "open", code: "OPENCODE22", state: "Active", quota: 1})
-	seedInvite(t, r.db, invite{owner: "acme", name: "off", code: "OFFCODE222", state: "Suspended", quota: 1})
-	seedInvite(t, r.db, invite{owner: "acme", name: "spent", code: "SPENTCODE2", state: "Active", quota: 1, used: 1})
-	seedInvite(t, r.db, invite{owner: "acme", name: "pinned", code: "APPCODE222", state: "Active", quota: 1, application: "console"})
-	seedInvite(t, r.db, invite{owner: "admin", name: "root", code: "ROOTCODE22", state: "Active", quota: 1})
-
-	var first string
-	for _, body := range []string{
-		`{"owner":"acme","code":"WRONGCODE2"}`,
-		`{"owner":"acme","code":"OFFCODE222"}`,
-		`{"owner":"acme","code":"SPENTCODE2"}`,
-		`{"owner":"acme","code":"APPCODE222"}`,
-		`{"owner":"nowhere","code":"OPENCODE22"}`,
-		`{"owner":"admin","code":"ROOTCODE22"}`,
-	} {
-		status, e := r.accept(t, "hanzo/ada", body)
-		if status != 400 || e.Status != "error" {
-			t.Fatalf("%s: status=%d answer=%+v", body, status, e)
-		}
-		if first == "" {
-			first = e.Msg
-		} else if e.Msg != first {
-			t.Fatalf("%s answered %q, the others %q", body, e.Msg, first)
-		}
-	}
-	if member(t, r.db, "hanzo/ada", "acme") != nil || member(t, r.db, "hanzo/ada", "admin") != nil {
-		t.Fatal("a refused accept made a member")
-	}
-}
-
-// Nobody signed in joins nothing.
-func TestAccept_needsASignedInCaller(t *testing.T) {
-	r := newRig(t)
-	seedInvite(t, r.db, invite{owner: "acme", name: "open", code: "OPENCODE22", state: "Active", quota: 1})
-	req := httptest.NewRequest("POST", acceptPath, strings.NewReader(`{"owner":"acme","code":"OPENCODE22"}`))
+	req := httptest.NewRequest("POST", acceptPath, strings.NewReader(body))
 	req.Host = "hanzo.id"
 	req.Header.Set("Content-Type", "application/json")
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
 	resp, err := testhttp.Do(r.app, req)
 	if err != nil {
 		t.Fatalf("POST: %v", err)
 	}
 	b, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
-	if resp.StatusCode != 400 || !strings.Contains(string(b), "please sign in first") {
-		t.Fatalf("status=%d body=%s", resp.StatusCode, b)
+	var e envelope
+	if err := json.Unmarshal(b, &e); err != nil {
+		t.Fatalf("decode %s: %v", b, err)
+	}
+	return resp.StatusCode, e
+}
+
+// as is sub's platform access token.
+func (r *rig) as(t *testing.T, sub string) string {
+	return r.access(t, sub, clientID, "access-token")
+}
+
+func TestAccept_joinsAsAMemberAndSpendsOneSeat(t *testing.T) {
+	r := acceptRig(t)
+	seedPerson(t, r.db, "hanzo", "ada", "ada@example.com", false)
+	seedInvite(t, r.db, invite{owner: "acme", name: "link", code: "LINKCODE22", state: "Active", quota: 25})
+
+	status, e := r.accept(t, r.as(t, "hanzo/ada"), `{"owner":"acme","code":"LINKCODE22"}`)
+	if status != 200 || e.Status != "ok" || e.Data.Org != "acme" || !e.Data.Joined {
+		t.Fatalf("status=%d answer=%+v", status, e)
+	}
+	m := member(t, r.db, "hanzo/ada", "acme")
+	if m == nil || m.Role != store.RoleMember || m.Invitation != "link" {
+		t.Fatalf("membership %+v, want a member row naming the invitation", m)
+	}
+	if n := used(t, r.db, "acme", "link"); n != 1 {
+		t.Fatalf("used %d seats, want 1", n)
+	}
+	if n, err := store.Recorded(context.Background(), r.db, schema.ActionInviteAccept, "User", "hanzo/ada", time.Now().Add(-time.Minute)); err != nil || n != 1 {
+		t.Fatalf("recorded %d joins (%v), want 1", n, err)
+	}
+}
+
+// A shared link admits each account once; a member joining again spends nothing.
+func TestAccept_aSharedLinkAdmitsEachAccountOnce(t *testing.T) {
+	r := acceptRig(t)
+	seedPerson(t, r.db, "hanzo", "ada", "ada@example.com", false)
+	seedPerson(t, r.db, "hanzo", "bea", "bea@example.com", true)
+	seedInvite(t, r.db, invite{owner: "acme", name: "link", code: "LINKCODE22", state: "Active", quota: 25})
+	for _, sub := range []string{"hanzo/ada", "hanzo/bea", "hanzo/ada"} {
+		if status, e := r.accept(t, r.as(t, sub), `{"owner":"acme","code":"LINKCODE22"}`); status != 200 || !e.Data.Joined {
+			t.Fatalf("%s: status=%d answer=%+v", sub, status, e)
+		}
+	}
+	if n := used(t, r.db, "acme", "link"); n != 2 {
+		t.Fatalf("used %d seats, want 2", n)
+	}
+}
+
+// MEDIUM 1: a tenant's application holding its users' tokens joins nobody, and
+// neither does an ID token.
+func TestAccept_onlyThePlatformsAccessTokens(t *testing.T) {
+	r := acceptRig(t)
+	seedPerson(t, r.db, "hanzo", "ada", "ada@example.com", false)
+	seedInvite(t, r.db, invite{owner: "acme", name: "link", code: "LINKCODE22", state: "Active", quota: 25})
+	for name, bearer := range map[string]string{
+		"a tenant's application": r.access(t, "hanzo/ada", "acme-app", "access-token"),
+		"an ID token":            r.access(t, "hanzo/ada", clientID, "id-token"),
+		"a token with no client": r.bearer(t, "hanzo/ada"),
+	} {
+		if status, e := r.accept(t, bearer, `{"owner":"acme","code":"LINKCODE22"}`); status != 403 {
+			t.Fatalf("%s: status=%d answer=%+v, want 403", name, status, e)
+		}
+	}
+	if member(t, r.db, "hanzo/ada", "acme") != nil {
+		t.Fatal("a refused credential made a member")
+	}
+}
+
+// outbox keeps the codes otp sends.
+type outbox struct {
+	mu   sync.Mutex
+	body []string
+}
+
+func (o *outbox) Send(_ context.Context, m otp.Message) error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.body = append(o.body, m.Body)
+	return nil
+}
+
+var digits = regexp.MustCompile(`\d{6}`)
+
+// codeFor has IAM send user a code to their own address and returns it.
+func codeFor(t *testing.T, db orm.DB, owner, name string) string {
+	t.Helper()
+	box := &outbox{}
+	otp.BindSender(box)
+	t.Cleanup(func() { otp.BindSender(nil) })
+	u, err := store.GetUserByName(context.Background(), db, owner, name)
+	if err != nil || u == nil {
+		t.Fatalf("read %s/%s: %v", owner, name, err)
+	}
+	if err := otp.Issue(context.Background(), db, owner, u.Email, "203.0.113.7", u, time.Now()); err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+	return digits.FindString(box.body[len(box.body)-1])
+}
+
+// MEDIUM (email pin): the address is proven by IAM for this join. An account's
+// own verified flag — which a tenant's identity provider can set — is not enough.
+func TestAccept_pinnedAddressNeedsACodeSentToIt(t *testing.T) {
+	r := acceptRig(t)
+	seedPerson(t, r.db, "hanzo", "ada", "ada@example.com", true)
+	seedPerson(t, r.db, "hanzo", "eve", "eve@example.com", true)
+	seedInvite(t, r.db, invite{owner: "acme", name: "inv-1", code: "K7PQ2M9XRT", email: "Ada@Example.com", state: "Active", quota: 1})
+	body := `{"owner":"acme","code":"K7PQ2M9XRT"}`
+
+	status, e := r.accept(t, r.as(t, "hanzo/eve"), body)
+	if status != 400 || !strings.Contains(e.Msg, "different email address") {
+		t.Fatalf("another address: status=%d answer=%+v", status, e)
+	}
+	status, e = r.accept(t, r.as(t, "hanzo/ada"), body)
+	if status != 400 || e.Code != "email_code_required" {
+		t.Fatalf("no code: status=%d answer=%+v, want email_code_required", status, e)
+	}
+	status, e = r.accept(t, r.as(t, "hanzo/ada"), `{"owner":"acme","code":"K7PQ2M9XRT","emailCode":"000000"}`)
+	if status != 400 || !strings.Contains(e.Msg, "incorrect") {
+		t.Fatalf("wrong code: status=%d answer=%+v", status, e)
+	}
+	if member(t, r.db, "hanzo/ada", "acme") != nil || used(t, r.db, "acme", "inv-1") != 0 {
+		t.Fatal("a refused accept made a member or spent a seat")
+	}
+
+	code := codeFor(t, r.db, "hanzo", "ada")
+	status, e = r.accept(t, r.as(t, "hanzo/ada"), `{"owner":"acme","code":"K7PQ2M9XRT","emailCode":"`+code+`"}`)
+	if status != 200 || !e.Data.Joined {
+		t.Fatalf("with the code: status=%d answer=%+v", status, e)
+	}
+	if used(t, r.db, "acme", "inv-1") != 1 {
+		t.Fatal("no seat was spent")
+	}
+}
+
+// An account already in the org — where it lives, or by membership — spends nothing.
+func TestAccept_alreadyAMemberSpendsNothing(t *testing.T) {
+	r := acceptRig(t)
+	seedInvite(t, r.db, invite{owner: "hanzo", name: "inv-1", code: "HOMECODE22", state: "Active", quota: 1})
+	if status, e := r.accept(t, r.as(t, "hanzo/boss"), `{"owner":"hanzo","code":"HOMECODE22"}`); status != 200 || !e.Data.Joined {
+		t.Fatalf("status=%d answer=%+v", status, e)
+	}
+	if n := used(t, r.db, "hanzo", "inv-1"); n != 0 {
+		t.Fatalf("used %d seats on the org the account lives in", n)
+	}
+}
+
+// A wrong code, a withdrawn, spent, application-pinned, username-pinned or pattern
+// invitation, a code longer than any, an org that does not stand — its rows left
+// behind included — and a reserved org read identically.
+func TestAccept_unusableIsOneSentence(t *testing.T) {
+	r := acceptRig(t)
+	seedPerson(t, r.db, "hanzo", "ada", "ada@example.com", true)
+	for _, in := range []invite{
+		{owner: "acme", name: "off", code: "OFFCODE222", state: "Suspended", quota: 1},
+		{owner: "acme", name: "spent", code: "SPENTCODE2", state: "Active", quota: 1, used: 1},
+		{owner: "acme", name: "app", code: "APPCODE222", state: "Active", quota: 1, application: "console"},
+		{owner: "acme", name: "who", code: "WHOCODE222", state: "Active", quota: 1, username: "ada"},
+		{owner: "acme", name: "pat", code: "PAT.*", state: "Active", quota: 1, pattern: true},
+		{owner: "ghost", name: "left", code: "GHOSTCODE2", state: "Active", quota: 1},
+		{owner: "admin", name: "root", code: "ROOTCODE22", state: "Active", quota: 1},
+	} {
+		seedInvite(t, r.db, in)
+	}
+	var first string
+	for _, body := range []string{
+		`{"owner":"acme","code":"WRONGCODE2"}`,
+		`{"owner":"acme","code":"OFFCODE222"}`,
+		`{"owner":"acme","code":"SPENTCODE2"}`,
+		`{"owner":"acme","code":"APPCODE222"}`,
+		`{"owner":"acme","code":"WHOCODE222"}`,
+		`{"owner":"acme","code":"PATTERN"}`,
+		`{"owner":"acme","code":"` + strings.Repeat("X", 65) + `"}`,
+		`{"owner":"ghost","code":"GHOSTCODE2"}`,
+		`{"owner":"admin","code":"ROOTCODE22"}`,
+	} {
+		status, e := r.accept(t, r.as(t, "hanzo/ada"), body)
+		if status != 400 || e.Status != "error" {
+			t.Fatalf("%.60s: status=%d answer=%+v", body, status, e)
+		}
+		if first == "" {
+			first = e.Msg
+		} else if e.Msg != first {
+			t.Fatalf("%.60s answered %q, the others %q", body, e.Msg, first)
+		}
+	}
+	for _, org := range []string{"acme", "ghost", "admin"} {
+		if member(t, r.db, "hanzo/ada", org) != nil {
+			t.Fatalf("a refused accept made a member of %s", org)
+		}
+	}
+}
+
+// LOW: an account refused ten times in an hour is refused before anything is read.
+func TestAccept_attemptsAreLimited(t *testing.T) {
+	r := acceptRig(t)
+	seedPerson(t, r.db, "hanzo", "ada", "ada@example.com", false)
+	seedInvite(t, r.db, invite{owner: "acme", name: "link", code: "LINKCODE22", state: "Active", quota: 25})
+	for i := 0; i < 10; i++ {
+		if status, _ := r.accept(t, r.as(t, "hanzo/ada"), `{"owner":"acme","code":"WRONGCODE2"}`); status != 400 {
+			t.Fatalf("guess %d: status=%d", i, status)
+		}
+	}
+	status, e := r.accept(t, r.as(t, "hanzo/ada"), `{"owner":"acme","code":"LINKCODE22"}`)
+	if status != 429 {
+		t.Fatalf("after ten refusals: status=%d answer=%+v, want 429", status, e)
+	}
+	if member(t, r.db, "hanzo/ada", "acme") != nil {
+		t.Fatal("a limited caller joined")
+	}
+}
+
+// Nobody signed in joins nothing.
+func TestAccept_needsASignedInCaller(t *testing.T) {
+	r := acceptRig(t)
+	seedInvite(t, r.db, invite{owner: "acme", name: "open", code: "OPENCODE22", state: "Active", quota: 1})
+	status, e := r.accept(t, "", `{"owner":"acme","code":"OPENCODE22"}`)
+	if status != 400 || e.Code != "login_required" {
+		t.Fatalf("status=%d answer=%+v", status, e)
 	}
 	if n := used(t, r.db, "acme", "open"); n != 0 {
 		t.Fatalf("an anonymous accept spent %d seats", n)

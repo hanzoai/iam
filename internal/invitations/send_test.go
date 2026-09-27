@@ -5,10 +5,11 @@ package invitations_test
 
 // POST /v1/iam/invitations/{owner}/{name}/send emails an invitation to the address
 // it is pinned to. What it must hold: only an admin of the invitation's org sends
-// it, only the pinned address receives it, the link is on a configured identity
-// host whatever Host the request carried, the sending account is the platform
-// application's org (a customer org has none), and one invitation is not mailed
-// twice inside a minute.
+// it; it goes out through the platform application the caller's access token was
+// issued to — that application's org sends, and the link is on the token's issuer
+// — and never through one the request names; only the pinned address receives it,
+// written bare; a name somebody chose cannot put markup or a second link in the
+// email; and one invitation, one org and one address are each paced.
 
 import (
 	"context"
@@ -19,23 +20,30 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/hanzoai/orm"
 
-	"github.com/hanzoai/iam/internal/oidc"
 	"github.com/hanzoai/iam/internal/otp"
 	"github.com/hanzoai/iam/internal/testhttp"
 	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
-// outbox is a delivery transport that keeps what it was handed.
+// outbox is a delivery transport that keeps what it was handed. during runs while
+// a message is in flight, before the answer.
 type outbox struct {
-	mu   sync.Mutex
-	sent []otp.Message
-	fail error
+	mu     sync.Mutex
+	sent   []otp.Message
+	fail   error
+	during func()
 }
 
 func (o *outbox) Send(_ context.Context, m otp.Message) error {
+	if o.during != nil {
+		o.during()
+	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if o.fail != nil {
@@ -51,23 +59,19 @@ func (o *outbox) messages() []otp.Message {
 	return append([]otp.Message(nil), o.sent...)
 }
 
-// sendRig is the list harness plus the rows a send reads: the customer org acme
-// with its admin and a member, the platform application every brand host signs
-// in through, another tenant's application, and a delivery transport.
+// sendRig is the list harness plus what a send reads: the customer org acme with
+// its admin and a member, the platform's applications on two brands, a tenant's
+// own application, and a delivery transport.
 func sendRig(t *testing.T) (*harness, *outbox) {
 	t.Helper()
-	t.Setenv("IAM_ISSUER", "https://hanzo.id")
-	t.Setenv("IAM_ISSUER_MAP", `{"lux.id":"https://lux.id"}`)
-	if err := oidc.InitIssuerResolver(); err != nil {
-		t.Fatalf("issuer: %v", err)
-	}
 	h := newHarness(t)
 	seedUser(t, h.db, "acme", "owner", true)
 	seedUser(t, h.db, "acme", "bob", false)
 	seedOrgRow(t, h.db, "acme", "Acme Robotics")
 	seedOrgRow(t, h.db, "globex", "Globex")
-	seedAppRow(t, h.db, "admin", "hanzo-app", "hanzo")
-	seedAppRow(t, h.db, "globex", "globex-app", "globex")
+	seedAppRow(t, h.db, "hanzo-app", "hanzo", true)
+	seedAppRow(t, h.db, "lux-app", "lux", true)
+	seedAppRow(t, h.db, "globex-console", "globex", false)
 
 	box := &outbox{}
 	otp.BindSender(box)
@@ -85,34 +89,52 @@ func seedOrgRow(t *testing.T, db orm.DB, name, display string) {
 	}
 }
 
-func seedAppRow(t *testing.T, db orm.DB, owner, name, org string) {
+// seedAppRow files an application under admin, as bootstrap files every one —
+// the platform's and tenants' alike — so only Platform tells them apart.
+func seedAppRow(t *testing.T, db orm.DB, name, org string, platform bool) {
 	t.Helper()
 	a := orm.New[schema.Application](db)
-	a.Owner, a.Name, a.Organization = owner, name, org
-	a.SetId(owner + "/" + name)
+	a.Owner, a.Name, a.Organization, a.ClientId, a.Platform = "admin", name, org, name, platform
+	a.SetId("admin/" + name)
 	if err := a.CreateCtx(context.Background()); err != nil {
-		t.Fatalf("seed app %s/%s: %v", owner, name, err)
+		t.Fatalf("seed app %s: %v", name, err)
 	}
 }
 
-func seedPinned(t *testing.T, db orm.DB, owner, name, email string) {
+func seedPinned(t *testing.T, db orm.DB, name, email string) {
 	t.Helper()
 	inv := orm.New[schema.Invitation](db)
-	inv.Owner, inv.Name = owner, name
+	inv.Owner, inv.Name = "acme", name
 	inv.Code, inv.Quota, inv.State, inv.Email = "K7PQ2M9XRT", 1, "Active", email
-	inv.SetId(owner + "/" + name)
+	inv.SetId("acme/" + name)
 	if err := inv.CreateCtx(context.Background()); err != nil {
 		t.Fatalf("seed invitation: %v", err)
 	}
 }
 
-// send drives one send as sub, arriving on host, and returns status and body.
-func (h *harness) send(t *testing.T, sub, host, path, body string) (int, string) {
+// access signs an access token for sub, issued by iss to the client azp.
+func (h *harness) access(t *testing.T, sub, azp, iss, kind string) string {
+	t.Helper()
+	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		"sub": sub, "azp": azp, "aud": azp, "iss": iss, "tokenType": kind,
+		"iat": time.Now().Add(-time.Minute).Unix(),
+		"exp": time.Now().Add(time.Hour).Unix(),
+	})
+	tok.Header["kid"] = signingKid
+	s, err := tok.SignedString(h.key)
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	return s
+}
+
+// send drives one send with bearer, arriving on host, and returns status and body.
+func (h *harness) send(t *testing.T, bearer, host, path, body string) (int, string) {
 	t.Helper()
 	req := httptest.NewRequest("POST", path, strings.NewReader(body))
 	req.Host = host
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+h.token(t, sub))
+	req.Header.Set("Authorization", "Bearer "+bearer)
 	resp, err := testhttp.Do(h.app, req)
 	if err != nil {
 		t.Fatalf("POST %s: %v", path, err)
@@ -122,16 +144,18 @@ func (h *harness) send(t *testing.T, sub, host, path, body string) (int, string)
 	return resp.StatusCode, string(b)
 }
 
-const (
-	sendPath = "/v1/iam/invitations/acme/inv-1/send"
-	platform = `{"application":"admin/hanzo-app"}`
-)
+const sendPath = "/v1/iam/invitations/acme/inv-1/send"
 
-func TestSend_mailsThePinnedAddressFromThePlatformOrg(t *testing.T) {
+// owner is acme's admin signed in to the platform's Hanzo app at hanzo.id.
+func (h *harness) owner(t *testing.T) string {
+	return h.access(t, "acme/owner", "hanzo-app", "https://hanzo.id", "access-token")
+}
+
+func TestSend_mailsThePinnedAddressTheWayTheInviterCameIn(t *testing.T) {
 	h, box := sendRig(t)
-	seedPinned(t, h.db, "acme", "inv-1", "ada@example.com")
+	seedPinned(t, h.db, "inv-1", "ada@example.com")
 
-	status, body := h.send(t, "acme/owner", "hanzo.id", sendPath, platform)
+	status, body := h.send(t, h.owner(t), "hanzo.id", sendPath, `{}`)
 	if status != 200 {
 		t.Fatalf("status=%d body=%s", status, body)
 	}
@@ -147,64 +171,148 @@ func TestSend_mailsThePinnedAddressFromThePlatformOrg(t *testing.T) {
 		t.Fatalf("sent %d messages", len(got))
 	}
 	m := got[0]
-	if m.To != "ada@example.com" || m.Channel != otp.Email {
-		t.Fatalf("to %q over %q", m.To, m.Channel)
+	if m.To != "ada@example.com" || m.Channel != otp.Email || m.Org != "hanzo" {
+		t.Fatalf("to %q over %q as %q; want ada@example.com, email, the token's application's org hanzo", m.To, m.Channel, m.Org)
 	}
-	// acme has no sending account; the platform application's org sends.
-	if m.Org != "hanzo" {
-		t.Fatalf("sent as org %q, want the platform application's org hanzo", m.Org)
+	if m.Subject != "You're invited to join Acme Robotics" {
+		t.Fatalf("subject %q", m.Subject)
 	}
-	if !strings.Contains(m.Subject, "Acme Robotics") {
-		t.Fatalf("subject %q does not name the org", m.Subject)
-	}
-	link := "https://hanzo.id/join?client_id=hanzo-app&invite=K7PQ2M9XRT&org=acme"
-	if !strings.Contains(m.Body, link) {
-		t.Fatalf("body does not carry %s:\n%s", link, m.Body)
+	link := "https://hanzo.id/join?client_id=hanzo-app&amp;invite=K7PQ2M9XRT&amp;org=acme"
+	if strings.Count(m.Body, "<a ") != 1 || !strings.Contains(m.Body, `<a href="`+link+`">`) {
+		t.Fatalf("want exactly one anchor, to %s:\n%s", link, m.Body)
 	}
 }
 
-// The link is on a CONFIGURED identity host. The Host header selects one; it never
-// becomes one.
-func TestSend_linkHostIsAConfiguredIssuer(t *testing.T) {
-	for host, want := range map[string]string{
-		"lux.id":       "https://lux.id/join?",
-		"evil.example": "https://hanzo.id/join?",
+// HIGH 1: the sender and the link are the token's. A request cannot name another
+// brand's application, and the Host header moves neither.
+func TestSend_theTokenDecidesSenderAndLink(t *testing.T) {
+	h, box := sendRig(t)
+	seedPinned(t, h.db, "inv-1", "ada@example.com")
+
+	lux := h.access(t, "acme/owner", "lux-app", "https://lux.id", "access-token")
+	if status, body := h.send(t, lux, "hanzo.id", sendPath, `{"application":"admin/globex-console"}`); status != 200 {
+		t.Fatalf("status=%d body=%s", status, body)
+	}
+	m := box.messages()[0]
+	if m.Org != "lux" || !strings.Contains(m.Body, `href="https://lux.id/join?client_id=lux-app&amp;`) {
+		t.Fatalf("sent as %q with body:\n%s\nwant lux's account and a lux.id link", m.Org, m.Body)
+	}
+}
+
+// HIGH 1 / MEDIUM 1: a tenant's application, an ID token and a plain token with no
+// client send nothing.
+func TestSend_onlyThePlatformsAccessTokens(t *testing.T) {
+	for name, bearer := range map[string]func(h *harness) string{
+		"a tenant's application": func(h *harness) string {
+			return h.access(t, "acme/owner", "globex-console", "https://hanzo.id", "access-token")
+		},
+		"an ID token":            func(h *harness) string { return h.access(t, "acme/owner", "hanzo-app", "https://hanzo.id", "id-token") },
+		"a token with no client": func(h *harness) string { return h.token(t, "acme/owner") },
 	} {
-		t.Run(host, func(t *testing.T) {
+		t.Run(name, func(t *testing.T) {
 			h, box := sendRig(t)
-			seedPinned(t, h.db, "acme", "inv-1", "ada@example.com")
-			if status, body := h.send(t, "acme/owner", host, sendPath, platform); status != 200 {
-				t.Fatalf("status=%d body=%s", status, body)
+			seedPinned(t, h.db, "inv-1", "ada@example.com")
+			if status, body := h.send(t, bearer(h), "hanzo.id", sendPath, `{}`); status != 403 {
+				t.Fatalf("status=%d body=%s, want 403", status, body)
 			}
-			if got := box.messages(); len(got) != 1 || !strings.Contains(got[0].Body, want) {
-				t.Fatalf("want a link starting %s, got %+v", want, got)
+			if len(box.messages()) != 0 {
+				t.Fatal("a refused send mailed")
 			}
 		})
 	}
 }
 
+// HIGH 2: a name somebody chose is text. It cannot add markup, a link, or a line
+// to the subject.
+func TestSend_namesAreEscaped(t *testing.T) {
+	h, box := sendRig(t)
+	o, _ := store.GetOrganizationByName(context.Background(), h.db, "acme")
+	o.DisplayName = "Hanzo Security</b><br><a href=\"https://hanzo-id.example/verify\">Your account is locked</a><!--\r\nBcc: x@evil.example"
+	if err := o.UpdateCtx(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	seedPinned(t, h.db, "inv-1", "ada@example.com")
+	if status, body := h.send(t, h.owner(t), "hanzo.id", sendPath, `{}`); status != 200 {
+		t.Fatalf("status=%d body=%s", status, body)
+	}
+	m := box.messages()[0]
+	if strings.Count(m.Body, "<a ") != 1 || strings.Contains(m.Body, "<br>") || strings.Contains(m.Body, "<!--") {
+		t.Fatalf("markup got through:\n%s", m.Body)
+	}
+	if strings.ContainsAny(m.Subject, "\r\n") || len([]rune(m.Subject)) > len("You're invited to join ")+80 {
+		t.Fatalf("subject %q", m.Subject)
+	}
+}
+
+// HIGH 2: an invitation reaches one bare address, or nobody.
+func TestSend_theRecipientIsOneBareAddress(t *testing.T) {
+	h, box := sendRig(t)
+	seedPinned(t, h.db, "inv-1", `"Hanzo Billing" <victim@example.com>`)
+	if status, body := h.send(t, h.owner(t), "hanzo.id", sendPath, `{}`); status != 400 {
+		t.Fatalf("status=%d body=%s, want 400", status, body)
+	}
+	if len(box.messages()) != 0 {
+		t.Fatal("mailed a display-named address")
+	}
+}
+
+// HIGH 2: many invitations pinned to one address are one address's quota.
+func TestSend_oneAddressIsPacedAcrossInvitations(t *testing.T) {
+	h, box := sendRig(t)
+	for i := 0; i < 8; i++ {
+		seedPinned(t, h.db, "inv-"+string(rune('a'+i)), "ada@example.com")
+	}
+	var refused int
+	for i := 0; i < 8; i++ {
+		status, _ := h.send(t, h.owner(t), "hanzo.id", "/v1/iam/invitations/acme/inv-"+string(rune('a'+i))+"/send", `{}`)
+		if status == 429 {
+			refused++
+		}
+	}
+	if got := len(box.messages()); got != 5 || refused != 3 {
+		t.Fatalf("mailed %d, refused %d; want 5 and 3", got, refused)
+	}
+}
+
+// HIGH 2: an org is paced by the hour, counted from the ledger.
+func TestSend_oneOrgIsPacedByTheHour(t *testing.T) {
+	h, box := sendRig(t)
+	seedPinned(t, h.db, "inv-1", "ada@example.com")
+	for i := 0; i < 50; i++ {
+		if err := store.Append(context.Background(), h.db, &schema.AuditLog{
+			Owner: "acme", Organization: "acme", Action: schema.ActionInviteSend, Object: "x@example.com",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if status, body := h.send(t, h.owner(t), "hanzo.id", sendPath, `{}`); status != 429 {
+		t.Fatalf("status=%d body=%s, want 429", status, body)
+	}
+	if len(box.messages()) != 0 {
+		t.Fatal("mailed past the org's hour")
+	}
+}
+
 func TestSend_refusals(t *testing.T) {
 	for _, tc := range []struct {
-		name, sub, path, body string
-		pin                   string
-		want                  int
+		name, sub, path string
+		pin             string
+		want            int
 	}{
-		{"a member who does not administer the org", "acme/bob", sendPath, platform, "ada@example.com", 403},
-		{"an admin of another org", "hanzo/boss", sendPath, platform, "ada@example.com", 403},
-		{"an invitation pinned to no address", "acme/owner", sendPath, platform, "", 400},
-		{"no application named", "acme/owner", sendPath, `{}`, "ada@example.com", 400},
-		{"another tenant's application", "acme/owner", sendPath, `{"application":"globex/globex-app"}`, "ada@example.com", 400},
-		{"an application that does not exist", "acme/owner", sendPath, `{"application":"admin/nope"}`, "ada@example.com", 400},
-		{"an invitation that does not exist", "acme/owner", "/v1/iam/invitations/acme/inv-9/send", platform, "ada@example.com", 404},
+		{"a member who does not administer the org", "acme/bob", sendPath, "ada@example.com", 403},
+		{"an admin of another org", "hanzo/boss", sendPath, "ada@example.com", 403},
+		{"an invitation pinned to no address", "acme/owner", sendPath, "", 400},
+		{"an invitation that does not exist", "acme/owner", "/v1/iam/invitations/acme/inv-9/send", "ada@example.com", 404},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h, box := sendRig(t)
-			seedPinned(t, h.db, "acme", "inv-1", tc.pin)
-			if status, body := h.send(t, tc.sub, "hanzo.id", tc.path, tc.body); status != tc.want {
+			seedPinned(t, h.db, "inv-1", tc.pin)
+			bearer := h.access(t, tc.sub, "hanzo-app", "https://hanzo.id", "access-token")
+			if status, body := h.send(t, bearer, "hanzo.id", tc.path, `{}`); status != tc.want {
 				t.Fatalf("status=%d body=%s, want %d", status, body, tc.want)
 			}
-			if got := box.messages(); len(got) != 0 {
-				t.Fatalf("a refused send mailed %d messages", len(got))
+			if len(box.messages()) != 0 {
+				t.Fatal("a refused send mailed")
 			}
 		})
 	}
@@ -213,8 +321,9 @@ func TestSend_refusals(t *testing.T) {
 // A SuperAdmin sends for any org.
 func TestSend_superAdmin(t *testing.T) {
 	h, box := sendRig(t)
-	seedPinned(t, h.db, "acme", "inv-1", "ada@example.com")
-	if status, body := h.send(t, "admin/root", "hanzo.id", sendPath, platform); status != 200 {
+	seedPinned(t, h.db, "inv-1", "ada@example.com")
+	root := h.access(t, "admin/root", "hanzo-app", "https://hanzo.id", "access-token")
+	if status, body := h.send(t, root, "hanzo.id", sendPath, `{}`); status != 200 {
 		t.Fatalf("status=%d body=%s", status, body)
 	}
 	if len(box.messages()) != 1 {
@@ -225,53 +334,81 @@ func TestSend_superAdmin(t *testing.T) {
 // Inside a minute the same invitation is not mailed again.
 func TestSend_resendTooSoon(t *testing.T) {
 	h, box := sendRig(t)
-	seedPinned(t, h.db, "acme", "inv-1", "ada@example.com")
-	if status, body := h.send(t, "acme/owner", "hanzo.id", sendPath, platform); status != 200 {
+	seedPinned(t, h.db, "inv-1", "ada@example.com")
+	if status, body := h.send(t, h.owner(t), "hanzo.id", sendPath, `{}`); status != 200 {
 		t.Fatalf("first: status=%d body=%s", status, body)
 	}
-	if status, body := h.send(t, "acme/owner", "hanzo.id", sendPath, platform); status != 429 {
+	if status, body := h.send(t, h.owner(t), "hanzo.id", sendPath, `{}`); status != 429 {
 		t.Fatalf("second: status=%d body=%s, want 429", status, body)
 	}
-	if got := box.messages(); len(got) != 1 {
-		t.Fatalf("mailed %d times, want once", len(got))
+	if got := len(box.messages()); got != 1 {
+		t.Fatalf("mailed %d times, want once", got)
 	}
 }
 
-// With nothing to deliver through, the send says so, and a failed send does not
-// hold the next one back.
-func TestSend_noDelivery(t *testing.T) {
+// LOW: a delivery failure answers in general terms — the carrier's own words name
+// other tenants' configuration — and does not hold the next send back.
+func TestSend_deliveryFailures(t *testing.T) {
 	h, box := sendRig(t)
-	seedPinned(t, h.db, "acme", "inv-1", "ada@example.com")
+	seedPinned(t, h.db, "inv-1", "ada@example.com")
 	otp.BindSender(nil)
-	if status, body := h.send(t, "acme/owner", "hanzo.id", sendPath, platform); status != 503 {
+	if status, body := h.send(t, h.owner(t), "hanzo.id", sendPath, `{}`); status != 503 {
 		t.Fatalf("status=%d body=%s, want 503", status, body)
 	}
-	box.fail = errors.New("smtp down")
+	box.fail = errors.New(`no email provider configured for org "globex"`)
 	otp.BindSender(box)
-	if status, body := h.send(t, "acme/owner", "hanzo.id", sendPath, platform); status != 502 {
-		t.Fatalf("status=%d body=%s, want 502", status, body)
+	status, body := h.send(t, h.owner(t), "hanzo.id", sendPath, `{}`)
+	if status != 502 || strings.Contains(body, "globex") || strings.Contains(body, "provider") {
+		t.Fatalf("status=%d body=%s, want a generic 502", status, body)
 	}
 	box.fail = nil
-	if status, body := h.send(t, "acme/owner", "hanzo.id", sendPath, platform); status != 200 {
+	if status, body := h.send(t, h.owner(t), "hanzo.id", sendPath, `{}`); status != 200 {
 		t.Fatalf("after the outage: status=%d body=%s, want 200", status, body)
 	}
 }
 
-// A pattern is not a code; the invitation's default code is the one mailed.
-func TestSend_patternSendsItsDefaultCode(t *testing.T) {
+// LOW: putting the send stamp back after a failed delivery touches that field
+// alone — a seat spent while the email was in flight stays spent.
+func TestSend_releaseKeepsWhatChangedMeanwhile(t *testing.T) {
 	h, box := sendRig(t)
-	inv := orm.New[schema.Invitation](h.db)
-	inv.Owner, inv.Name, inv.Email = "acme", "inv-1", "ada@example.com"
-	inv.Code, inv.IsRegexp, inv.DefaultCode = "ACME-[0-9]{4}", true, "ACME-2026"
-	inv.Quota, inv.State = 1, "Active"
-	inv.SetId("acme/inv-1")
-	if err := inv.CreateCtx(context.Background()); err != nil {
-		t.Fatalf("seed: %v", err)
+	seedPinned(t, h.db, "inv-1", "ada@example.com")
+	box.fail = errors.New("smtp down")
+	box.during = func() {
+		inv, err := orm.Get[schema.Invitation](h.db, "acme/inv-1")
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		inv.UsedCount, inv.State = 1, "Suspended"
+		if err := inv.UpdateCtx(context.Background()); err != nil {
+			t.Error(err)
+		}
 	}
-	if status, body := h.send(t, "acme/owner", "hanzo.id", sendPath, platform); status != 200 {
+	if status, body := h.send(t, h.owner(t), "hanzo.id", sendPath, `{}`); status != 502 {
+		t.Fatalf("status=%d body=%s, want 502", status, body)
+	}
+	inv, err := orm.Get[schema.Invitation](h.db, "acme/inv-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inv.UsedCount != 1 || inv.State != "Suspended" || inv.SentTime != "" {
+		t.Fatalf("after release: used=%d state=%q sent=%q; want 1, Suspended, unstamped", inv.UsedCount, inv.State, inv.SentTime)
+	}
+}
+
+// LOW: the send and the org's pace are on the audit trail, and no request can
+// remove them.
+func TestSend_isRecorded(t *testing.T) {
+	h, _ := sendRig(t)
+	seedPinned(t, h.db, "inv-1", "ada@example.com")
+	if status, body := h.send(t, h.owner(t), "hanzo.id", sendPath, `{}`); status != 200 {
 		t.Fatalf("status=%d body=%s", status, body)
 	}
-	if got := box.messages(); len(got) != 1 || !strings.Contains(got[0].Body, "invite=ACME-2026") || strings.Contains(got[0].Body, "[0-9]") {
-		t.Fatalf("mailed %+v", got)
+	n, err := store.Recorded(context.Background(), h.db, schema.ActionInviteSend, "Organization", "acme", time.Now().Add(-time.Minute))
+	if err != nil || n != 1 {
+		t.Fatalf("recorded %d sends (%v), want 1", n, err)
+	}
+	if !schema.PlatformWritten(schema.ActionInviteSend) {
+		t.Fatal("a send record is not protected from the audit CRUD")
 	}
 }

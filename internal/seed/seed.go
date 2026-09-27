@@ -206,6 +206,13 @@ func Apply(ctx context.Context, db orm.DB, data *initData) (*Summary, error) {
 				return s, err
 			}
 		}
+		// Every application this file declares is the platform's own, and only the
+		// file says so: the flag is stamped here, on new and existing rows alike.
+		if _, err := orm.GetOrUpdate[schema.Application](db, owner+"/"+a.Name, func(dst *schema.Application) {
+			dst.Platform = true
+		}); err != nil {
+			return s, fmt.Errorf("seed: mark application %s/%s: %w", owner, a.Name, err)
+		}
 	}
 	return s, nil
 }

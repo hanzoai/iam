@@ -63,6 +63,14 @@ const (
 	// The row names the service account that asked, so the trail reads the same
 	// whether a credential came from a stored secret or from the cluster.
 	ActionWorkloadToken = "workload-token"
+	// Invitations: an email sent about one, an account joining an org through one,
+	// and the refused attempts to use one — by a signed-in account, and at signup.
+	// They are the ledger the send quotas and the attempt limits count, which is
+	// why no request may create, alter or remove them.
+	ActionInviteSend          = "invitation-send"
+	ActionInviteAccept        = "invitation-accept"
+	ActionInviteRefused       = "invitation-refused"
+	ActionInviteSignupRefused = "invitation-signup-refused"
 )
 
 // PlatformWritten reports whether action names a record the platform writes
@@ -74,7 +82,8 @@ func PlatformWritten(action string) bool {
 	switch action {
 	case ActionConsentTraining, ActionIssueUserToken, ActionMintUserKeys,
 		ActionRevokeUserKeys, ActionTokenExchange, ActionAs,
-		ActionAssumeOrg, ActionReleaseOrg, ActionListOrgs, ActionWorkloadToken:
+		ActionAssumeOrg, ActionReleaseOrg, ActionListOrgs, ActionWorkloadToken,
+		ActionInviteSend, ActionInviteAccept, ActionInviteRefused, ActionInviteSignupRefused:
 		return true
 	}
 	return false

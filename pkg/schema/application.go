@@ -172,6 +172,15 @@ type Application struct {
 	IsShared                     bool            `json:"isShared" url:"-"`
 	IpRestriction                string          `json:"ipRestriction" url:"-"`
 
+	// Platform marks an application the platform itself declares (init_data.json):
+	// its own consoles and apps, never one a tenant registered. The seed stamps it on
+	// every declared application at boot, and only a SuperAdmin may change it over
+	// the API. It is what lets a signed-in person act through IAM with a bearer on
+	// the platform's behalf — sending an invitation from the platform's own email
+	// account, joining an org — which a tenant's application may not do with the
+	// tokens its users hand it.
+	Platform bool `json:"platform" url:"-"`
+
 	// ClientId is the OAuth2/OIDC client identifier and the GLOBAL key every
 	// confidential-client resolver authenticates against (store.GetApplicationByClientId,
 	// the mint gates, Basic auth). It MUST be globally unique across ALL owners — a

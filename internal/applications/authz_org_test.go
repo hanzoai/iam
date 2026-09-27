@@ -219,3 +219,27 @@ func TestSharing_OnlyASuperAdminChangesIt(t *testing.T) {
 		t.Fatalf("a tenant admin unshared an app: status=%d, want 403", st)
 	}
 }
+
+// Platform marks the platform's own applications, and a tenant marking its own
+// would let it act with its users' tokens where only the platform may.
+func TestPlatform_OnlyASuperAdminChangesIt(t *testing.T) {
+	h := newOrgHarness(t)
+	boss := h.token(t, "acme/boss")
+	root := h.token(t, "admin/root")
+
+	if st := h.do(t, "POST", "/v1/iam/applications", boss, `{"owner":"acme","name":"acme-app","organization":"acme","clientId":"acme-app","platform":true}`); st != 403 {
+		t.Fatalf("a tenant admin created a platform app: status=%d, want 403", st)
+	}
+	if st := h.do(t, "POST", "/v1/iam/applications", boss, `{"owner":"acme","name":"acme-app","organization":"acme","clientId":"acme-app"}`); st != 200 {
+		t.Fatalf("a tenant app: status=%d, want 200", st)
+	}
+	if st := h.do(t, "PUT", "/v1/iam/applications/acme/acme-app", boss, `{"owner":"acme","name":"acme-app","organization":"acme","clientId":"acme-app","platform":true}`); st != 403 {
+		t.Fatalf("a tenant admin marked an app the platform's: status=%d, want 403", st)
+	}
+	if st := h.do(t, "PUT", "/v1/iam/applications/acme/acme-app", root, `{"owner":"acme","name":"acme-app","organization":"acme","clientId":"acme-app","platform":true}`); st != 200 {
+		t.Fatalf("a SuperAdmin marked an app the platform's: status=%d, want 200", st)
+	}
+	if st := h.do(t, "PUT", "/v1/iam/applications/acme/acme-app", boss, `{"owner":"acme","name":"acme-app","organization":"acme","clientId":"acme-app","platform":false}`); st != 403 {
+		t.Fatalf("a tenant admin unmarked an app: status=%d, want 403", st)
+	}
+}

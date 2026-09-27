@@ -146,9 +146,21 @@ func signupHandler(db orm.DB) zip.Handler {
 		// filing them in the application's, puts them where they did not ask to be.
 		// Every refusal here is the same sentence as the reserved-org one above, so a
 		// prober learns neither which orgs stand nor which codes exist.
+		if f.Invitation != "" {
+			over, err := inviteGuessed(ctx, db, f.Organization)
+			if err != nil {
+				return httpx.Err(c, err.Error())
+			}
+			if over {
+				return httpx.Err(c, "too many attempts to join this organization; try again later")
+			}
+		}
 		invite, err := invitation(ctx, db, app, &f)
 		if err != nil {
 			return httpx.Err(c, err.Error())
+		}
+		if invite == nil && f.Invitation != "" {
+			recordInviteGuess(ctx, db, f.Organization)
 		}
 		if invite == nil && (f.Invitation != "" || !Registers(app, f.Organization)) {
 			return httpx.Err(c, "the user is not permitted to sign up to this application")

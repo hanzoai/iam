@@ -139,11 +139,22 @@ func set(ctx context.Context, c fiber.Ctx, db orm.DB, sc Cookie) error {
 // sibling host under the same domain, may not: its answer still completes, and it
 // signs nobody in on the browser, so it cannot put someone else in front.
 func fromIssuer(c fiber.Ctx) bool {
-	switch c.Get("Sec-Fetch-Site") {
-	case "", "same-origin", "none":
+	if FromIssuer(c.Get("Sec-Fetch-Site")) {
 		return true
 	}
 	return c.Method() == fiber.MethodGet && c.Get("Sec-Fetch-Mode") == "navigate"
+}
+
+// FromIssuer is that rule for a write the session cookie authorizes: the request
+// came from the issuer's own pages (same-origin), the person started it (none),
+// or it carries no fetch metadata and so is not a browser. A sibling host under
+// the same domain is "same-site" and is refused with every other site.
+func FromIssuer(site string) bool {
+	switch site {
+	case "", "same-origin", "none":
+		return true
+	}
+	return false
 }
 
 // write puts list on the response as the browser's session cookie, in order. When

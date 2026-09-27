@@ -6,6 +6,7 @@ package oidc
 import (
 	"context"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/hanzoai/orm"
@@ -226,7 +227,9 @@ func TestSignup_invitation_refusals(t *testing.T) {
 }
 
 // A pattern the admin wrote admits a code it wholly matches.
-func TestSignup_invitation_pattern(t *testing.T) {
+// Pattern invitations are retired: one written as a pattern admits nobody, and
+// compiling one per request is how a long code became a CPU bill.
+func TestSignup_invitation_patternAdmitsNobody(t *testing.T) {
 	app, db := newServer(t)
 	seedAppFull(t, db, fullApp{clientID: "portal", secret: "s3cret", org: "hanzo", shared: true, signup: true})
 	seedOrg(t, db, "acme")
@@ -236,11 +239,48 @@ func TestSignup_invitation_pattern(t *testing.T) {
 		"application": "portal", "organization": "acme", "invitationCode": "acme-0042",
 		"username": "frank", "password": invitePassword,
 	})
-	if status != 200 || env["status"] != "ok" {
-		t.Fatalf("pattern signup: status=%d env=%v, want 200 ok", status, env)
+	if env["status"] != "error" || env["msg"] != refused {
+		t.Fatalf("pattern signup: status=%d env=%v, want the refusal", status, env)
 	}
-	if u, _ := store.GetUserByName(context.Background(), db, "acme", "frank"); u == nil {
-		t.Fatal("frank was not made in acme")
+	if u, _ := store.GetUserByName(context.Background(), db, "acme", "frank"); u != nil {
+		t.Fatal("frank was made in acme through a pattern")
+	}
+}
+
+// A code longer than any invitation carries is refused before a row is read, and
+// an org that has refused a hundred codes in an hour takes no more for the rest
+// of it.
+func TestSignup_invitation_guessesAreBounded(t *testing.T) {
+	app, db := newServer(t)
+	seedAppFull(t, db, fullApp{clientID: "portal", secret: "s3cret", org: "hanzo", shared: true, signup: true})
+	seedOrg(t, db, "acme")
+	seedInvite(t, db, schema.Invitation{Owner: "acme", Name: "team", Code: "ACMECODE22", Quota: 5, State: "Active"})
+	form := func(code, name string) map[string]string {
+		return map[string]string{
+			"application": "portal", "organization": "acme", "invitationCode": code,
+			"username": name, "password": invitePassword,
+		}
+	}
+	if _, env := signupReq(t, app, form(strings.Repeat("A", 65), "long")); env["msg"] != refused {
+		t.Fatalf("a long code: env=%v", env)
+	}
+	// The long code was the first refusal; 98 more make 99.
+	for i := 0; i < 98; i++ {
+		if err := store.Append(context.Background(), db, &schema.AuditLog{
+			Owner: "acme", Organization: "acme", Action: schema.ActionInviteSignupRefused,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, env := signupReq(t, app, form("ACMECODE22", "gina")); env["status"] != "ok" {
+		t.Fatalf("under the bound a right code still joins: env=%v", env)
+	}
+	if _, env := signupReq(t, app, form("WRONGCODE2", "hal")); env["msg"] != refused {
+		t.Fatalf("the hundredth wrong code: env=%v", env)
+	}
+	_, env := signupReq(t, app, form("ACMECODE22", "ivy"))
+	if msg, _ := env["msg"].(string); !strings.Contains(msg, "too many attempts") {
+		t.Fatalf("past the bound: env=%v, want too many attempts", env)
 	}
 }
 
