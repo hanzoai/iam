@@ -584,20 +584,25 @@ func TestApply_RefusesANameAnotherOwnerHoldsAndAppliesTheRest(t *testing.T) {
 	}
 }
 
-// Every application the file declares is the platform's own — on the run that
-// creates it and on every run after, whatever the row said meanwhile — and one it
-// does not declare is not.
-func TestApply_DeclaredApplicationsAreThePlatforms(t *testing.T) {
+// The platform's own applications are exactly the ones the file declares under
+// the admin org: marked on the run that creates them and on every run after,
+// whatever the row said meanwhile. One declared under an ordinary org — whose
+// admin can write it — is not, and neither is one the file does not declare,
+// even when it was marked before.
+func TestApply_DeclaredAdminApplicationsAreThePlatforms(t *testing.T) {
 	db := openDB(t)
 	ctx := context.Background()
-	tenant := orm.New[schema.Application](db)
-	tenant.Owner, tenant.Name, tenant.ClientId, tenant.Organization = "admin", "acme-app", "acme-app", "acme"
-	tenant.SetId("admin/acme-app")
-	if err := tenant.CreateCtx(ctx); err != nil {
-		t.Fatal(err)
+	for _, row := range []struct{ owner, name string }{{"admin", "acme-app"}, {"admin", "retired"}} {
+		a := orm.New[schema.Application](db)
+		a.Owner, a.Name, a.ClientId, a.Platform = row.owner, row.name, row.name, row.name == "retired"
+		a.SetId(row.owner + "/" + row.name)
+		if err := a.CreateCtx(ctx); err != nil {
+			t.Fatal(err)
+		}
 	}
 	data := &initData{Applications: []*schema.Application{
 		{Owner: "admin", Name: "hanzo-app", ClientId: "hanzo-app", Organization: "hanzo"},
+		{Owner: "karma", Name: "karma-style", ClientId: "karma-style", Organization: "karma"},
 	}}
 	platform := func(id string) bool {
 		app, err := orm.Get[schema.Application](db, id)
@@ -609,8 +614,10 @@ func TestApply_DeclaredApplicationsAreThePlatforms(t *testing.T) {
 	if _, err := Apply(ctx, db, data); err != nil {
 		t.Fatal(err)
 	}
-	if !platform("admin/hanzo-app") || platform("admin/acme-app") {
-		t.Fatal("after the first run: want hanzo-app the platform's and acme-app not")
+	for id, want := range map[string]bool{"admin/hanzo-app": true, "karma/karma-style": false, "admin/acme-app": false, "admin/retired": false} {
+		if platform(id) != want {
+			t.Fatalf("after the first run %s platform=%v, want %v", id, !want, want)
+		}
 	}
 	app, _ := orm.Get[schema.Application](db, "admin/hanzo-app")
 	app.Platform = false

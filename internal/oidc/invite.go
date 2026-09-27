@@ -56,8 +56,11 @@ func invitation(ctx context.Context, db orm.DB, app *schema.Application, f *sign
 	if err != nil {
 		return nil, err
 	}
+	weak := weakGate(ctx, db, f.Organization)
 	for _, inv := range rows {
-		if admits(inv, app, f, f.Organization) {
+		if open, err := weak(inv); err != nil {
+			return nil, err
+		} else if open && admits(inv, app, f, f.Organization) {
 			return inv, nil
 		}
 	}
@@ -199,22 +202,42 @@ func join(ctx context.Context, db orm.DB, inv *schema.Invitation, f *signupForm,
 	return admitted, err
 }
 
-// A signup that brings an invitation code answers only whether it admits the
-// signup, and the signup is anonymous: nothing about the caller can be trusted to
-// count them by. So refused codes are counted per ORG they target, and an org that
-// has refused signupInviteLimit codes in signupInviteWindow takes no more for the
-// rest of it. Issued codes carry at least 50 bits (schema.InviteCode), so the cap
-// is what keeps an older, shorter code from being walked.
+// An invitation code is answered by whether it admits, and the caller at signup
+// is anonymous, so a code can be guessed at. A code issued now carries at least
+// 50 bits (schema.InviteCode) and is always compared: guessing one is not a
+// threat, and refusing it would let anyone lock an org's invitations by guessing
+// wrong. A WEAKER code — one issued before that rule — is compared only while the
+// org has refused fewer than weakLimit codes in weakWindow, at signup and at
+// accept together; past it, a weak code simply admits nobody for the rest of the
+// window, and the answer is the same refusal as any wrong code.
 const (
-	signupInviteLimit  = 100
-	signupInviteWindow = time.Hour
+	weakLimit  = 100
+	weakWindow = time.Hour
 )
 
-// inviteGuessed reports whether org has refused signupInviteLimit invitation codes
-// at signup within signupInviteWindow.
-func inviteGuessed(ctx context.Context, db orm.DB, org string) (bool, error) {
-	n, err := store.Recorded(ctx, db, schema.ActionInviteSignupRefused, "Organization", org, nowFunc().Add(-signupInviteWindow))
-	return n >= signupInviteLimit, err
+// weakGate returns the test a lookup applies to each invitation in org: true when
+// the invitation may be compared. A strong code always may; the refusals are
+// counted once, and only when a weak code is met.
+func weakGate(ctx context.Context, db orm.DB, org string) func(*schema.Invitation) (bool, error) {
+	counted, closed := false, false
+	return func(inv *schema.Invitation) (bool, error) {
+		if schema.InviteCode(inv.Code) == nil {
+			return true, nil
+		}
+		if !counted {
+			since := nowFunc().Add(-weakWindow)
+			a, err := store.Recorded(ctx, db, schema.ActionInviteSignupRefused, since, "Organization", org)
+			if err != nil {
+				return false, err
+			}
+			b, err := store.Recorded(ctx, db, schema.ActionInviteRefused, since, "Organization", org)
+			if err != nil {
+				return false, err
+			}
+			counted, closed = true, a+b >= weakLimit
+		}
+		return !closed, nil
+	}
 }
 
 // recordInviteGuess records a code a signup brought for org that admitted nobody.

@@ -82,7 +82,7 @@ const unusable = "this invitation cannot be used"
 // acceptWindow is refused before anything is looked at.
 func acceptInvitation(db orm.DB) zip.TypedHandler[acceptBody, httpx.Answer] {
 	return func(ctx context.Context, in *acceptBody) (*httpx.Answer, error) {
-		user, answer, err := acceptCaller(ctx, db, in)
+		user, sender, answer, err := acceptCaller(ctx, db, in)
 		if answer != nil || err != nil {
 			return answer, err
 		}
@@ -91,11 +91,16 @@ func acceptInvitation(db orm.DB) zip.TypedHandler[acceptBody, httpx.Answer] {
 		if org == "" || code == "" {
 			return httpx.Bad(400, "org and code are required", ""), nil
 		}
-		n, err := store.Recorded(ctx, db, schema.ActionInviteRefused, "User", userID, nowFunc().Add(-acceptWindow))
+		since := nowFunc().Add(-acceptWindow)
+		refused, err := store.Recorded(ctx, db, schema.ActionInviteRefused, since, "User", userID)
 		if err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
-		if n >= acceptLimit {
+		sent, err := store.Recorded(ctx, db, schema.ActionInviteCodeSent, since, "User", userID)
+		if err != nil {
+			return nil, zip.ErrInternal(err.Error())
+		}
+		if refused+sent >= acceptLimit {
 			return httpx.Bad(429, "too many attempts to join an organization; try again in an hour", ""), nil
 		}
 		refuse := func(msg string) (*httpx.Answer, error) {
@@ -148,7 +153,7 @@ func acceptInvitation(db orm.DB) zip.TypedHandler[acceptBody, httpx.Answer] {
 				return refuse("this invitation was sent to a different email address; sign in with the account it was sent to")
 			}
 			if strings.TrimSpace(in.EmailCode) == "" {
-				return joinCode(ctx, db, user, standing)
+				return joinCode(ctx, db, user, standing, sender)
 			}
 			ok, err := otp.ConsumeFor(ctx, db, otp.PurposeJoin, user, user.Email, strings.TrimSpace(in.EmailCode), nowFunc())
 			if err != nil {
@@ -182,43 +187,50 @@ func acceptInvitation(db orm.DB) zip.TypedHandler[acceptBody, httpx.Answer] {
 //     (sessions.FromIssuer), and carry a JSON body, which a cross-site form cannot.
 //
 // A refusal comes back as the answer to send.
-func acceptCaller(ctx context.Context, db orm.DB, in *acceptBody) (*schema.User, *httpx.Answer, error) {
+//
+// It also names the org whose email account sends the caller a join code: the org
+// of the platform application the caller signed in through, which is the org that
+// holds a sending account. "" when that application is not the platform's.
+func acceptCaller(ctx context.Context, db orm.DB, in *acceptBody) (*schema.User, string, *httpx.Answer, error) {
 	signIn := httpx.Bad(400, "please sign in first", CodeLoginRequired)
-	var owner, name string
+	var owner, name, sender string
 	if bearer := httpx.BearerValue(in.Auth); bearer != "" {
-		claims, _, err := PlatformBearer(ctx, db, bearer)
+		claims, app, err := PlatformBearer(ctx, db, bearer)
 		if errors.Is(err, ErrNotPlatform) {
-			return nil, httpx.Bad(403, err.Error(), ""), nil
+			return nil, "", httpx.Bad(403, err.Error(), ""), nil
 		}
 		if err != nil {
-			return nil, nil, zip.ErrInternal(err.Error())
+			return nil, "", nil, zip.ErrInternal(err.Error())
 		}
 		u, err := store.GetUserBySubject(ctx, db, claims.Subject)
 		if err != nil {
-			return nil, nil, zip.ErrInternal(err.Error())
+			return nil, "", nil, zip.ErrInternal(err.Error())
 		}
 		if u == nil {
-			return nil, signIn, nil
+			return nil, "", signIn, nil
 		}
-		owner, name = u.Owner, u.Name
+		owner, name, sender = u.Owner, u.Name, app.Organization
 	} else {
 		if !sessions.FromIssuer(in.Site) || !jsonBody(in.Type) {
-			return nil, httpx.Bad(403, "open the invitation link to join", ""), nil
+			return nil, "", httpx.Bad(403, "open the invitation link to join", ""), nil
 		}
 		sc, ok := sessions.CurrentValue(ctx, sessionCookie(in.Cookie), db)
 		if !ok {
-			return nil, signIn, nil
+			return nil, "", signIn, nil
 		}
 		owner, name = sc.Owner, sc.Name
+		if app, err := ResolveApp(ctx, db, "", sc.Application); err == nil && app != nil && app.Platform {
+			sender = app.Organization
+		}
 	}
 	user, err := store.GetUserByName(ctx, db, owner, name)
 	if err != nil {
-		return nil, nil, zip.ErrInternal(err.Error())
+		return nil, "", nil, zip.ErrInternal(err.Error())
 	}
 	if user == nil || user.IsForbidden || user.IsDeleted {
-		return nil, signIn, nil
+		return nil, "", signIn, nil
 	}
-	return user, nil, nil
+	return user, sender, nil, nil
 }
 
 // jsonBody reports whether a request's Content-Type is JSON.
@@ -242,9 +254,15 @@ func invitationByCode(ctx context.Context, db orm.DB, org, code string) (*schema
 	if err != nil {
 		return nil, err
 	}
+	weak := weakGate(ctx, db, org)
 	for _, inv := range rows {
-		if inv.Owner == org && inv.State == invitationActive && inv.UsedCount < inv.Quota &&
-			(inv.Application == "" || inv.Application == "All") && inviteCode(inv, code) {
+		if !(inv.Owner == org && inv.State == invitationActive && inv.UsedCount < inv.Quota &&
+			(inv.Application == "" || inv.Application == "All")) {
+			continue
+		}
+		if open, err := weak(inv); err != nil {
+			return nil, err
+		} else if open && inviteCode(inv, code) {
 			return inv, nil
 		}
 	}
@@ -254,11 +272,15 @@ func invitationByCode(ctx context.Context, db orm.DB, org, code string) (*schema
 // joinCode sends the caller a code that proves their address for this join, and
 // answers what the page shows next. The code is minted for the caller's own
 // account, to the address on it, and for joining only (otp.PurposeJoin): it signs
-// nobody in, resets nothing, and proves nothing at signup. Sending one is counted
-// with the caller's refused attempts, so the attempt limit also bounds the mail.
-func joinCode(ctx context.Context, db orm.DB, user *schema.User, standing *schema.Organization) (*httpx.Answer, error) {
+// nobody in, resets nothing, and proves nothing at signup. It is sent from the
+// sender org's account; with none there is nothing to send it from. Sending one
+// counts toward the caller's attempt limit, so the limit also bounds the mail.
+func joinCode(ctx context.Context, db orm.DB, user *schema.User, standing *schema.Organization, sender string) (*httpx.Answer, error) {
 	org := orgLabel(standing)
-	err := otp.IssueFor(ctx, db, otp.PurposeJoin, user.Owner, user.Email, "", user, nowFunc())
+	if sender == "" {
+		return httpx.Bad(403, "open the invitation link to join", ""), nil
+	}
+	err := otp.IssueJoin(ctx, db, sender, org, user, nowFunc())
 	switch {
 	case errors.Is(err, otp.ErrTooSoon):
 		return httpx.Bad(400, "A code was just sent to "+user.Email+". Enter it to join "+org+".", CodeEmailCodeRequired), nil
@@ -271,8 +293,7 @@ func joinCode(ctx context.Context, db orm.DB, user *schema.User, standing *schem
 		Owner:        user.Owner,
 		Organization: standing.Name,
 		User:         user.Owner + "/" + user.Name,
-		Action:       schema.ActionInviteRefused,
-		Object:       CodeEmailCodeSent,
+		Action:       schema.ActionInviteCodeSent,
 		Method:       "POST",
 		RequestUri:   PathInvitationsAccept,
 		StatusCode:   400,
@@ -284,8 +305,8 @@ func joinCode(ctx context.Context, db orm.DB, user *schema.User, standing *schem
 
 // orgLabel is how an organization is named to a person joining it.
 func orgLabel(o *schema.Organization) string {
-	if s := strings.TrimSpace(o.DisplayName); s != "" {
-		return clip(s, 80)
+	if s := schema.PlainName(o.DisplayName, 60); s != "" {
+		return s
 	}
 	return o.Name
 }

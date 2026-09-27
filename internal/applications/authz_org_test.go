@@ -243,3 +243,29 @@ func TestPlatform_OnlyASuperAdminChangesIt(t *testing.T) {
 		t.Fatalf("a tenant admin unmarked an app: status=%d, want 403", st)
 	}
 }
+
+// A platform application is written and removed by a SuperAdmin only — its redirect
+// URIs, secret and grants decide who holds its tokens — even by the admin of the
+// org it serves, and even when the write leaves the flag alone.
+func TestPlatform_RowIsWrittenBySuperAdminOnly(t *testing.T) {
+	h := newOrgHarness(t)
+	boss := h.token(t, "acme/boss")
+	root := h.token(t, "admin/root")
+	if st := h.do(t, "POST", "/v1/iam/applications", root, `{"owner":"acme","name":"acme-style","organization":"acme","clientId":"acme-style","platform":true}`); st != 200 {
+		t.Fatalf("a SuperAdmin made a platform app: status=%d", st)
+	}
+	for _, body := range []string{
+		`{"owner":"acme","name":"acme-style","organization":"acme","clientId":"acme-style","platform":true,"redirectUris":["https://evil.example/cb"]}`,
+		`{"owner":"acme","name":"acme-style","organization":"acme","clientId":"acme-style","redirectUris":["https://evil.example/cb"]}`,
+	} {
+		if st := h.do(t, "PUT", "/v1/iam/applications/acme/acme-style", boss, body); st != 403 {
+			t.Fatalf("the org's admin wrote a platform app: status=%d, want 403", st)
+		}
+	}
+	if st := h.do(t, "DELETE", "/v1/iam/applications/acme/acme-style", boss, ""); st != 403 {
+		t.Fatalf("the org's admin removed a platform app: status=%d, want 403", st)
+	}
+	if st := h.do(t, "PUT", "/v1/iam/applications/acme/acme-style", root, `{"owner":"acme","name":"acme-style","organization":"acme","clientId":"acme-style","platform":true,"displayName":"Style"}`); st != 200 {
+		t.Fatalf("a SuperAdmin's write: status=%d, want 200", st)
+	}
+}

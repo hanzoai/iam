@@ -29,6 +29,10 @@ var ErrNotPlatform = errors.New("this is done from the platform's own applicatio
 // not a credential for anything, and a tenant's application holding its users'
 // tokens must not be able to use them to do what only the platform may.
 //
+// Nor does a token minted FOR a person by somebody else — an org key acting as
+// its member (`act`) — whatever client it names: the person did not sign in, and
+// a key's holder must not reach through them to where only the platform may.
+//
 // The claims carry the issuer and the client the person signed in with, and both
 // are signed: the pair is how the person came in, and nothing in the request can
 // change it.
@@ -37,7 +41,7 @@ func PlatformBearer(ctx context.Context, db orm.DB, bearer string) (*Claims, *sc
 		return nil, nil, ErrNotPlatform
 	}
 	claims, err := verifyToken(ctx, db, bearer)
-	if err != nil || claims.TokenType != "access-token" || claims.Azp == "" {
+	if err != nil || claims.TokenType != "access-token" || claims.Azp == "" || claims.Act != nil {
 		return nil, nil, ErrNotPlatform
 	}
 	app, err := store.GetApplicationByClientId(ctx, db, claims.Azp)

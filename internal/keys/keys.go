@@ -136,6 +136,9 @@ func create(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 		if err := holdable(ctx, db, in.Owner, in.User, in.Scope); err != nil {
 			return nil, err
 		}
+		if err := application(ctx, db, in.Owner, in.Application); err != nil {
+			return nil, err
+		}
 		if _, err := orm.Get[schema.Key](db, id(in.Owner, in.Name)); err == nil {
 			return nil, zip.ErrConflict("key already exists: " + id(in.Owner, in.Name))
 		} else if !errors.Is(err, orm.ErrNotFound) {
@@ -204,6 +207,11 @@ func update(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 		if err := holdable(ctx, db, k.Owner, in.User, k.Scope); err != nil {
 			return nil, err
 		}
+		if in.Application != k.Application {
+			if err := application(ctx, db, k.Owner, in.Application); err != nil {
+				return nil, err
+			}
+		}
 		apply(k, in)
 		if ClassOf(k.Scope) == schema.KeyScopePublish {
 			// Keep a publishable key write-only for its whole lifecycle: an update can
@@ -259,6 +267,31 @@ func del(db orm.DB) zip.TypedHandler[Ref, DeleteResponse] {
 // Guard admitted to keys only by the key-mint capability, or a SuperAdmin — and
 // never by a tenant admin, who could otherwise mint a credential that speaks as
 // any of the org's members. And only while the membership exists.
+// application gates the application a key names. A token minted with the key
+// names that application as its client (azp), so a key may name only an
+// application of its own org — never another tenant's, and never one of the
+// platform's that its org does not run. A SuperAdmin may name any. The
+// application is read by client id, as a token names it, then by name.
+func application(ctx context.Context, db orm.DB, owner, ref string) error {
+	if ref == "" {
+		return nil
+	}
+	if p, ok := principal.From(ctx); ok && p != nil && p.Sudo {
+		return nil
+	}
+	app, err := store.GetApplicationByClientId(ctx, db, ref)
+	if err == nil && app == nil {
+		app, err = store.GetApplicationNamed(ctx, db, ref)
+	}
+	if err != nil {
+		return zip.ErrInternal(err.Error())
+	}
+	if app == nil || app.Organization != owner {
+		return zip.ErrForbidden("a key names an application of its own organization only")
+	}
+	return nil
+}
+
 func holdable(ctx context.Context, db orm.DB, owner, user, scope string) error {
 	if err := operatorFree(ctx, db, owner, user, scope); err != nil {
 		return err

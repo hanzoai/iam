@@ -71,6 +71,8 @@ const (
 	ActionInviteAccept        = "invitation-accept"
 	ActionInviteRefused       = "invitation-refused"
 	ActionInviteSignupRefused = "invitation-signup-refused"
+	// A code IAM sent a signed-in account to prove its address for joining.
+	ActionInviteCodeSent = "invitation-code-sent"
 )
 
 // PlatformWritten reports whether action names a record the platform writes
@@ -83,7 +85,8 @@ func PlatformWritten(action string) bool {
 	case ActionConsentTraining, ActionIssueUserToken, ActionMintUserKeys,
 		ActionRevokeUserKeys, ActionTokenExchange, ActionAs,
 		ActionAssumeOrg, ActionReleaseOrg, ActionListOrgs, ActionWorkloadToken,
-		ActionInviteSend, ActionInviteAccept, ActionInviteRefused, ActionInviteSignupRefused:
+		ActionInviteSend, ActionInviteAccept, ActionInviteRefused, ActionInviteSignupRefused,
+		ActionInviteCodeSent:
 		return true
 	}
 	return false

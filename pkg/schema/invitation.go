@@ -95,3 +95,57 @@ func BareAddress(s string) bool {
 	at := strings.IndexByte(s, '@')
 	return at > 0 && at < len(s)-1 && strings.Contains(s[at+1:], ".")
 }
+
+// PlainName is a name somebody chose, made safe to write into a message people
+// read in a mail client: letters, digits, spaces and the marks , ' & ( ) - are
+// kept, and everything else is dropped — so no dot, colon, slash or @ survives
+// and nothing in it can be read as a link — then runs of space collapse and it is
+// cut to max runes.
+func PlainName(s string, max int) string {
+	var b strings.Builder
+	space, n := false, 0
+	for _, r := range s {
+		switch {
+		case unicode.IsSpace(r):
+			space = b.Len() > 0
+			continue
+		case unicode.IsLetter(r), unicode.IsDigit(r), strings.ContainsRune(",'&()-", r):
+		default:
+			continue
+		}
+		if n >= max {
+			break
+		}
+		if space {
+			b.WriteByte(' ')
+			space = false
+			n++
+		}
+		b.WriteRune(r)
+		n++
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// Mailbox is the mailbox an address delivers to, for counting what one person
+// receives: lowercased, a +tag dropped from the local part, and for Gmail the dots
+// dropped and googlemail.com read as gmail.com. Mail still goes to the address as
+// written; this only names who receives it.
+func Mailbox(addr string) string {
+	addr = strings.ToLower(strings.TrimSpace(addr))
+	at := strings.LastIndexByte(addr, '@')
+	if at <= 0 {
+		return addr
+	}
+	local, domain := addr[:at], addr[at+1:]
+	if i := strings.IndexByte(local, '+'); i >= 0 {
+		local = local[:i]
+	}
+	if domain == "googlemail.com" {
+		domain = "gmail.com"
+	}
+	if domain == "gmail.com" {
+		local = strings.ReplaceAll(local, ".", "")
+	}
+	return local + "@" + domain
+}

@@ -8,9 +8,11 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hanzoai/orm"
 
+	"github.com/hanzoai/iam/internal/otp"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -162,10 +164,16 @@ func TestSignup_invitation_givesThePinnedName(t *testing.T) {
 	seedAppFull(t, db, fullApp{clientID: "portal", secret: "s3cret", org: "hanzo", shared: true, signup: true})
 	seedOrg(t, db, "acme")
 	seedInvite(t, db, schema.Invitation{Owner: "acme", Name: "carol", Code: "c-1", Quota: 1, Username: "carol", Email: "carol@acme.example", State: "Active"})
+	sent := &fakeSender{}
+	bindSender(t, sent)
+	if err := otp.Issue(context.Background(), db, "hanzo", "carol@acme.example", "", nil, time.Now()); err != nil {
+		t.Fatal(err)
+	}
 
 	status, env := signupReq(t, app, map[string]string{
 		"application": "portal", "organization": "acme", "invitationCode": "c-1",
 		"email": "Carol@acme.example", "password": invitePassword,
+		"code": codeIn(t, sent.sent[len(sent.sent)-1].Body),
 	})
 	if status != 200 || env["status"] != "ok" {
 		t.Fatalf("pinned signup: status=%d env=%v, want 200 ok", status, env)
@@ -247,14 +255,17 @@ func TestSignup_invitation_patternAdmitsNobody(t *testing.T) {
 	}
 }
 
-// A code longer than any invitation carries is refused before a row is read, and
-// an org that has refused a hundred codes in an hour takes no more for the rest
-// of it.
+// A code longer than any invitation carries is refused before a row is read. An
+// org that has refused a hundred codes in an hour stops comparing its WEAK codes —
+// ones issued before the strength rule — for the rest of it, and says so in the
+// words any wrong code gets; a strong code is always compared, so guessing cannot
+// lock anyone out.
 func TestSignup_invitation_guessesAreBounded(t *testing.T) {
 	app, db := newServer(t)
 	seedAppFull(t, db, fullApp{clientID: "portal", secret: "s3cret", org: "hanzo", shared: true, signup: true})
 	seedOrg(t, db, "acme")
 	seedInvite(t, db, schema.Invitation{Owner: "acme", Name: "team", Code: "ACMECODE22", Quota: 5, State: "Active"})
+	seedInvite(t, db, schema.Invitation{Owner: "acme", Name: "old", Code: "acme-7f3k", Quota: 5, State: "Active"})
 	form := func(code, name string) map[string]string {
 		return map[string]string{
 			"application": "portal", "organization": "acme", "invitationCode": code,
@@ -264,23 +275,21 @@ func TestSignup_invitation_guessesAreBounded(t *testing.T) {
 	if _, env := signupReq(t, app, form(strings.Repeat("A", 65), "long")); env["msg"] != refused {
 		t.Fatalf("a long code: env=%v", env)
 	}
-	// The long code was the first refusal; 98 more make 99.
-	for i := 0; i < 98; i++ {
+	if _, env := signupReq(t, app, form("acme-7f3k", "fay")); env["status"] != "ok" {
+		t.Fatalf("under the bound a weak code still joins: env=%v", env)
+	}
+	for i := 0; i < 100; i++ {
 		if err := store.Append(context.Background(), db, &schema.AuditLog{
 			Owner: "acme", Organization: "acme", Action: schema.ActionInviteSignupRefused,
 		}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, env := signupReq(t, app, form("ACMECODE22", "gina")); env["status"] != "ok" {
-		t.Fatalf("under the bound a right code still joins: env=%v", env)
+	if _, env := signupReq(t, app, form("acme-7f3k", "gus")); env["msg"] != refused {
+		t.Fatalf("past the bound a weak code: env=%v, want the plain refusal", env)
 	}
-	if _, env := signupReq(t, app, form("WRONGCODE2", "hal")); env["msg"] != refused {
-		t.Fatalf("the hundredth wrong code: env=%v", env)
-	}
-	_, env := signupReq(t, app, form("ACMECODE22", "ivy"))
-	if msg, _ := env["msg"].(string); !strings.Contains(msg, "too many attempts") {
-		t.Fatalf("past the bound: env=%v, want too many attempts", env)
+	if _, env := signupReq(t, app, form("ACMECODE22", "ivy")); env["status"] != "ok" {
+		t.Fatalf("past the bound a strong code: env=%v, want it to join", env)
 	}
 }
 
@@ -361,5 +370,29 @@ func TestSignup_invitation_signsInThroughTheSameApplication(t *testing.T) {
 		if code, _ := env["data"].(string); code == "" {
 			t.Fatalf("sign-in naming %s minted no code: %s", org, body)
 		}
+	}
+}
+
+// An invitation pinned to an address is taken only by someone who proved it, even
+// through an application that offers no codes: a leaked link does not make an
+// unproven account on the pinned address.
+func TestSignup_invitation_pinnedAddressMustBeProven(t *testing.T) {
+	app, db := newServer(t)
+	seedAppFull(t, db, fullApp{clientID: "portal", secret: "s3cret", org: "hanzo", shared: true, signup: true})
+	seedOrg(t, db, "acme")
+	seedInvite(t, db, schema.Invitation{Owner: "acme", Name: "dan", Code: "DANCODE222", Quota: 1, Email: "dan@acme.example", State: "Active"})
+
+	_, env := signupReq(t, app, map[string]string{
+		"application": "portal", "organization": "acme", "invitationCode": "DANCODE222",
+		"email": "dan@acme.example", "username": "dan", "password": invitePassword,
+	})
+	if env["msg"] != "the code sent to the email address is required" {
+		t.Fatalf("env=%v, want the code asked for", env)
+	}
+	if u, _ := store.GetUserByName(context.Background(), db, "acme", "dan"); u != nil {
+		t.Fatal("an unproven account took the pinned address")
+	}
+	if got := inviteOf(t, db, "acme", "dan").UsedCount; got != 0 {
+		t.Fatalf("usedCount = %d, want 0", got)
 	}
 }

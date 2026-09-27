@@ -16,11 +16,13 @@ package seed
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
 	"strings"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 
 	"github.com/hanzoai/iam/pkg/schema"
@@ -180,6 +182,7 @@ func Apply(ctx context.Context, db orm.DB, data *initData) (*Summary, error) {
 			return s, err
 		}
 	}
+	platform := map[string]bool{}
 	for _, a := range data.Applications {
 		owner := a.Owner
 		if owner == "" {
@@ -206,15 +209,37 @@ func Apply(ctx context.Context, db orm.DB, data *initData) (*Summary, error) {
 				return s, err
 			}
 		}
-		// Every application this file declares is the platform's own, and only the
-		// file says so: the flag is stamped here, on new and existing rows alike.
-		if _, err := orm.GetOrUpdate[schema.Application](db, owner+"/"+a.Name, func(dst *schema.Application) {
-			dst.Platform = true
-		}); err != nil {
-			return s, fmt.Errorf("seed: mark application %s/%s: %w", owner, a.Name, err)
+		if owner == policy.AdminOrg {
+			platform[owner+"/"+a.Name] = true
 		}
 	}
+	if err := markPlatform(ctx, db, platform); err != nil {
+		return s, err
+	}
 	return s, nil
+}
+
+// markPlatform makes the platform's own applications exactly the ones this file
+// declares under the reserved admin org, on every run: each of those is marked,
+// and every other row — one the file stopped declaring, or one it declares under
+// an ordinary org, whose admin can write it — is unmarked. Only this file says
+// which applications are the platform's.
+func markPlatform(ctx context.Context, db orm.DB, platform map[string]bool) error {
+	apps, err := orm.TypedQuery[schema.Application](db).GetAll(ctx)
+	if err != nil && !errors.Is(err, orm.ErrNotFound) {
+		return fmt.Errorf("seed: list applications: %w", err)
+	}
+	for _, app := range apps {
+		want := platform[app.Owner+"/"+app.Name]
+		if app.Platform == want {
+			continue
+		}
+		app.Platform = want
+		if err := app.UpdateCtx(ctx); err != nil {
+			return fmt.Errorf("seed: mark application %s/%s: %w", app.Owner, app.Name, err)
+		}
+	}
+	return nil
 }
 
 // nameHeld reports whether owner/name is new and its name is held by another

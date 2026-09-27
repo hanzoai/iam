@@ -242,7 +242,9 @@ func Receiver(dest string) string {
 // org of its own is sent a code as its application's org, and filing the record
 // there left a code the person held that nothing could spend.
 func Issue(ctx context.Context, db orm.DB, org, dest, remoteAddr string, user *schema.User, now time.Time) error {
-	return IssueFor(ctx, db, PurposeCode, org, dest, remoteAddr, user, now)
+	return issue(ctx, db, PurposeCode, org, dest, remoteAddr, user, now, func(channel, to, code string) Message {
+		return message(org, channel, to, code)
+	})
 }
 
 // The purposes a code is minted for (schema.VerificationRecord.Purpose). A code
@@ -258,10 +260,34 @@ const (
 	PurposeJoin = "join"
 )
 
-// IssueFor is [Issue] for one purpose. The resend interval and the replacement of
-// an outstanding code both apply within the purpose, so a join code neither waits
-// on nor cancels a sign-in code.
-func IssueFor(ctx context.Context, db orm.DB, purpose, org, dest, remoteAddr string, user *schema.User, now time.Time) error {
+// IssueJoin sends user a code, to the address on their own account, that proves
+// the address for joining the org named joining — and for nothing else
+// (PurposeJoin). sender is the org whose account sends it. The message says what
+// the code is for and that it signs nobody in, so a join code read later is not
+// mistaken for a sign-in code.
+func IssueJoin(ctx context.Context, db orm.DB, sender, joining string, user *schema.User, now time.Time) error {
+	if user == nil {
+		return errors.New("otp: a join code is sent to an account")
+	}
+	return issue(ctx, db, PurposeJoin, sender, user.Email, "", user, now, func(channel, to, code string) Message {
+		return Message{
+			Org:     sender,
+			Channel: channel,
+			To:      to,
+			Subject: "Your code to join " + joining,
+			Body: fmt.Sprintf("Your code to join %s is %s. It expires in %d minutes. "+
+				"It only confirms this email address for joining; it does not sign anyone in. "+
+				"If you did not ask to join, ignore this message and do not share the code.",
+				joining, code, int(TTL.Minutes())),
+		}
+	})
+}
+
+// issue is the one path a code is minted by. The resend interval and the
+// replacement of an outstanding code both apply within the purpose, so a join code
+// neither waits on nor cancels a sign-in code. word composes the message from the
+// channel and address the record was filed with.
+func issue(ctx context.Context, db orm.DB, purpose, org, dest, remoteAddr string, user *schema.User, now time.Time, word func(channel, to, code string) Message) error {
 	if sender == nil {
 		return ErrNoDelivery
 	}
@@ -314,7 +340,7 @@ func IssueFor(ctx context.Context, db orm.DB, purpose, org, dest, remoteAddr str
 	// was filed and the code that goes out must be one channel and one address, so
 	// they read the one place those were decided. The normalized number is also the
 	// E.164-shaped one a carrier wants.
-	return sender.Send(ctx, message(org, rec.Type, rec.Receiver, code))
+	return sender.Send(ctx, word(rec.Type, rec.Receiver, code))
 }
 
 // Consume verifies code against the latest live record for receiver and SPENDS the

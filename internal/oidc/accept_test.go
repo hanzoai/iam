@@ -167,7 +167,7 @@ func TestAccept_joinsAsAMemberAndSpendsOneSeat(t *testing.T) {
 	if n := used(t, r.db, "acme", "link"); n != 1 {
 		t.Fatalf("used %d seats, want 1", n)
 	}
-	if n, err := store.Recorded(context.Background(), r.db, schema.ActionInviteAccept, "User", "hanzo/ada", time.Now().Add(-time.Minute)); err != nil || n != 1 {
+	if n, err := store.Recorded(context.Background(), r.db, schema.ActionInviteAccept, time.Now().Add(-time.Minute), "User", "hanzo/ada"); err != nil || n != 1 {
 		t.Fatalf("recorded %d joins (%v), want 1", n, err)
 	}
 }
@@ -212,12 +212,14 @@ func TestAccept_onlyThePlatformsAccessTokens(t *testing.T) {
 type outbox struct {
 	mu   sync.Mutex
 	body []string
+	msgs []otp.Message
 }
 
 func (o *outbox) Send(_ context.Context, m otp.Message) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.body = append(o.body, m.Body)
+	o.msgs = append(o.msgs, m)
 	return nil
 }
 
@@ -437,5 +439,74 @@ func TestAccept_needsASignedInCaller(t *testing.T) {
 	}
 	if n := used(t, r.db, "acme", "open"); n != 0 {
 		t.Fatalf("an anonymous accept spent %d seats", n)
+	}
+}
+
+// An org key acting as its member mints a token that names a platform client; it
+// still joins nobody, because the member did not sign in.
+func TestAccept_aKeyActingAsItsMemberJoinsNobody(t *testing.T) {
+	r := acceptRig(t)
+	seedPerson(t, r.db, "hanzo", "ada", "ada@example.com", false)
+	seedInvite(t, r.db, invite{owner: "acme", name: "link", code: "LINKCODE22", state: "Active", quota: 25})
+	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		"sub": "hanzo/ada", "azp": clientID, "aud": clientID, "iss": "https://hanzo.id", "tokenType": "access-token",
+		"act": map[string]any{"sub": "evilcorp/org-key"},
+		"iat": time.Now().Add(-time.Minute).Unix(), "exp": time.Now().Add(time.Hour).Unix(),
+	})
+	tok.Header["kid"] = kid
+	bearer, err := tok.SignedString(r.key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status, e := r.accept(t, bearer, `{"owner":"acme","code":"LINKCODE22"}`); status != 403 {
+		t.Fatalf("status=%d answer=%+v, want 403", status, e)
+	}
+	if member(t, r.db, "hanzo/ada", "acme") != nil {
+		t.Fatal("an act token joined its member to an org")
+	}
+}
+
+// An org that has refused a hundred codes in the hour stops comparing its weak,
+// older codes; its strong ones still join. Both refusals read like any other.
+func TestAccept_weakCodesClosePerOrg(t *testing.T) {
+	r := acceptRig(t)
+	seedPerson(t, r.db, "hanzo", "ada", "ada@example.com", false)
+	seedPerson(t, r.db, "hanzo", "bea", "bea@example.com", false)
+	seedInvite(t, r.db, invite{owner: "acme", name: "old", code: "acme-7f3k", state: "Active", quota: 25})
+	seedInvite(t, r.db, invite{owner: "acme", name: "new", code: "LINKCODE22", state: "Active", quota: 25})
+	for i := 0; i < 100; i++ {
+		if err := store.Append(context.Background(), r.db, &schema.AuditLog{
+			Owner: "elsewhere", Organization: "acme", User: "elsewhere/guesser", Action: schema.ActionInviteRefused,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	status, e := r.accept(t, r.as(t, "hanzo/ada"), `{"owner":"acme","code":"acme-7f3k"}`)
+	if status != 400 || e.Msg != "this invitation cannot be used" {
+		t.Fatalf("a weak code past the bound: status=%d answer=%+v", status, e)
+	}
+	if status, e := r.accept(t, r.as(t, "hanzo/bea"), `{"owner":"acme","code":"LINKCODE22"}`); status != 200 || !e.Data.Joined {
+		t.Fatalf("a strong code past the bound: status=%d answer=%+v", status, e)
+	}
+}
+
+// The join code's email says what it is for — joining the org, by name — that it
+// signs nobody in, and comes from the org of the platform application the caller
+// signed in through.
+func TestAccept_theJoinCodeSaysWhatItIsFor(t *testing.T) {
+	r := acceptRig(t)
+	box := bind(t)
+	seedPerson(t, r.db, "hanzo", "ada", "ada@example.com", false)
+	seedInvite(t, r.db, invite{owner: "acme", name: "inv-1", code: "K7PQ2M9XRT", email: "ada@example.com", state: "Active", quota: 1})
+	if _, e := r.accept(t, r.as(t, "hanzo/ada"), `{"owner":"acme","code":"K7PQ2M9XRT"}`); e.Code != "email_code_sent" {
+		t.Fatalf("answer %+v", e)
+	}
+	m := box.msgs[len(box.msgs)-1]
+	if m.Subject != "Your code to join Acme" || !strings.Contains(m.Body, "to join Acme is") ||
+		!strings.Contains(m.Body, "does not sign anyone in") || strings.Contains(m.Body, "Your verification code") {
+		t.Fatalf("subject %q body %q", m.Subject, m.Body)
+	}
+	if m.Org != "admin" {
+		t.Fatalf("sent as %q, want the platform application's org", m.Org)
 	}
 }

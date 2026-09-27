@@ -40,3 +40,37 @@ func TestInviteCode(t *testing.T) {
 		}
 	}
 }
+
+func TestPlainName(t *testing.T) {
+	for in, want := range map[string]string{
+		"Acme Robotics":              "Acme Robotics",
+		"O'Brien & Sons (UK) - Ltd.": "O'Brien & Sons (UK) - Ltd",
+		"hanzo-id.example/verify":    "hanzo-idexampleverify",
+		"https://x.example":          "httpsxexample",
+		"a@b.com":                    "abcom",
+		"Line\r\nBcc: x":             "Line Bcc x",
+		"<b>Bold</b>":                "bBoldb",
+		"Ada‮Lovelace":               "AdaLovelace",
+		"   ":                        "",
+	} {
+		if got := PlainName(in, 60); got != want {
+			t.Errorf("PlainName(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if got := PlainName("abcdefghij", 4); got != "abcd" {
+		t.Errorf("cut = %q", got)
+	}
+}
+
+func TestMailbox(t *testing.T) {
+	for in, want := range map[string]string{
+		"Ada+hanzo@Example.com":  "ada@example.com",
+		"a.d.a+x@gmail.com":      "ada@gmail.com",
+		"A.D.A@googlemail.com":   "ada@gmail.com",
+		"first.last@example.com": "first.last@example.com",
+	} {
+		if got := Mailbox(in); got != want {
+			t.Errorf("Mailbox(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

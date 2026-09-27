@@ -70,6 +70,17 @@ func authorizePlatform(ctx context.Context, in *schema.Application, was bool) er
 	return zip.ErrForbidden("only a SuperAdmin may change whether an application is the platform's own")
 }
 
+// authorizePlatformRow gates a write to, or the removal of, one of the platform's
+// own applications: only a SuperAdmin makes either. Its redirect URIs, secret and
+// grants decide who can hold its tokens, and its tokens act where only the
+// platform may, so a row's other fields are guarded with the flag.
+func authorizePlatformRow(ctx context.Context, existing *schema.Application) error {
+	if !existing.Platform || authz.IsSuper(ctx) {
+		return nil
+	}
+	return zip.ErrForbidden("the platform's own applications are changed by a SuperAdmin only")
+}
+
 // authorizeProviders gates the identity providers an application LINKS. A link is a
 // reference to credentials: the sign-in leg runs on the provider record's own client
 // id and secret (store.EnrichProviders resolves it, federationProvider uses it), and
@@ -321,6 +332,9 @@ func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 		if err := authorizeSharing(ctx, in, existing.IsShared); err != nil {
 			return nil, err
 		}
+		if err := authorizePlatformRow(ctx, existing); err != nil {
+			return nil, err
+		}
 		if err := authorizePlatform(ctx, in, existing.Platform); err != nil {
 			return nil, err
 		}
@@ -384,6 +398,9 @@ func deleteApplication(db orm.DB) zip.TypedHandler[ApplicationRef, DeleteResult]
 		}
 		if err != nil {
 			return nil, zip.ErrInternal(err.Error())
+		}
+		if err := authorizePlatformRow(ctx, app); err != nil {
+			return nil, err
 		}
 		if err := app.Delete(); err != nil {
 			return nil, zip.ErrInternal(err.Error())

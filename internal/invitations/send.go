@@ -12,8 +12,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
@@ -31,15 +29,18 @@ import (
 const PathJoin = "/join"
 
 // The pace invitation email is held to. One invitation is mailed at most once a
-// minute; one organization sends at most OrgHourly an hour; and one address
-// receives at most RecipientDaily a day, from every organization together — the
-// bound that keeps many invitations pinned to one person from becoming a flood.
-// The sends are counted from their audit rows (schema.ActionInviteSend), which no
-// request may remove.
+// minute; one organization sends at most OrgHourly an hour, and at most
+// OrgRecipientDaily a day to one mailbox; and one mailbox receives at most
+// RecipientDaily a day from every organization together — well above what one org
+// may send it, so no single org can spend a person's day. A mailbox is the
+// address read as the mailbox it delivers to (schema.Mailbox): tags and Gmail's
+// dots do not make a second person. The sends are counted from their audit rows
+// (schema.ActionInviteSend), which no request may remove.
 const (
-	ResendInterval = 60 * time.Second
-	OrgHourly      = 50
-	RecipientDaily = 5
+	ResendInterval    = 60 * time.Second
+	OrgHourly         = 50
+	OrgRecipientDaily = 3
+	RecipientDaily    = 20
 )
 
 // now is the clock the send reads, replaceable in tests.
@@ -64,6 +65,7 @@ var (
 	errTooSoon     = errors.New("this invitation was just sent; wait a minute before sending it again")
 	errOrgPace     = errors.New("this organization has sent too many invitations in the last hour; try again later")
 	errAddressPace = errors.New("this address has been sent too many invitations today; try again tomorrow")
+	errOrgAddress  = errors.New("this organization has invited this address too many times today; try again tomorrow")
 )
 
 // Send emails an invitation to the address it is pinned to: who invited them, to
@@ -113,7 +115,7 @@ func (h *Handler) Send(ctx context.Context, in *SendInput) (*SendOutput, error) 
 
 	stamp, prior, err := h.claim(ctx, org, inv, to)
 	switch {
-	case errors.Is(err, errTooSoon), errors.Is(err, errOrgPace), errors.Is(err, errAddressPace):
+	case errors.Is(err, errTooSoon), errors.Is(err, errOrgPace), errors.Is(err, errAddressPace), errors.Is(err, errOrgAddress):
 		return nil, zip.Errorf(429, "%s", err.Error())
 	case err != nil:
 		return nil, zip.ErrInternal(err.Error())
@@ -157,12 +159,18 @@ func (h *Handler) claim(ctx context.Context, org *schema.Organization, inv *sche
 		if last, err := time.Parse(time.RFC3339, fresh.SentTime); err == nil && t.Sub(last) < ResendInterval {
 			return errTooSoon
 		}
-		if n, err := store.Recorded(ctx, tx, schema.ActionInviteSend, "Organization", inv.Owner, t.Add(-time.Hour)); err != nil {
+		box, day := schema.Mailbox(to), t.Add(-24*time.Hour)
+		if n, err := store.Recorded(ctx, tx, schema.ActionInviteSend, t.Add(-time.Hour), "Organization", inv.Owner); err != nil {
 			return err
 		} else if n >= OrgHourly {
 			return errOrgPace
 		}
-		if n, err := store.Recorded(ctx, tx, schema.ActionInviteSend, "Object", to, t.Add(-24*time.Hour)); err != nil {
+		if n, err := store.Recorded(ctx, tx, schema.ActionInviteSend, day, "Organization", inv.Owner, "Object", box); err != nil {
+			return err
+		} else if n >= OrgRecipientDaily {
+			return errOrgAddress
+		}
+		if n, err := store.Recorded(ctx, tx, schema.ActionInviteSend, day, "Object", box); err != nil {
 			return err
 		} else if n >= RecipientDaily {
 			return errAddressPace
@@ -177,7 +185,7 @@ func (h *Handler) claim(ctx context.Context, org *schema.Organization, inv *sche
 			Organization: inv.Owner,
 			User:         actor(ctx),
 			Action:       schema.ActionInviteSend,
-			Object:       to,
+			Object:       schema.Mailbox(to),
 			Response:     inv.Name,
 			Method:       "POST",
 			RequestUri:   "/v1/iam/invitations/" + inv.Owner + "/" + inv.Name + "/send",
@@ -235,43 +243,18 @@ func inviter(ctx context.Context, db orm.DB) string {
 	return u.Email
 }
 
-// nameMax is the longest a name written into an invitation email runs.
-const nameMax = 80
-
-// plain makes a name somebody chose safe to write into a message: control and
-// invisible formatting characters (bidi overrides among them) are dropped,
-// whitespace collapses to single spaces, and it is cut to nameMax characters.
-func plain(s string) string {
-	var b strings.Builder
-	space := false
-	for _, r := range s {
-		switch {
-		case unicode.IsSpace(r):
-			space = b.Len() > 0
-			continue
-		case unicode.IsControl(r), unicode.Is(unicode.Cf, r), r == utf8.RuneError:
-			continue
-		}
-		if space {
-			b.WriteByte(' ')
-			space = false
-		}
-		b.WriteRune(r)
-	}
-	out := b.String()
-	if utf8.RuneCountInString(out) > nameMax {
-		out = string([]rune(out)[:nameMax-1]) + "…"
-	}
-	return out
-}
-
-// message words the invitation email. The carrier sends a body as HTML, so every
-// name in it is escaped and the link — built here, from the issuer and the
-// invitation — is its only anchor; the markup is three paragraphs, so the same
-// text still reads where it is shown plain. It names no brand, for the reason
-// otp's codes name none: the sending account the recipient sees is the org's own.
+// message words the invitation email. The carrier sends a body as HTML. The
+// subject is fixed and names nobody; the org and the inviter appear in the body
+// only as schema.PlainName leaves them — letters, digits, spaces and , ' & ( ) -
+// — so no name can carry markup, a line or anything a mail client would link; the
+// link, built here from the issuer and the invitation, is the only anchor. It
+// names no brand, for the reason otp's codes name none: the sending account the
+// recipient sees is the org's own.
 func message(sender, to, org, from, link string) otp.Message {
-	o, f := plain(org), plain(from)
+	o, f := schema.PlainName(org, 60), schema.PlainName(from, 60)
+	if o == "" {
+		o = "an organization"
+	}
 	lead := "You have been invited to join " + o + "."
 	if f != "" {
 		lead = f + " invited you to join " + o + "."
@@ -280,7 +263,7 @@ func message(sender, to, org, from, link string) otp.Message {
 		Org:     sender,
 		Channel: otp.Email,
 		To:      to,
-		Subject: "You're invited to join " + o,
+		Subject: "You're invited to join an organization",
 		Body: fmt.Sprintf("<p>%s</p>\n<p><a href=\"%s\">%s</a></p>\n<p>%s</p>",
 			html.EscapeString(lead),
 			html.EscapeString(link), html.EscapeString(link),

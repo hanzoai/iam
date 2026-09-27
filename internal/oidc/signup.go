@@ -146,15 +146,6 @@ func signupHandler(db orm.DB) zip.Handler {
 		// filing them in the application's, puts them where they did not ask to be.
 		// Every refusal here is the same sentence as the reserved-org one above, so a
 		// prober learns neither which orgs stand nor which codes exist.
-		if f.Invitation != "" {
-			over, err := inviteGuessed(ctx, db, f.Organization)
-			if err != nil {
-				return httpx.Err(c, err.Error())
-			}
-			if over {
-				return httpx.Err(c, "too many attempts to join this organization; try again later")
-			}
-		}
 		invite, err := invitation(ctx, db, app, &f)
 		if err != nil {
 			return httpx.Err(c, err.Error())
@@ -236,7 +227,11 @@ func signupHandler(db orm.DB) zip.Handler {
 			// sent to sign-in or recovery before a code goes to an address that has an
 			// account. The answer is the one a wrong code has always drawn, since the
 			// code is spent last.
-			if f.Code == "" && sendsCodes(app) {
+			//
+			// An invitation pinned to this address asks for the same proof whatever
+			// the application offers: the pin says who may take the seat, and an
+			// account that never proved the address would hold it unproven.
+			if f.Code == "" && (sendsCodes(app) || (invite != nil && invite.Email != "")) {
 				return httpx.Err(c, "the code sent to the email address is required")
 			}
 		}

@@ -15,6 +15,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http/httptest"
 	"strings"
@@ -174,7 +175,7 @@ func TestSend_mailsThePinnedAddressTheWayTheInviterCameIn(t *testing.T) {
 	if m.To != "ada@example.com" || m.Channel != otp.Email || m.Org != "hanzo" {
 		t.Fatalf("to %q over %q as %q; want ada@example.com, email, the token's application's org hanzo", m.To, m.Channel, m.Org)
 	}
-	if m.Subject != "You're invited to join Acme Robotics" {
+	if m.Subject != "You're invited to join an organization" || !strings.Contains(m.Body, "join Acme Robotics.") {
 		t.Fatalf("subject %q", m.Subject)
 	}
 	link := "https://hanzo.id/join?client_id=hanzo-app&amp;invite=K7PQ2M9XRT&amp;org=acme"
@@ -222,12 +223,12 @@ func TestSend_onlyThePlatformsAccessTokens(t *testing.T) {
 	}
 }
 
-// HIGH 2: a name somebody chose is text. It cannot add markup, a link, or a line
-// to the subject.
-func TestSend_namesAreEscaped(t *testing.T) {
+// A name somebody chose is text a mail client cannot act on: no markup, no line,
+// nothing URL-shaped for it to link, and never in the subject.
+func TestSend_namesCarryNothingToFollow(t *testing.T) {
 	h, box := sendRig(t)
 	o, _ := store.GetOrganizationByName(context.Background(), h.db, "acme")
-	o.DisplayName = "Hanzo Security</b><br><a href=\"https://hanzo-id.example/verify\">Your account is locked</a><!--\r\nBcc: x@evil.example"
+	o.DisplayName = "Hanzo Security</b><br><a href=\"https://hanzo-id.example/verify\">Your account is locked</a><!--\r\nBcc: x@evil.example www.hanzo-id.example"
 	if err := o.UpdateCtx(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -236,11 +237,17 @@ func TestSend_namesAreEscaped(t *testing.T) {
 		t.Fatalf("status=%d body=%s", status, body)
 	}
 	m := box.messages()[0]
-	if strings.Count(m.Body, "<a ") != 1 || strings.Contains(m.Body, "<br>") || strings.Contains(m.Body, "<!--") {
-		t.Fatalf("markup got through:\n%s", m.Body)
+	if m.Subject != "You're invited to join an organization" {
+		t.Fatalf("subject %q carries the name", m.Subject)
 	}
-	if strings.ContainsAny(m.Subject, "\r\n") || len([]rune(m.Subject)) > len("You're invited to join ")+80 {
-		t.Fatalf("subject %q", m.Subject)
+	lead := m.Body[:strings.Index(m.Body, "</p>")]
+	for _, bad := range []string{"<a", "<br", "<!--", "://", "hanzo-id.example", "www.", "@", "\n"} {
+		if strings.Contains(lead, bad) {
+			t.Fatalf("the name left %q in the body:\n%s", bad, m.Body)
+		}
+	}
+	if strings.Count(m.Body, "<a ") != 1 {
+		t.Fatalf("want one anchor:\n%s", m.Body)
 	}
 }
 
@@ -256,21 +263,48 @@ func TestSend_theRecipientIsOneBareAddress(t *testing.T) {
 	}
 }
 
-// HIGH 2: many invitations pinned to one address are one address's quota.
-func TestSend_oneAddressIsPacedAcrossInvitations(t *testing.T) {
+// One mailbox is one person however its address is written: tags and Gmail's
+// dots do not buy more mail. One org sends a mailbox at most three a day.
+func TestSend_oneMailboxIsPacedAcrossItsAddresses(t *testing.T) {
 	h, box := sendRig(t)
-	for i := 0; i < 8; i++ {
-		seedPinned(t, h.db, "inv-"+string(rune('a'+i)), "ada@example.com")
+	addrs := []string{"ada+1@example.com", "ada+2@example.com", "ADA@example.com", "ada+3@example.com", "ada+4@example.com"}
+	for i, a := range addrs {
+		seedPinned(t, h.db, fmt.Sprintf("inv-%d", i), a)
 	}
 	var refused int
-	for i := 0; i < 8; i++ {
-		status, _ := h.send(t, h.owner(t), "hanzo.id", "/v1/iam/invitations/acme/inv-"+string(rune('a'+i))+"/send", `{}`)
-		if status == 429 {
+	for i := range addrs {
+		if status, _ := h.send(t, h.owner(t), "hanzo.id", fmt.Sprintf("/v1/iam/invitations/acme/inv-%d/send", i), `{}`); status == 429 {
 			refused++
 		}
 	}
-	if got := len(box.messages()); got != 5 || refused != 3 {
-		t.Fatalf("mailed %d, refused %d; want 5 and 3", got, refused)
+	if got := len(box.messages()); got != 3 || refused != 2 {
+		t.Fatalf("mailed %d, refused %d; want 3 and 2", got, refused)
+	}
+	if got := box.messages()[0].To; got != "ada+1@example.com" {
+		t.Fatalf("delivered to %q, want the address as written", got)
+	}
+	if schema.Mailbox("a.d.a+x@googlemail.com") != "ada@gmail.com" {
+		t.Fatal("a Gmail address is not read as its mailbox")
+	}
+}
+
+// One org cannot spend a mailbox's day for everyone else: its own limit sits far
+// below the limit across orgs.
+func TestSend_oneOrgCannotExhaustAMailbox(t *testing.T) {
+	h, box := sendRig(t)
+	for i := 0; i < 3; i++ {
+		if err := store.Append(context.Background(), h.db, &schema.AuditLog{
+			Owner: "throwaway", Organization: "throwaway", Action: schema.ActionInviteSend, Object: "ada@example.com",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seedPinned(t, h.db, "inv-1", "ada@example.com")
+	if status, body := h.send(t, h.owner(t), "hanzo.id", sendPath, `{}`); status != 200 {
+		t.Fatalf("status=%d body=%s, want acme to reach ada after another org's three", status, body)
+	}
+	if len(box.messages()) != 1 {
+		t.Fatal("nothing was sent")
 	}
 }
 
@@ -404,7 +438,7 @@ func TestSend_isRecorded(t *testing.T) {
 	if status, body := h.send(t, h.owner(t), "hanzo.id", sendPath, `{}`); status != 200 {
 		t.Fatalf("status=%d body=%s", status, body)
 	}
-	n, err := store.Recorded(context.Background(), h.db, schema.ActionInviteSend, "Organization", "acme", time.Now().Add(-time.Minute))
+	n, err := store.Recorded(context.Background(), h.db, schema.ActionInviteSend, time.Now().Add(-time.Minute), "Organization", "acme")
 	if err != nil || n != 1 {
 		t.Fatalf("recorded %d sends (%v), want 1", n, err)
 	}
