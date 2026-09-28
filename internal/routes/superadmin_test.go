@@ -4,10 +4,11 @@
 package routes_test
 
 // A SuperAdmin's account is written only by a SuperAdmin, through the real
-// router. The operator here is hanzo/z: anchored in a brand org, made an
-// operator by a membership in the reserved one — which is how operators are
-// actually made, and why hanzo's own admin and any application allowed to
-// administer hanzo's users were both able to reach them.
+// router. The operator here is admin/z: a named person provisioned in the admin
+// org, who also works in hanzo by a membership — so hanzo's own admin and any
+// application allowed to administer hanzo's users are the ones who could try to
+// reach them. hanzo/z, a hanzo account holding an admin-org membership, is not a
+// SuperAdmin and is administered like any other hanzo account.
 
 import (
 	"context"
@@ -24,19 +25,26 @@ import (
 
 const visorSecret = "visor-secret"
 
-// operatorFixtures seeds hanzo/z as a SuperAdmin and hanzo-visor as an
-// application holding the user-admin and org-admin capabilities.
+// operatorFixtures seeds admin/z as a SuperAdmin who is also a member of hanzo,
+// hanzo/z as a hanzo account holding an admin-org membership, and hanzo-visor as
+// an application holding the user-admin and org-admin capabilities.
 func operatorFixtures(t *testing.T, h *harness) {
 	t.Helper()
+	ctx := context.Background()
 	t.Setenv("IAM_USER_ADMIN_APPS", "hanzo-visor")
 	t.Setenv("IAM_ORG_ADMIN_APPS", "hanzo-visor")
 	seedClientApp(t, h.db, "hanzo-visor", visorSecret)
-	seedUser(t, h.db, "hanzo", "z", false)
-	if _, err := store.EnsureMembership(context.Background(), h.db, "hanzo/z", "admin", store.RoleMember); err != nil {
-		t.Fatalf("seed operator membership: %v", err)
+	seedUser(t, h.db, "admin", "z", false)
+	seedUser(t, h.db, "hanzo", "z", true)
+	for _, m := range [][2]string{{"admin/z", "hanzo"}, {"hanzo/z", "admin"}} {
+		if _, err := store.EnsureMembership(ctx, h.db, m[0], m[1], store.RoleMember); err != nil {
+			t.Fatalf("seed membership %s in %s: %v", m[0], m[1], err)
+		}
 	}
-	if super, err := store.IsSuperAdmin(context.Background(), h.db, "hanzo", "z"); err != nil || !super {
-		t.Fatalf("hanzo/z is not a SuperAdmin (%v, %v)", super, err)
+	for owner, want := range map[string]bool{"admin": true, "hanzo": false} {
+		if u, err := store.GetUserByName(ctx, h.db, owner, "z"); err != nil || u.SuperAdmin() != want {
+			t.Fatalf("%s/z SuperAdmin = %v, want %v (%v)", owner, u.SuperAdmin(), want, err)
+		}
 	}
 	// hanzo's second admin holds the role by membership from a personal account.
 	seedUser(t, h.db, "keeper", "keeper", false)
@@ -100,18 +108,18 @@ func TestAnAppWithUserAdminCannotWriteASuperAdmin(t *testing.T) {
 	h := newHarness(t)
 	operatorFixtures(t, h)
 
-	for _, path := range []string{"/v1/iam/users/hanzo/z", "/v1/iam/users/hanzo/Z"} {
+	for _, path := range []string{"/v1/iam/users/admin/z", "/v1/iam/users/admin/Z"} {
 		if status, body := h.send(t, visor, "PUT", path, reset); status != 403 {
 			t.Fatalf("PUT %s as hanzo-visor answered %d: %s", path, status, body)
 		}
 	}
-	if got := digest(t, h, "hanzo", "z"); got != secretUserHash {
+	if got := digest(t, h, "admin", "z"); got != secretUserHash {
 		t.Fatalf("the operator's password changed under a refusal: %q", got)
 	}
-	if status, body := h.send(t, visor, "DELETE", "/v1/iam/users/hanzo/z", ""); status != 403 {
-		t.Fatalf("DELETE hanzo/z as hanzo-visor answered %d: %s", status, body)
+	if status, body := h.send(t, visor, "DELETE", "/v1/iam/users/admin/z", ""); status != 403 {
+		t.Fatalf("DELETE admin/z as hanzo-visor answered %d: %s", status, body)
 	}
-	if digest(t, h, "hanzo", "z") == "" {
+	if digest(t, h, "admin", "z") == "" {
 		t.Fatal("the operator's account was deleted under a refusal")
 	}
 
@@ -129,13 +137,13 @@ func TestAnAppWithUserAdminCannotWriteASuperAdmin(t *testing.T) {
 
 func TestAnOrgAdminCannotWriteItsSuperAdmin(t *testing.T) {
 	eachOrgAdmin(t, func(t *testing.T, h *harness, boss caller) {
-		if status, body := h.send(t, boss, "PUT", "/v1/iam/users/hanzo/z", reset); status != 403 {
+		if status, body := h.send(t, boss, "PUT", "/v1/iam/users/admin/z", reset); status != 403 {
 			t.Fatalf("hanzo's admin reset the operator: %d %s", status, body)
 		}
-		if status, body := h.send(t, boss, "DELETE", "/v1/iam/users/hanzo/z", ""); status != 403 {
+		if status, body := h.send(t, boss, "DELETE", "/v1/iam/users/admin/z", ""); status != 403 {
 			t.Fatalf("hanzo's admin deleted the operator: %d %s", status, body)
 		}
-		if got := digest(t, h, "hanzo", "z"); got != secretUserHash {
+		if got := digest(t, h, "admin", "z"); got != secretUserHash {
 			t.Fatalf("the operator's password changed under a refusal: %q", got)
 		}
 		if status, body := h.send(t, boss, "PUT", "/v1/iam/users/hanzo/alice", reset); status != 200 {
@@ -148,12 +156,12 @@ func TestASuperAdminWritesASuperAdmin(t *testing.T) {
 	h := newHarness(t)
 	operatorFixtures(t, h)
 
-	for _, sub := range []string{"admin/root", "hanzo/z"} {
-		before := digest(t, h, "hanzo", "z")
-		if status, body := h.send(t, h.person(t, sub), "PUT", "/v1/iam/users/hanzo/z", reset); status != 200 {
+	for _, sub := range []string{"admin/root", "admin/z"} {
+		before := digest(t, h, "admin", "z")
+		if status, body := h.send(t, h.person(t, sub), "PUT", "/v1/iam/users/admin/z", reset); status != 200 {
 			t.Fatalf("%s could not reset the operator: %d %s", sub, status, body)
 		}
-		if digest(t, h, "hanzo", "z") == before {
+		if digest(t, h, "admin", "z") == before {
 			t.Fatalf("%s's reset of the operator did not land", sub)
 		}
 	}
@@ -168,10 +176,10 @@ func TestASuperAdminsFactorsAndCredentialsAreTheirs(t *testing.T) {
 		name string
 		c    caller
 	}{{"hanzo-visor", visor}, {"hanzo/boss", boss}} {
-		if status, body := h.send(t, who.c, "DELETE", "/v1/iam/mfa", `{"owner":"hanzo","name":"z"}`); status != 403 {
+		if status, body := h.send(t, who.c, "DELETE", "/v1/iam/mfa", `{"owner":"admin","name":"z"}`); status != 403 {
 			t.Fatalf("%s dropped the operator's second factor: %d %s", who.name, status, body)
 		}
-		if status, body := h.send(t, who.c, "POST", "/v1/iam/mfa/setup/initiate", `{"owner":"hanzo","name":"z"}`); status != 403 {
+		if status, body := h.send(t, who.c, "POST", "/v1/iam/mfa/setup/initiate", `{"owner":"admin","name":"z"}`); status != 403 {
 			t.Fatalf("%s enrolled a factor on the operator: %d %s", who.name, status, body)
 		}
 	}
@@ -180,7 +188,7 @@ func TestASuperAdminsFactorsAndCredentialsAreTheirs(t *testing.T) {
 	}
 
 	if status, body := h.send(t, boss, "POST", "/v1/iam/webauthn-credentials",
-		`{"owner":"hanzo","name":"planted","user":"hanzo/z"}`); status != 403 {
+		`{"owner":"hanzo","name":"planted","user":"admin/z"}`); status != 403 {
 		t.Fatalf("hanzo's admin filed a passkey for the operator: %d %s", status, body)
 	}
 	if status, body := h.send(t, boss, "POST", "/v1/iam/webauthn-credentials",
@@ -189,10 +197,10 @@ func TestASuperAdminsFactorsAndCredentialsAreTheirs(t *testing.T) {
 	}
 
 	patch := `{"schemas":["urn:ietf:params:scim:api:messages:2.0:PatchOp"],"Operations":[{"op":"replace","path":"password","value":"a whole new password"}]}`
-	if status, body := h.send(t, visor, "PATCH", "/v1/iam/scim/v2/Users/hanzo/z", patch); status != 403 {
+	if status, body := h.send(t, visor, "PATCH", "/v1/iam/scim/v2/Users/admin/z", patch); status != 403 {
 		t.Fatalf("SCIM as hanzo-visor reset the operator: %d %s", status, body)
 	}
-	if got := digest(t, h, "hanzo", "z"); got != secretUserHash {
+	if got := digest(t, h, "admin", "z"); got != secretUserHash {
 		t.Fatalf("the operator's password changed under a refusal: %q", got)
 	}
 }
@@ -203,16 +211,16 @@ func TestASuperAdminsMembershipsAreTheirs(t *testing.T) {
 	bob := h.person(t, "orgb/bob")
 	refused := func(status int, body string) bool { return status == 403 || strings.Contains(body, `"status":"error"`) }
 
-	if status, body := h.send(t, bob, "POST", "/v1/iam/memberships", `{"user":"hanzo/z","org":"orgb"}`); !refused(status, body) {
+	if status, body := h.send(t, bob, "POST", "/v1/iam/memberships", `{"user":"admin/z","org":"orgb"}`); !refused(status, body) {
 		t.Fatalf("orgb's admin added the operator: %d %s", status, body)
 	}
-	if status, body := h.send(t, h.person(t, "admin/root"), "POST", "/v1/iam/memberships", `{"user":"hanzo/z","org":"orgb"}`); refused(status, body) {
+	if status, body := h.send(t, h.person(t, "admin/root"), "POST", "/v1/iam/memberships", `{"user":"admin/z","org":"orgb"}`); refused(status, body) {
 		t.Fatalf("a SuperAdmin could not add the operator: %d %s", status, body)
 	}
-	if status, body := h.send(t, bob, "POST", "/v1/iam/delete-membership", `{"user":"hanzo/z","org":"orgb"}`); !refused(status, body) {
+	if status, body := h.send(t, bob, "POST", "/v1/iam/delete-membership", `{"user":"admin/z","org":"orgb"}`); !refused(status, body) {
 		t.Fatalf("orgb's admin removed the operator: %d %s", status, body)
 	}
-	if m, err := store.MembershipIn(context.Background(), h.db, "hanzo/z", "orgb", "", ""); err != nil || m == nil {
+	if m, err := store.MembershipIn(context.Background(), h.db, "admin/z", "orgb", "", ""); err != nil || m == nil {
 		t.Fatalf("the operator's membership did not survive the refusal (%v, %v)", m, err)
 	}
 
@@ -270,7 +278,7 @@ func credentialPaths(owner, name string) [2]string {
 // and whoever a rewrite would name instead.
 func TestASuperAdminsPasskeysAndTokensAreRemovedOnlyByThem(t *testing.T) {
 	eachOrgAdmin(t, func(t *testing.T, h *harness, boss caller) {
-		seedCredentials(t, h, "hanzo", "op", "hanzo/z")
+		seedCredentials(t, h, "hanzo", "op", "admin/z")
 		seedCredentials(t, h, "hanzo", "member", "hanzo/alice")
 
 		for _, path := range credentialPaths("hanzo", "op") {
@@ -281,7 +289,7 @@ func TestASuperAdminsPasskeysAndTokensAreRemovedOnlyByThem(t *testing.T) {
 				t.Fatalf("hanzo's admin removed %s: %d %s", path, status, body)
 			}
 		}
-		if pk, tok := holders(t, h, "hanzo", "op"); pk != "hanzo/z" || tok != "hanzo/z" {
+		if pk, tok := holders(t, h, "hanzo", "op"); pk != "admin/z" || tok != "admin/z" {
 			t.Fatalf("the operator's passkey and token name %q and %q after two refusals", pk, tok)
 		}
 
@@ -315,11 +323,11 @@ func TestAnOrgAdminCannotNameASuperAdminOnATokenOrPasskey(t *testing.T) {
 	seedCredentials(t, h, "hanzo", "member", "hanzo/alice")
 
 	if status, body := h.send(t, boss, "POST", "/v1/iam/tokens",
-		`{"owner":"hanzo","name":"planted","user":"hanzo/z"}`); status != 403 {
+		`{"owner":"hanzo","name":"planted","user":"admin/z"}`); status != 403 {
 		t.Fatalf("hanzo's admin recorded a token for the operator: %d %s", status, body)
 	}
 	for _, path := range credentialPaths("hanzo", "member") {
-		if status, body := h.send(t, boss, "PUT", path, `{"user":"hanzo/z"}`); status != 403 {
+		if status, body := h.send(t, boss, "PUT", path, `{"user":"admin/z"}`); status != 403 {
 			t.Fatalf("hanzo's admin rewrote %s to name the operator: %d %s", path, status, body)
 		}
 	}
@@ -332,12 +340,12 @@ func TestAnOrgAdminCannotNameASuperAdminOnATokenOrPasskey(t *testing.T) {
 		t.Fatalf("hanzo's admin could not record a member's token: %d %s", status, body)
 	}
 	if status, body := h.send(t, h.person(t, "admin/root"), "POST", "/v1/iam/tokens",
-		`{"owner":"hanzo","name":"operator","user":"hanzo/z"}`); status != 200 {
+		`{"owner":"hanzo","name":"operator","user":"admin/z"}`); status != 200 {
 		t.Fatalf("a SuperAdmin could not record the operator's token: %d %s", status, body)
 	}
 }
 
-// Every lookup of an account folds case, so "hanzo/Z" is the operator on every
+// Every lookup of an account folds case, so "admin/Z" is the operator on every
 // surface that files something under a person, and is refused as them.
 func TestACaseVariantNamesTheSameSuperAdmin(t *testing.T) {
 	h := newHarness(t)
@@ -347,20 +355,44 @@ func TestACaseVariantNamesTheSameSuperAdmin(t *testing.T) {
 	refused := func(status int, body string) bool { return status == 403 || strings.Contains(body, `"status":"error"`) }
 
 	if status, body := h.send(t, boss, "POST", "/v1/iam/tokens",
-		`{"owner":"hanzo","name":"planted-session","user":"hanzo/Z"}`); status != 403 {
-		t.Fatalf("hanzo's admin recorded a token for hanzo/Z: %d %s", status, body)
+		`{"owner":"hanzo","name":"planted-session","user":"admin/Z"}`); status != 403 {
+		t.Fatalf("hanzo's admin recorded a token for admin/Z: %d %s", status, body)
 	}
 	if status, body := h.send(t, boss, "POST", "/v1/iam/webauthn-credentials",
-		`{"owner":"hanzo","name":"planted-key","user":"hanzo/Z"}`); status != 403 {
-		t.Fatalf("hanzo's admin filed a passkey for hanzo/Z: %d %s", status, body)
+		`{"owner":"hanzo","name":"planted-key","user":"admin/Z"}`); status != 403 {
+		t.Fatalf("hanzo's admin filed a passkey for admin/Z: %d %s", status, body)
 	}
-	if status, body := h.send(t, bob, "POST", "/v1/iam/memberships", `{"user":"hanzo/Z","org":"orgb"}`); !refused(status, body) {
-		t.Fatalf("orgb's admin added hanzo/Z: %d %s", status, body)
+	if status, body := h.send(t, bob, "POST", "/v1/iam/memberships", `{"user":"admin/Z","org":"orgb"}`); !refused(status, body) {
+		t.Fatalf("orgb's admin added admin/Z: %d %s", status, body)
 	}
-	if status, body := h.send(t, bob, "POST", "/v1/iam/delete-membership", `{"user":"hanzo/Z","org":"orgb"}`); !refused(status, body) {
-		t.Fatalf("orgb's admin removed hanzo/Z: %d %s", status, body)
+	if status, body := h.send(t, bob, "POST", "/v1/iam/delete-membership", `{"user":"admin/Z","org":"orgb"}`); !refused(status, body) {
+		t.Fatalf("orgb's admin removed admin/Z: %d %s", status, body)
 	}
 	if pk, tok := holders(t, h, "hanzo", "planted"); pk != "" || tok != "" {
 		t.Fatalf("a refused write left a credential naming %q and %q", pk, tok)
 	}
+}
+
+// hanzo/z holds an admin-org membership from hanzo, and that grants nothing:
+// hanzo's admin runs the account like any other of hanzo's, and hanzo/z itself
+// cannot touch the SuperAdmin's account or any other tenant.
+func TestAnAdminMembershipIsAdministeredLikeAnyAccount(t *testing.T) {
+	eachOrgAdmin(t, func(t *testing.T, h *harness, boss caller) {
+		if status, body := h.send(t, boss, "PUT", "/v1/iam/users/hanzo/z", reset); status != 200 {
+			t.Fatalf("hanzo's admin could not administer hanzo/z: %d %s", status, body)
+		}
+		if got := digest(t, h, "hanzo", "z"); got == secretUserHash {
+			t.Fatal("hanzo's admin's reset of hanzo/z did not land")
+		}
+		z := h.person(t, "hanzo/z")
+		if status, body := h.send(t, z, "PUT", "/v1/iam/users/admin/z", reset); status != 403 {
+			t.Fatalf("hanzo/z wrote the SuperAdmin's account: %d %s", status, body)
+		}
+		if status, body := h.send(t, z, "PUT", "/v1/iam/users/orgb/bob", reset); status != 403 {
+			t.Fatalf("hanzo/z wrote another tenant's account: %d %s", status, body)
+		}
+		if got := digest(t, h, "admin", "z"); got != secretUserHash {
+			t.Fatalf("the operator's password changed under a refusal: %q", got)
+		}
+	})
 }

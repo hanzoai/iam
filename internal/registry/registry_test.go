@@ -447,24 +447,32 @@ func TestToken_HanzoOrgAdmin_CanPush(t *testing.T) {
 	}
 }
 
-// TestToken_SuperAdminKey_Denied: no durable key speaks for a SuperAdmin
-// (store.SuperAdminKey), so an sk- row naming one authenticates nothing here —
-// whether the SuperAdmin is homed in the reserved org or holds a membership there.
+// TestToken_SuperAdminKey_Denied: no durable key speaks for an account in the
+// admin org (store.SuperAdminKey), so an sk- row naming one authenticates nothing
+// here. A hanzo account holding an admin-org membership is not a SuperAdmin: its
+// key is an ordinary hanzo credential, and it pushes only as hanzo's org admin.
 // A platform push identity is a confidential application on the push list
 // (TestToken_ServiceAccount_PullPush).
 func TestToken_SuperAdminKey_Denied(t *testing.T) {
 	app, db, _ := newServer(t)
 	seedKeyRow(t, db, "admin", "z", true, "pk-SUPERADMINkey0001", "sk-SUPERADMINkey0001")
-	seedKeyRow(t, db, "hanzo", "op", true, "pk-OPERATORkey00001", "sk-OPERATORkey00001")
-	if _, err := store.EnsureMembership(context.Background(), db, "hanzo/op", "admin", store.RoleMember); err != nil {
+	seedKeyRow(t, db, "hanzo", "op", false, "pk-OPERATORkey00001", "sk-OPERATORkey00001")
+	if _, err := store.EnsureMembership(context.Background(), db, "hanzo/op", "admin", store.RoleAdmin); err != nil {
 		t.Fatalf("grant: %v", err)
 	}
 
-	for _, who := range [][2]string{{"z", "sk-SUPERADMINkey0001"}, {"op", "sk-OPERATORkey00001"}} {
-		status, body, _ := tokenGET(t, app, who[0], who[1], testService, "repository:hanzo/app:pull,push")
-		if status != 401 || body["token"] != nil {
-			t.Fatalf("%s: a SuperAdmin's key was a registry credential: status=%d body=%v", who[0], status, body)
-		}
+	status, body, _ := tokenGET(t, app, "z", "sk-SUPERADMINkey0001", testService, "repository:hanzo/app:pull,push")
+	if status != 401 || body["token"] != nil {
+		t.Fatalf("a SuperAdmin's key was a registry credential: status=%d body=%v", status, body)
+	}
+
+	status, body, _ = tokenGET(t, app, "op", "sk-OPERATORkey00001", testService, "repository:hanzo/app:pull,push")
+	if status != 200 {
+		t.Fatalf("hanzo/op's key: status=%d body=%v, want an ordinary hanzo credential", status, body)
+	}
+	acc := accessOf(t, verifyClaims(t, app, body["token"].(string)))
+	if want := []access{{Type: "repository", Name: "hanzo/app", Actions: []string{"pull"}}}; !eqAccess(acc, want) {
+		t.Fatalf("hanzo/op access = %v, want %v — an admin-org membership granted push", acc, want)
 	}
 }
 

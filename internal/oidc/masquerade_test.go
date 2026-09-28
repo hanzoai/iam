@@ -34,6 +34,7 @@ import (
 	"github.com/hanzoai/iam/internal/routes"
 	"github.com/hanzoai/iam/internal/testhttp"
 	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 const (
@@ -189,6 +190,43 @@ func TestAssume_operatorKeepsTheirOwnIdentity(t *testing.T) {
 	if !has(orgsIn(claims), "acme") {
 		t.Fatalf("orgs=%v, want acme among them — the tenant is reached through the org switch",
 			orgsIn(claims))
+	}
+	// The operator's own org stays FIRST: it is what every reader of the token
+	// decides SuperAdmin on (authz.Claims.Sudo reads orgs[0]).
+	if orgs := orgsIn(claims); len(orgs) == 0 || orgs[0] != policy.AdminOrg {
+		t.Fatalf("orgs=%v, want %s first", orgs, policy.AdminOrg)
+	}
+}
+
+// A membership of the admin org held from a brand org is not SuperAdmin: its
+// holder is refused, and the refusal is recorded like any other.
+func TestAssume_adminMembershipRefused(t *testing.T) {
+	r := newRig(t)
+	if _, err := store.EnsureMembership(context.Background(), r.db, "hanzo/boss", policy.AdminOrg, store.RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+	if status, body := r.post(t, assume, "hanzo/boss", `{"org":"acme"}`); status != 403 {
+		t.Fatalf("an admin-org membership stepped into another tenant: status=%d body=%s", status, body)
+	}
+	n, err := store.Recorded(context.Background(), r.db, schema.ActionAssumeOrg, time.Now().Add(-time.Hour), "User", "hanzo/boss")
+	if err != nil || n != 1 {
+		t.Fatalf("refused attempts recorded = %d (%v), want 1", n, err)
+	}
+}
+
+// A machine that lives in the admin org is never SuperAdmin.
+func TestAssume_machineInTheAdminOrgRefused(t *testing.T) {
+	r := newRig(t)
+	for _, typ := range []string{schema.ServiceAccount, schema.Program} {
+		u := orm.New[schema.User](r.db)
+		u.Owner, u.Name, u.Type, u.IsAdmin = policy.AdminOrg, "svc-"+typ, typ, true
+		u.SetId(policy.AdminOrg + "/" + u.Name)
+		if err := u.CreateCtx(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if status, body := r.post(t, assume, "admin/svc-"+typ, `{"org":"acme"}`); status != 403 {
+			t.Fatalf("a %s in the admin org stepped into a tenant: status=%d body=%s", typ, status, body)
+		}
 	}
 }
 

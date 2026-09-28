@@ -306,10 +306,8 @@ func TestDevice_ApprovalTenantBoundary(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		org  string // approver's org; the device app lives in "hanzo"
-		// operator grants a membership in the reserved org — how an operator is
-		// actually made. The one below is anchored in a FOREIGN tenant and still
-		// crosses, which is the whole point: asking the home org denied every
-		// operator who is also an ordinary member of some brand.
+		// operator grants a membership in the reserved org. It makes nobody a
+		// SuperAdmin: only a person whose own org is the reserved one crosses.
 		operator bool
 		// orgChoice is the device app's OrgChoiceMode. "create" is an application
 		// whose accounts work in orgs of their own — the self-service CLI a
@@ -321,7 +319,7 @@ func TestDevice_ApprovalTenantBoundary(t *testing.T) {
 		{"same org approves", "hanzo", false, "", true},
 		{"foreign org refused", "lux", false, "", false},
 		{"superadmin crosses tenants", "admin", false, "", true},
-		{"brand-anchored operator crosses tenants", "lux", true, "", true},
+		{"an admin-org membership held from a brand org does not cross", "lux", true, "", false},
 		{"an app serving any org admits a personal org", "alice", false, "create", true},
 		{"an app serving any org still refuses a reserved org", "built-in", false, "create", false},
 	} {
@@ -360,6 +358,17 @@ func TestDevice_ApprovalTenantBoundary(t *testing.T) {
 			}
 			if row.User != tc.org+"/eve" {
 				t.Fatalf("row.User = %q, want %q", row.User, tc.org+"/eve")
+			}
+			// A SuperAdmin approving into another org is on the SuperAdmin trail;
+			// an approval inside one's own org, or through an app that serves any
+			// org, is not a platform act.
+			want := 0
+			if tc.org == policy.AdminOrg {
+				want = 1
+			}
+			n, err := store.Recorded(tctx(), db, schema.ActionSuperAdmin, time.Now().Add(-time.Hour), "User", tc.org+"/eve")
+			if err != nil || n != want {
+				t.Fatalf("SuperAdmin trail rows = %d (%v), want %d", n, err, want)
 			}
 		})
 	}

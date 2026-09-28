@@ -44,12 +44,11 @@ func seedOrgType(t *testing.T, db orm.DB, name, passwordType string) {
 	}
 }
 
-// The design states that no tenant sign-in form reaches a SuperAdmin. The roster
-// search refuses a member HOMED in a reserved org, but a SuperAdmin is decided by
-// membership of the admin org (store.IsSuperAdmin), and operators are normally
-// anchored in a brand org. Such an operator, once a member of a tenant, is
-// resolved by that tenant's shared-app form.
-func TestLogin_MemberSuperAdminByMembershipIsNotReached(t *testing.T) {
+// No tenant sign-in form reaches a SuperAdmin: they live in the admin org, which
+// the roster search never searches. A brand org's person holding an admin-org
+// membership is not one, and signs in through a tenant's shared app like any
+// other member of that tenant.
+func TestLogin_AnAdminMembershipIsAnOrdinaryMember(t *testing.T) {
 	db, login := memberApp(t)
 	seedUserInOrg(t, db, "hanzo", "op", "op@hanzo.example", "pw-op")
 	for _, org := range []string{"admin", "client"} {
@@ -57,14 +56,15 @@ func TestLogin_MemberSuperAdminByMembershipIsNotReached(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if super, err := store.IsSuperAdmin(tctx(), db, "hanzo", "op"); err != nil || !super {
-		t.Fatalf("precondition: hanzo/op should be a SuperAdmin, got %v %v", super, err)
+	u, err := store.MemberByIdentifier(tctx(), db, "client", "op")
+	if err != nil || u == nil || u.Owner != "hanzo" || u.Name != "op" || u.SuperAdmin() {
+		t.Fatalf("the client roster search = %+v (err=%v); want hanzo/op, not a SuperAdmin", u, err)
 	}
-	if u, err := store.MemberByIdentifier(tctx(), db, "client", "op"); err != nil || u != nil {
-		t.Errorf("the client roster search resolved SuperAdmin %s/%s (err=%v); want nobody", u.Owner, u.Name, err)
+	if m := login("client", "op", "pw-op"); !minted(m) {
+		t.Errorf("a member holding an admin-org membership could not sign in to the org they joined: %v", m)
 	}
-	if m := login("client", "op", "pw-op"); minted(m) {
-		t.Errorf("a SuperAdmin signed in through a tenant's shared app: %v", m)
+	if u, err := store.MemberByIdentifier(tctx(), db, "client", "root"); err != nil || u != nil {
+		t.Errorf("the client roster search reached the SuperAdmin admin/root: %+v (err=%v)", u, err)
 	}
 }
 

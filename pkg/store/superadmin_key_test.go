@@ -15,8 +15,9 @@ import (
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
-// operatorKeys seeds hanzo/z, a SuperAdmin by membership who is also a member of
-// orgb; hanzo/alice, an ordinary member of both; and admin/root.
+// operatorKeys seeds admin/root, a SuperAdmin; admin/svc, a service account in
+// the admin org; hanzo/z, a brand org's person holding an admin-org membership and
+// an orgb membership; and hanzo/alice, an ordinary member of orgb.
 func operatorKeys(t *testing.T) orm.DB {
 	t.Helper()
 	ctx := context.Background()
@@ -24,6 +25,11 @@ func operatorKeys(t *testing.T) orm.DB {
 	seedKeyUser(t, db, "hanzo", "z", "z@hanzo.test", "")
 	seedKeyUser(t, db, "hanzo", "alice", "alice@hanzo.test", "")
 	seedKeyUser(t, db, policy.AdminOrg, "root", "root@hanzo.test", "")
+	svc := seedKeyUser(t, db, policy.AdminOrg, "svc", "", "")
+	svc.Type = schema.ServiceAccount
+	if err := svc.UpdateCtx(ctx); err != nil {
+		t.Fatal(err)
+	}
 	for _, m := range [][2]string{{"hanzo/z", policy.AdminOrg}, {"hanzo/z", "orgb"}, {"hanzo/alice", "orgb"}} {
 		if _, err := EnsureMembership(ctx, db, m[0], m[1], RoleMember); err != nil {
 			t.Fatal(err)
@@ -32,77 +38,68 @@ func operatorKeys(t *testing.T) orm.DB {
 	return db
 }
 
-// Every spelling a key can name its holder in is asked as the row it resolves to:
-// a bare name, a qualified one, either in any case, and a member's key minted in
-// another org.
+// A key is refused for every account in the admin org — its SuperAdmins, its
+// machines, and a name nobody holds yet — in every spelling of the holder. A
+// brand org's person is not one of them, whatever memberships they hold.
 func TestSuperAdminKey_EverySpellingOfTheHolder(t *testing.T) {
-	ctx := context.Background()
-	db := operatorKeys(t)
 	for _, c := range []struct {
 		owner, user string
 		want        bool
 	}{
-		{"hanzo", "z", true},
-		{"hanzo", "Z", true},
-		{"hanzo", "hanzo/z", true},
-		{"hanzo", "hanzo/Z", true},
-		{"orgb", "hanzo/z", true},
-		{"orgb", "hanzo/Z", true},
 		{policy.AdminOrg, "root", true},
+		{policy.AdminOrg, "Root", true},
+		{policy.AdminOrg, "admin/root", true},
+		{policy.AdminOrg, "svc", true},
 		{policy.AdminOrg, "nobody-yet", true},
+		{"hanzo", "admin/root", true},
+		{"hanzo", "z", false},
+		{"hanzo", "hanzo/Z", false},
+		{"orgb", "hanzo/z", false},
 		{"hanzo", "alice", false},
 		{"orgb", "hanzo/alice", false},
 		{"hanzo", "", false},
+		{"Admin", "root", false},
 	} {
-		got, err := SuperAdminKey(ctx, db, &schema.Key{Owner: c.owner, User: c.user})
-		if err != nil || got != c.want {
-			t.Errorf("SuperAdminKey(%s, %q) = %v, %v; want %v", c.owner, c.user, got, err, c.want)
+		if got := SuperAdminKey(&schema.Key{Owner: c.owner, User: c.user}); got != c.want {
+			t.Errorf("SuperAdminKey(%s, %q) = %v; want %v", c.owner, c.user, got, c.want)
 		}
 	}
 }
 
-// No secret key resolves to a SuperAdmin, home key or member key, however it came
-// to exist; the reason names it. An ordinary member's keys resolve as before.
-func TestHolderByAccessKey_NoKeySpeaksForASuperAdmin(t *testing.T) {
+// No secret key resolves to an account in the admin org, however it came to
+// exist; the reason names it. A brand org's person holding an admin-org
+// membership is an ordinary person, and their keys resolve like anyone's.
+func TestHolderByAccessKey_NoKeySpeaksForTheAdminOrg(t *testing.T) {
 	ctx := context.Background()
 	db := operatorKeys(t)
-	seedKey(t, db, "hanzo", "z-home", "z", "pk-live-ZHOME", "sk-live-ZHOME")
-	seedKey(t, db, "hanzo", "z-folded", "hanzo/Z", "pk-live-ZFOLD", "sk-live-ZFOLD")
-	seedKey(t, db, "orgb", "z-member", "hanzo/z", "pk-live-ZMEMBER", "sk-live-ZMEMBER")
 	seedKey(t, db, policy.AdminOrg, "root-home", "root", "pk-live-ROOT", "sk-live-ROOT")
-	seedKey(t, db, "hanzo", "alice-home", "alice", "pk-live-AHOME", "sk-live-AHOME")
+	seedKey(t, db, policy.AdminOrg, "root-folded", "admin/Root", "pk-live-RFOLD", "sk-live-RFOLD")
+	seedKey(t, db, policy.AdminOrg, "svc-key", "svc", "pk-live-SVC", "sk-live-SVC")
+	seedKey(t, db, "hanzo", "z-home", "z", "pk-live-ZHOME", "sk-live-ZHOME")
+	seedKey(t, db, "orgb", "z-member", "hanzo/z", "pk-live-ZMEMBER", "sk-live-ZMEMBER")
 	seedKey(t, db, "orgb", "alice-member", "hanzo/alice", "pk-live-AMEMBER", "sk-live-AMEMBER")
 
-	for _, sk := range []string{"sk-live-ZHOME", "sk-live-ZFOLD", "sk-live-ZMEMBER", "sk-live-ROOT"} {
+	for _, sk := range []string{"sk-live-ROOT", "sk-live-RFOLD", "sk-live-SVC"} {
 		h, err := HolderByAccessKey(ctx, db, sk)
 		if !errors.Is(err, orm.ErrNotFound) || h.User != nil || Reason(err) != KeySuperAdmin {
 			t.Errorf("%s resolved to %+v (err=%v, reason=%q), want nobody and %q", sk, h.User, err, Reason(err), KeySuperAdmin)
 		}
 	}
-	for _, sk := range []string{"sk-live-AHOME", "sk-live-AMEMBER"} {
-		if h, err := HolderByAccessKey(ctx, db, sk); err != nil || h.User == nil || h.User.Name != "alice" {
-			t.Errorf("%s = %+v, %v; want hanzo/alice", sk, h.User, err)
+	for sk, want := range map[string]string{"sk-live-ZHOME": "z", "sk-live-ZMEMBER": "z", "sk-live-AMEMBER": "alice"} {
+		if h, err := HolderByAccessKey(ctx, db, sk); err != nil || h.User == nil || h.User.Name != want {
+			t.Errorf("%s = %+v, %v; want hanzo/%s", sk, h.User, err, want)
 		}
 	}
 }
 
-// The write gates refuse on a true, so a membership set SuperAdminKey cannot read
-// is reported, never answered.
-func TestSuperAdminKey_AnUnreadableRosterIsNotAnAnswer(t *testing.T) {
-	db := operatorKeys(t)
-	blind, err := SuperAdminKey(context.Background(), testdb.Unreadable(db, "memberships"), &schema.Key{Owner: "hanzo", User: "z"})
-	if !errors.Is(err, testdb.ErrUnreadable) || blind {
-		t.Fatalf("SuperAdminKey over an unreadable roster = %v, %v; want the read error", blind, err)
-	}
-}
-
-// Resolution refuses on a true, so a membership set it cannot read is a store
-// fault, never a holder and never a named refusal a caller would read as final.
+// A member key is admitted by its membership row, so a roster the resolver cannot
+// read is a store fault, never a holder and never a named refusal a caller would
+// read as final.
 func TestHolderByAccessKey_AnUnreadableRosterIsNotAnAnswer(t *testing.T) {
 	db := operatorKeys(t)
-	seedKey(t, db, "hanzo", "z-home", "z", "pk-live-ZHOME", "sk-live-ZHOME")
+	seedKey(t, db, "orgb", "alice-member", "hanzo/alice", "pk-live-AMEMBER", "sk-live-AMEMBER")
 
-	h, err := HolderByAccessKey(context.Background(), testdb.Unreadable(db, "memberships"), "sk-live-ZHOME")
+	h, err := HolderByAccessKey(context.Background(), testdb.Unreadable(db, "memberships"), "sk-live-AMEMBER")
 	if !errors.Is(err, testdb.ErrUnreadable) || h.User != nil || Reason(err) != "" {
 		t.Fatalf("an unreadable roster answered %+v (err=%v, reason=%q), want the read error", h.User, err, Reason(err))
 	}

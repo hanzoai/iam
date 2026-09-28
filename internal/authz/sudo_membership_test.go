@@ -3,14 +3,10 @@
 
 package authz_test
 
-// Platform authority is MEMBERSHIP of the reserved org, and these drive it through
-// the real router so the claim is about what a request gets, not about a struct.
-//
-// Home is where an identity is ANCHORED — its billing, its default scope. An
-// operator is someone an existing SuperAdmin put IN the reserved org, and most are
-// anchored in a brand org because they also do ordinary work there. The two
-// questions have different answers for the same person, so the guard has to ask
-// the second one.
+// Platform authority is a PERSON whose own org is the reserved one, and these
+// drive it through the real router so the claim is about what a request gets, not
+// about a struct. A membership of the reserved org held from a brand org is not
+// it, and neither is a machine that lives there.
 
 import (
 	"context"
@@ -19,6 +15,7 @@ import (
 
 	policy "github.com/hanzoai/authz"
 
+	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
 
@@ -38,36 +35,46 @@ func listsEveryTenant(t *testing.T, h *harness, sub string) bool {
 	return status == 200 && strings.Contains(body, signingKid)
 }
 
-// THE CASE THE HOME ORG CANNOT ANSWER: an operator whose account lives in a brand
-// org, holding a membership in the reserved one. Reading the home org calls this
-// person a tenant user and the reserved org becomes unreachable in practice.
-func TestSudoFollowsMembershipNotTheHomeOrg(t *testing.T) {
+// A brand org's person holding a membership in the reserved org is an ordinary
+// person of that brand org: the membership opens nothing.
+func TestAnAdminMembershipIsNotSudo(t *testing.T) {
 	h := newHarness(t)
-	seedUser(t, h.db, "hanzo", "op", false, false, false)
+	seedUser(t, h.db, "hanzo", "op", true, false, false)
 	grant(t, h, "hanzo/op", policy.AdminOrg, store.RoleAdmin)
 
-	if !listsEveryTenant(t, h, "hanzo/op") {
-		t.Fatal("an operator anchored in a brand org, holding a membership in the reserved org, was refused platform scope")
-	}
-}
-
-// The grant is the whole of it. The same account without the membership row is an
-// ordinary tenant user, so the predicate is membership and not "anyone in hanzo".
-func TestWithoutTheGrantTheSameAccountIsATenantUser(t *testing.T) {
-	h := newHarness(t)
-	seedUser(t, h.db, "hanzo", "op", false, false, false)
-
 	if listsEveryTenant(t, h, "hanzo/op") {
-		t.Fatal("a user with no membership in the reserved org reached every tenant")
+		t.Fatal("a brand org's person holding an admin-org membership reached every tenant")
 	}
 }
 
-// Anchoring in the reserved org still answers, without a read: the seeded
-// admin/root holds platform scope, and a membership only ever adds to that set.
-func TestAnchoringInTheReservedOrgStillAnswers(t *testing.T) {
+// The reserved org's own people hold it, whether or not they administer it.
+func TestAPersonInTheReservedOrgIsSudo(t *testing.T) {
 	h := newHarness(t)
-	if !listsEveryTenant(t, h, "admin/root") {
-		t.Fatal("a user anchored in the reserved org lost platform scope")
+	seedUser(t, h.db, policy.AdminOrg, "ops", false, false, false)
+	for _, sub := range []string{"admin/root", "admin/ops"} {
+		if !listsEveryTenant(t, h, sub) {
+			t.Fatalf("%s, a person in the reserved org, lost platform scope", sub)
+		}
+	}
+}
+
+// A machine that lives in the reserved org is never an operator.
+func TestAMachineInTheReservedOrgIsNotSudo(t *testing.T) {
+	h := newHarness(t)
+	for _, typ := range []string{schema.ServiceAccount, schema.Program} {
+		name := "svc-" + typ
+		seedUser(t, h.db, policy.AdminOrg, name, true, false, false)
+		u, err := store.GetUserByName(context.Background(), h.db, policy.AdminOrg, name)
+		if err != nil || u == nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		u.Type = typ
+		if err := u.UpdateCtx(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if listsEveryTenant(t, h, "admin/"+name) {
+			t.Fatalf("a %s in the reserved org reached every tenant", typ)
+		}
 	}
 }
 

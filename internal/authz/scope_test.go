@@ -511,38 +511,38 @@ func TestScopeRead_AStrangerIsStillRefused(t *testing.T) {
 	}
 }
 
-// An operator is someone an existing operator put IN the reserved org, and that
-// grant reaches every tenant. This asks it on `users` deliberately: users is the
-// STRICT clause, the one ordinary membership never opens, so a 200 here can only
-// come from Super.
-//
-// The repro is z@hanzo.ai. It holds the admin membership row, and IAM read the
-// HOME org to decide sudo — so the operator grant bought nothing on IAM's own
-// surface, while memberships.mayGrant already refused that same row to anyone but
-// a SuperAdmin and cloud already honoured it. Two answers to one question.
-func TestSuper_ReservedMembershipReachesEveryTenant(t *testing.T) {
+// A SuperAdmin is a person whose own org is the reserved one, and that reaches
+// every tenant. A brand org's person holding a membership IN the reserved org is
+// not one, and reaches no tenant but their own. This asks it on `users`
+// deliberately: users is the STRICT clause, the one ordinary membership never
+// opens, so a 200 here can only come from Super.
+func TestSuper_OnlyTheReservedOrgsOwnPeopleReachEveryTenant(t *testing.T) {
 	h := newHarness(t)
 	seedScopeFixture(t, h)
-	// Anchored in a brand org, as every operator who also does ordinary work is.
-	seedUser(t, h.db, "hanzo", "operator", false, false, false)
+	seedUser(t, h.db, "hanzo", "operator", true, false, false)
 	seedMembership(t, h.db, "hanzo/operator", reservedOrg, "admin")
-	operator := asUser(h.token(t, "hanzo/operator"))
 
-	got := h.send(t, "GET", "/v1/iam/users?owner="+foreignRealOrg, operator, nil)
-	if got.status != 200 {
-		t.Fatalf("GET get-users?owner=%s as a member of %q = %d, want 200 — the reserved "+
-			"org is the one cross-tenant scope and its membership IS the grant: %s",
-			foreignRealOrg, reservedOrg, got.status, got.body)
+	for _, owner := range []string{foreignRealOrg, reservedOrg} {
+		got := h.send(t, "GET", "/v1/iam/users?owner="+owner, asUser(h.token(t, "hanzo/operator")), nil)
+		if got.status != 403 {
+			t.Fatalf("GET users?owner=%s as hanzo/operator, a member of %q = %d, want 403: %s",
+				owner, reservedOrg, got.status, got.body)
+		}
 	}
-	// And it must answer for the tenant ASKED FOR — masquerade, not a home-org read.
+
+	got := h.send(t, "GET", "/v1/iam/users?owner="+foreignRealOrg, asUser(h.token(t, "admin/root")), nil)
+	if got.status != 200 {
+		t.Fatalf("GET users?owner=%s as admin/root = %d, want 200: %s", foreignRealOrg, got.status, got.body)
+	}
+	// And it answers for the tenant ASKED FOR — masquerade, not a home-org read.
 	owners := got.owners(t)
 	if owners[foreignRealOrg] == 0 {
-		t.Fatalf("GET get-users?owner=%s returned no %s rows (owners=%v); a SuperAdmin must be "+
+		t.Fatalf("GET users?owner=%s returned no %s rows (owners=%v); a SuperAdmin must be "+
 			"handed the tenant it named, not its own", foreignRealOrg, foreignRealOrg, owners)
 	}
 	for owner := range owners {
 		if owner != foreignRealOrg {
-			t.Errorf("GET get-users?owner=%s returned a row owned by %q — masquerade answers "+
+			t.Errorf("GET users?owner=%s returned a row owned by %q — masquerade answers "+
 				"for the tenant asked for and nothing else", foreignRealOrg, owner)
 		}
 	}

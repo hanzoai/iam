@@ -10,33 +10,31 @@ import (
 	"github.com/hanzoai/iam/pkg/store"
 )
 
-// THE COMBINATION. z is the SuperAdmin: account in hanzo, made an operator by an
-// admin-org membership. mallory joined hanzo from a personal account with an admin
-// membership — a legitimate way to be an org admin under this branch. Widening org
-// admin to membership means mallory now passes the org-admin gate for hanzo's
-// rows, and hanzo/z is one of hanzo's rows. Without the superadmin-target gate
-// (users.Authorize), mallory resets the platform operator's password.
+// THE COMBINATION. admin/z is the SuperAdmin and also works in hanzo by a
+// membership. mallory joined hanzo from a personal account with an admin
+// membership — a legitimate way to be an org admin. Neither mallory's hold on
+// hanzo nor an admin-org membership mallory might be given reaches the operator's
+// account: it lives in the admin org, which only a SuperAdmin writes.
 func TestRed_AdminByMembershipCannotResetTheSuperAdmin(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 
-	seedUser(t, h.db, "hanzo", "z", false) // the operator's account lives here
-	if _, err := store.EnsureMembership(ctx, h.db, "hanzo/z", "admin", store.RoleMember); err != nil {
-		t.Fatal(err)
-	}
-	if super, err := store.IsSuperAdmin(ctx, h.db, "hanzo", "z"); err != nil || !super {
-		t.Fatalf("hanzo/z is not a SuperAdmin (%v,%v)", super, err)
-	}
-
-	seedUser(t, h.db, "mallory", "mallory", false) // a personal account
-	if _, err := store.EnsureMembership(ctx, h.db, "mallory/mallory", "hanzo", store.RoleAdmin); err != nil {
-		t.Fatal(err)
+	seedUser(t, h.db, "admin", "z", false) // the operator's account lives here
+	seedUser(t, h.db, "mallory", "mallory", false)
+	for _, m := range [][3]string{
+		{"admin/z", "hanzo", store.RoleMember},
+		{"mallory/mallory", "hanzo", store.RoleAdmin},
+		{"mallory/mallory", "admin", store.RoleAdmin},
+	} {
+		if _, err := store.EnsureMembership(ctx, h.db, m[0], m[1], m[2]); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	reset := `{"user":{"email":"attacker@evil.test"},"password":"a whole new password"}`
-	status, body := h.put(t, "mallory/mallory", "/v1/iam/users/hanzo/z", reset)
+	status, body := h.put(t, "mallory/mallory", "/v1/iam/users/admin/z", reset)
 
-	u, err := store.GetUserByName(ctx, h.db, "hanzo", "z")
+	u, err := store.GetUserByName(ctx, h.db, "admin", "z")
 	if err != nil {
 		t.Fatal(err)
 	}

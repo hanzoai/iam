@@ -4,7 +4,6 @@
 package store
 
 import (
-	"context"
 	"testing"
 
 	policy "github.com/hanzoai/authz"
@@ -70,28 +69,5 @@ func TestKidCollisionAcrossOwnerSpellings(t *testing.T) {
 				t.Errorf("IsReservedOrg(%q) = true — a customer flow would be refused, or a platform org impersonated", tc.spelling)
 			}
 		})
-	}
-}
-
-// SuperAdmin follows the SAME verbatim boundary. Anchoring in "admin" is platform
-// authority; a near-miss of it is a tenant, and holds none — nor does it become
-// one through a membership set it never has.
-func TestSuperAdminRejectsNearMissOwners(t *testing.T) {
-	ctx := context.Background()
-	db := memDB(t)
-
-	// The genuine anchor answers true without any read.
-	if super, err := IsSuperAdmin(ctx, db, "admin", "root"); err != nil || !super {
-		t.Fatalf("admin/root is a SuperAdmin (super=%v err=%v)", super, err)
-	}
-
-	for _, spelling := range []string{"Admin", "ADMIN", "admin ", " admin", "аdmin", "admin​", "app", "built-in"} {
-		super, err := IsSuperAdmin(ctx, db, spelling, "root")
-		if err != nil {
-			t.Fatalf("IsSuperAdmin(%q): %v", spelling, err)
-		}
-		if super {
-			t.Errorf("IsSuperAdmin(%q, root) = true — a non-admin owner was read as platform sudo", spelling)
-		}
 	}
 }

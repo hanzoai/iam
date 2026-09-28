@@ -121,12 +121,14 @@ const (
 // isAdminByAccountType is the IAM `isAdmin` bit each type is provisioned with.
 //
 // A `service` account gets FALSE, and that is least privilege rather than an
-// oversight: platform authority is MEMBERSHIP of the reserved admin org
-// (authz.Claims.PlatformSudo walks the signed `orgs` set and never reads
-// isAdmin), so a service account declared under the admin org holds full
-// platform sudo with the bit clear. The bit is a strictly ADDITIONAL grant —
-// authz.Claims.OrgAdmin reads `IsAdmin && org == Home()` — so setting it on a
-// machine would hand it org-admin self-service it has no use for.
+// oversight: platform authority is an account whose own org is the reserved
+// admin org (schema.User.SuperAdmin, authz.Claims.Sudo — neither reads isAdmin),
+// so a `service` account declared under the admin org holds full platform
+// authority with the bit clear. The upsert writes it as an ordinary account with
+// no machine class, which is what keeps that true: a row IAM marks as a machine
+// is never a SuperAdmin. The bit is a strictly ADDITIONAL grant —
+// authz.Claims.OrgAdmin reads `IsAdmin && org == Home()` — so setting it would
+// hand the account org-admin self-service it has no use for.
 var isAdminByAccountType = map[string]bool{
 	AccountOwner:   true,
 	AccountService: false,

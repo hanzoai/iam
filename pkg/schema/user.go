@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"strings"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 )
 
@@ -378,6 +379,28 @@ func (u *User) Machine() bool {
 		return true
 	}
 	return false
+}
+
+// SuperAdmin reports platform authority: this row is a PERSON whose own org — the
+// owner of the row — is the reserved admin org. It is THE SuperAdmin predicate;
+// every gate in IAM asks it, directly or through the Principal the Guard builds
+// from this row (principal.Principal.Sudo), and nothing else answers the question.
+//
+// A membership of the admin org is not it. A brand org's user added to the admin
+// org is an ordinary member of it; platform authority goes to named people
+// provisioned IN the admin org. A per-org IsAdmin is a different, org-scoped fact
+// and never answers this one.
+//
+// A machine is never one, whatever org it lives in: its authority is what it was
+// minted for, not the platform's. The same rule reads off a token as
+// authz.Claims.Sudo, whose home org is the first entry of `orgs` — the owner of
+// this row (store.MemberOrgRefs) — so the row and every token minted from it agree.
+//
+// Liveness is not part of it: a forbidden or deleted account is refused by every
+// path that authenticates one, and a gate that protects a SuperAdmin's account
+// must keep protecting it while it is suspended.
+func (u *User) SuperAdmin() bool {
+	return u != nil && u.Owner == policy.AdminOrg && !u.Machine()
 }
 
 // Picture is how this person is drawn: the image they set, or else their

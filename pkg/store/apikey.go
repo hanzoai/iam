@@ -85,8 +85,9 @@ const (
 	// expired key is re-minted, a disabled one is switched back on — and told apart
 	// from KeyUnknown because the credential is real and its holder is not guessing.
 	KeyDisabled KeyFailure = "key_disabled"
-	// KeySuperAdmin: an sk- row resolved to a SuperAdmin. No durable key speaks for
-	// one (SuperAdminKey); the holder signs in for a short-lived token instead.
+	// KeySuperAdmin: an sk- row names an account in the admin org, where every
+	// SuperAdmin lives. No durable key speaks for one (SuperAdminKey); the holder
+	// signs in for a short-lived token instead.
 	KeySuperAdmin KeyFailure = "key_superadmin"
 )
 
@@ -217,6 +218,10 @@ func HolderByAccessKey(ctx context.Context, db orm.DB, key string) (Holder, erro
 // that removing the member ends the key. A reserved org is never on either side of
 // a membership key, so no such key can reach a SuperAdmin or be a platform key.
 // Who may WRITE a member's key is the keys write gate's question (MemberKey).
+//
+// No secret key speaks for an account in the admin org, however the row came to
+// exist (SuperAdminKey). Asked first, of the key as written, because the answer
+// needs no read: the org a key names is the org of the row it would resolve to.
 func holderOwningKey(ctx context.Context, db orm.DB, secret string) (Holder, error) {
 	k, err := keyBySecret(ctx, db, secret)
 	if err != nil {
@@ -225,6 +230,9 @@ func holderOwningKey(ctx context.Context, db orm.DB, secret string) (Holder, err
 	owner, name := keyUserRef(k)
 	if owner == "" || name == "" {
 		return Holder{}, notFound(KeyForeignUser)
+	}
+	if SuperAdminKey(k) {
+		return Holder{}, notFound(KeySuperAdmin)
 	}
 	role := ""
 	if owner != k.Owner {
@@ -251,41 +259,27 @@ func holderOwningKey(ctx context.Context, db orm.DB, secret string) (Holder, err
 	if u == nil {
 		return Holder{}, notFound(KeyDanglingUser)
 	}
-	// No secret key speaks for a SuperAdmin, however the row came to exist. Asked of
-	// the resolved row on every resolution, so a key written before the write gate
-	// refused it, or made one by a later membership, resolves to nobody.
-	super, err := IsSuperAdmin(ctx, db, u.Owner, u.Name)
-	if err != nil {
-		return Holder{}, err
-	}
-	if super {
-		return Holder{}, notFound(KeySuperAdmin)
-	}
 	if role == "" {
 		role = HomeRole(u)
 	}
 	return Holder{User: u, Org: k.Owner, Scope: k.Scope, Role: role}, nil
 }
 
-// SuperAdminKey reports whether a secret key filed as k would speak for a
-// SuperAdmin. The holder is read as holderOwningKey reads it — a bare name within
-// k.Owner, "<owner>/<name>" as written — and resolved to its row the way the
-// resolver resolves it, case folded, so "Z" and "hanzo/Z" are asked as hanzo/z.
-// A key that names no account speaks for nobody. A read that fails is returned,
-// never folded into an answer.
-func SuperAdminKey(ctx context.Context, db orm.DB, k *schema.Key) (bool, error) {
+// SuperAdminKey reports whether a secret key filed as k would speak for an account
+// in the admin org. That is where every SuperAdmin lives (schema.User.SuperAdmin),
+// and the refusal covers the platform machines beside them too: a durable
+// credential anchored in the platform's own org is one nobody sees expire, and a
+// platform machine proves itself as an application for a short-lived token
+// instead. It is therefore the ORG, not the SuperAdmin predicate — a key names an
+// account that may not exist yet, and the refusal must not wait for one to.
+//
+// The holder is read as holderOwningKey reads it — a bare name within k.Owner,
+// "<owner>/<name>" as written. Resolving that name to its row folds the case of
+// the name and never changes its org, so the answer needs no read. A key that
+// names no account speaks for nobody.
+func SuperAdminKey(k *schema.Key) bool {
 	owner, name := keyUserRef(k)
-	if owner == "" || name == "" {
-		return false, nil
-	}
-	u, err := GetUserByName(ctx, db, owner, name)
-	if err != nil {
-		return false, err
-	}
-	if u != nil {
-		owner, name = u.Owner, u.Name
-	}
-	return IsSuperAdmin(ctx, db, owner, name)
+	return name != "" && owner == policy.AdminOrg
 }
 
 // MemberKey reports whether user may hold a key minted in org other than their

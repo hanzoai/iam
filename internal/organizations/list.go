@@ -31,10 +31,10 @@ import (
 // be one URL per question about one collection.
 //
 // The scope is decided from the principal the Guard already resolved. `p.Sudo`
-// is membership of the reserved admin org and nothing else; a per-org `IsAdmin`
-// is a different, org-scoped fact and never widens this. That is the same
-// predicate store.IsSuperAdmin answers below the authz seam, so one identity is
-// an operator here or nowhere.
+// is SuperAdmin — schema.User.SuperAdmin, a person whose own org is the reserved
+// admin org — and nothing else; neither a membership of the admin org nor a
+// per-org `IsAdmin` widens this. One predicate, so one identity is an operator
+// here or nowhere.
 //
 // Ordering puts the caller's OWN organizations first and everything else after,
 // each newest first, because the common case — switching between the two or
@@ -161,8 +161,8 @@ func (h *OrganizationAPI) List(ctx context.Context, in *ListOrganizationsInput) 
 func (h *OrganizationAPI) own(ctx context.Context, p *principal.Principal, q string) ([]*schema.Organization, error) {
 	// The platform's own organizations are not tenants and cannot be stepped
 	// into, so listing one here would offer a destination that assume refuses.
-	// An operator anchored in a brand org holds the reserved org as a MEMBERSHIP,
-	// which is why both halves of the set are filtered and not just the home one.
+	// A SuperAdmin's home is one, and a membership row can name one, so both
+	// halves of the set are filtered.
 	names := make([]string, 0, len(p.Orgs)+1)
 	if p.Org != "" && !policy.IsReservedOrg(p.Org) {
 		names = append(names, p.Org)

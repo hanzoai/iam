@@ -29,7 +29,7 @@
 //
 // Three scopes, never conflated (conflation is privilege escalation):
 //
-//   - SuperAdmin — the principal belongs to the reserved "admin" org.
+//   - SuperAdmin — a person whose own org is the reserved "admin" org.
 //     The ONLY cross-tenant scope. Required for every write to a platform-owned
 //     (admin/built-in) resource: the signing-cert poisoning gate, admin-scoped
 //     application/provider registration, every reserved surface.
@@ -37,14 +37,14 @@
 //     resource its org owns; never another org's, never a platform-owned one.
 //   - Regular user — self-service only: reading its own user record.
 //
-// One predicate governs SuperAdmin everywhere: the principal BELONGS to the
-// reserved "admin" org — its home org is "admin", or it holds a membership there.
-// Membership is how an operator is actually made (an existing SuperAdmin grants
-// it; memberships.mayGrant refuses a reserved target to anyone else), and it is
-// the same question the published authz.Claims.Sudo asks of the signed
-// `orgs` set, so one token reads identically here and at every consumer. Asking
-// only the home org denied every operator anchored in a brand org — which is
-// every operator who also does ordinary work.
+// One predicate governs SuperAdmin everywhere: schema.User.SuperAdmin, asked of
+// the principal's live user row — a person (never a machine) whose owner is
+// "admin". A membership of the admin org is not it: platform authority goes to
+// named people provisioned IN the admin org, never to a brand org's user added to
+// it. The published authz.Claims.Sudo asks the same of a signed token, whose home
+// org (the first entry of `orgs`) is that row's owner, so one identity reads
+// identically here and at every consumer. Every request the Guard admits for a
+// SuperAdmin is recorded (schema.ActionSuperAdmin).
 //
 // The home org comes from the token SUBJECT — the authenticated
 // principal's own owner/name — never from the token's `owner`/`organization`
@@ -236,13 +236,13 @@ func AuthorizeRef(ctx context.Context, method, kind, home, ref string) error {
 //
 // A token or a passkey filed under a SuperAdmin is a credential that speaks as
 // the platform's operator, so it also asks users.Authorize: only a SuperAdmin
-// files one for a SuperAdmin.
-func AuthorizeUser(ctx context.Context, db orm.DB, method, user string) error {
+// files one for an account in the admin org.
+func AuthorizeUser(ctx context.Context, method, user string) error {
 	if err := AuthorizeRef(ctx, method, "users", "", user); err != nil || user == "" {
 		return err
 	}
-	owner, name, _ := strings.Cut(user, "/")
-	return users.Authorize(ctx, db, owner, name)
+	owner, _, _ := strings.Cut(user, "/")
+	return users.Authorize(ctx, owner)
 }
 
 // AuthorizeGrant gates the rows a grant NAMES in its subject lists — the users,
@@ -551,8 +551,40 @@ func Guard(db orm.DB) zip.Handler {
 			}
 		}
 		c.SetContext(principal.Bind(c.Context(), p))
-		return c.Continue()
+		if !p.Sudo {
+			return c.Continue()
+		}
+		err = c.Continue()
+		audit(c, db, p, err)
+		return err
 	}
+}
+
+// audit files a request a SuperAdmin made on the SuperAdmin trail: who, from
+// where, what (method and address, query included), and the answer. Every one,
+// read or write, admitted or refused downstream, because platform authority is
+// the one scope nothing else bounds and a record is the only account of what it
+// did. It runs after the handler so the answer is the one written; an error is
+// read the way the framework renders it. Best effort — the act already happened.
+func audit(c *zip.Ctx, db orm.DB, p *principal.Principal, err error) {
+	status := c.Fiber().Response().StatusCode()
+	if err != nil {
+		status = http.StatusInternalServerError
+		var he *zip.HTTPError
+		if errors.As(err, &he) && he.Status != 0 {
+			status = he.Status
+		}
+	}
+	store.Record(c.Context(), db, &schema.AuditLog{
+		Owner:        p.Org,
+		Organization: p.Org,
+		User:         p.Org + "/" + p.User,
+		ClientIp:     httpx.ClientIP(c),
+		Method:       c.Method(),
+		RequestUri:   c.Fiber().OriginalURL(),
+		Action:       schema.ActionSuperAdmin,
+		StatusCode:   status,
+	})
 }
 
 // mcpPath is where zip mounts the MCP server. zip exports SpecPath and DocsPath
@@ -726,12 +758,12 @@ func stringField(v reflect.Value, name string) string {
 // algorithm allowlist and trusted signing-cert resolution), a subject with no
 // org, a store error, or a forbidden/deleted user. Org, Admin, and Sudo are
 // read from the LOADED user record — authoritative — never from the token
-// claims: SuperAdmin is a real, live member of the admin org, not a subject that
-// merely names one. A subject with no user row (a client_credentials machine
-// token, or a since-deleted user) authenticates but carries no admin or
-// SuperAdmin authority and no self-service identity — org-scoped only, which on
-// the raw CRUD authorizes to nothing until a later phase grants machine
-// identities explicit scope. This closes the phantom-admin subject: a token for
+// claims: SuperAdmin is a real, live person whose row is in the admin org, not a
+// subject that merely names one. A subject with no user row (a
+// client_credentials machine token, or a since-deleted user) authenticates but
+// carries no admin or SuperAdmin authority and no self-service identity —
+// org-scoped only, which on the raw CRUD authorizes to nothing until a later
+// phase grants machine identities explicit scope. This closes the phantom-admin subject: a token for
 // "admin/<nobody>" resolves to no authority, not SuperAdmin.
 func resolve(c *zip.Ctx, db orm.DB) (*principal.Principal, error) {
 	if p, ok := app(c, db); ok {
@@ -760,22 +792,12 @@ func resolve(c *zip.Ctx, db orm.DB) (*principal.Principal, error) {
 		if u.IsForbidden || u.IsDeleted {
 			return nil, errRevoked
 		}
-		// Sudo is MEMBERSHIP of the reserved org, never the home org. Home is where an
-		// identity is ANCHORED — its billing, its default scope. Platform authority is
-		// a different question, and its answer is that an existing SuperAdmin put this
-		// identity IN the reserved org: a deliberate, signed, revocable grant that only
-		// a SuperAdmin can make (memberships.mayGrant refuses a reserved target to
-		// anyone else). Most operators are anchored in a brand org because they also do
-		// ordinary work there, so the home org alone cannot answer it. memberOf answers
-		// home-or-membership in one place, off the set this principal already carries,
-		// which is what policy.Claims.Sudo asks of the signed set — so one token reads
-		// the same here and at every consumer.
-		p := &principal.Principal{
-			Org: u.Owner, User: u.Name, Admin: u.IsAdmin,
+		// Sudo is THE predicate, asked of the row: a person whose own org is the
+		// reserved one. A membership of the admin org does not make one.
+		return &principal.Principal{
+			Org: u.Owner, User: u.Name, Admin: u.IsAdmin, Sudo: u.SuperAdmin(),
 			Orgs: membershipRoles(ctx, db, u.Owner+"/"+u.Name),
-		}
-		p.Sudo = principal.MemberOf(p, policy.AdminOrg)
-		return p, nil
+		}, nil
 	}
 	// No user row. A machine token's subject is "<appOwner>/<appName>", which names
 	// an APPLICATION — so it resolves to the SAME confidential-client Principal the
@@ -837,7 +859,7 @@ func membershipRoles(ctx context.Context, db orm.DB, user string) map[string]pol
 // It is deliberately NOT an authority: the returned Principal is never Admin and
 // never Super, so the ONLY thing it can do is what its name is allowlisted for
 // (CanEntity → Holds). This is what keeps the v1 "every confidential client is a
-// global admin" hole closed as the transport is re-added.
+// SuperAdmin" hole closed as the transport is re-added.
 //
 // Fail-closed: an unparseable header, an unknown clientId, a row carrying no NAME
 // (the name is what every capability keys on, so a nameless one authorizes

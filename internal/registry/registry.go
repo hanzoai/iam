@@ -443,7 +443,7 @@ func userPrincipal(u *schema.User) *principal {
 // made, do it as an explicit, tested policy change (alongside the pull org-scoping
 // decision documented at the top of this file), never as an incidental edit.
 func userPrivileged(u *schema.User) bool {
-	return inCandidateOrg(u.Owner) && (u.IsAdmin || u.Owner == policy.AdminOrg)
+	return inCandidateOrg(u.Owner) && (u.IsAdmin || u.SuperAdmin())
 }
 
 // candidateOrgs are the platform organizations a docker credential is resolved

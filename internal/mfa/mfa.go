@@ -130,7 +130,7 @@ func target(c *zip.Ctx, db orm.DB, req *setupReq) (owner, name string, err error
 	if !self && !authz.Can(c.Context(), "PUT", "users", owner, name) {
 		return "", "", zip.ErrForbidden("forbidden")
 	}
-	if err := users.Authorize(c.Context(), db, owner, name); err != nil {
+	if err := users.Authorize(c.Context(), owner); err != nil {
 		return "", "", err
 	}
 	return owner, name, nil

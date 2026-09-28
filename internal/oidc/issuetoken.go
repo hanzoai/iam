@@ -365,19 +365,9 @@ func mintTarget(ctx context.Context, db orm.DB, c *zip.Ctx, clientApp *schema.Ap
 	if user == nil {
 		return nil, 200, "the user does not exist"
 	}
-	// Membership is asked of the RESOLVED identity, which is the same key the
-	// token's own claims are built from. The lookup that resolves a user folds
-	// case and the one that reads memberships does not, so asking this of the id
-	// as written admits "hanzo/Z": the membership read misses, the gate sees an
-	// ordinary user, and the claims — built after resolution — carry the admin
-	// org anyway. One identity, asked once, is what closes that.
-	super, err := store.IsSuperAdmin(ctx, db, user.Owner, user.Name)
-	if err != nil {
-		return nil, 500, "server_error"
-	}
-	if super && !adminMintAllowed(clientApp) {
-		return nil, 403, "client is not permitted to act for a reserved-org user"
-	}
+	// Resolution folds the case of the name and never changes its org, so the
+	// reserved-org refusal above already covers every SuperAdmin
+	// (schema.User.SuperAdmin): they all live in the admin org.
 	if user.IsForbidden || user.IsDeleted {
 		return nil, 403, "the user is forbidden"
 	}
@@ -410,9 +400,10 @@ const asMaxTTL = time.Hour
 // stored or forwarded.
 //
 // Confinement is absolute and lives here, not on the admin allow-list this arm
-// never touches: the target must share the key's org, and a reserved-org key or a
-// SuperAdmin target is refused before any token is signed, so the as() credential
-// can never reach the cross-tenant identities the admin capability gates.
+// never touches: a reserved-org key is refused and the target must share the
+// key's org, so the target is never a SuperAdmin (schema.User.SuperAdmin, whose
+// org is the admin org) and the as() credential can never reach the cross-tenant
+// identities the admin capability gates.
 func mintAsToken(ctx context.Context, db orm.DB, c *zip.Ctx, key *schema.Key) error {
 	now := nowFunc()
 
@@ -439,15 +430,6 @@ func mintAsToken(ctx context.Context, db orm.DB, c *zip.Ctx, key *schema.Key) er
 	// ordinary subject, filed under the tenant like any other member; acting AS the
 	// person who governs the tenant is the one thing it must never do.
 	if user.IsAdmin {
-		return mintErr(c, 403, "the target may not be acted for")
-	}
-	// A SuperAdmin never becomes an as() subject, even one anchored in the key's own
-	// brand org. Reading the membership set is the question; an unreadable one refuses.
-	super, err := store.IsSuperAdmin(ctx, db, user.Owner, user.Name)
-	if err != nil {
-		return mintErr(c, 500, "server_error")
-	}
-	if super {
 		return mintErr(c, 403, "the target may not be acted for")
 	}
 

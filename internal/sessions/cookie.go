@@ -62,7 +62,7 @@ const CookieName = "__Host-hanzo_session"
 // Session row directly — (Owner, Name, Application) — so resolution needs no
 // scan, and SID is the per-cookie id checked against that row's SessionId list
 // for revocation. Owner is the field the gateway admin-guard reads to derive the
-// global-admin predicate, so the signature is what makes it unforgeable.
+// SuperAdmin predicate, so the signature is what makes it unforgeable.
 type Cookie struct {
 	Owner       string `json:"o"`
 	Name        string `json:"n"`

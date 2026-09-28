@@ -238,8 +238,8 @@ func TestSignup_luxCloud_eachAccountFoundsItsOwnOrg(t *testing.T) {
 				t.Fatalf("%s's signed membership set carries %s", name, ref.Org)
 			}
 		}
-		if super, err := store.IsSuperAdmin(context.Background(), db, u.Owner, u.Name); err != nil || super {
-			t.Errorf("%s is a SuperAdmin (super=%v err=%v)", name, super, err)
+		if u.SuperAdmin() {
+			t.Errorf("%s is a SuperAdmin", name)
 		}
 		if u.Type != "normal-user" {
 			t.Errorf("type = %q, want normal-user", u.Type)

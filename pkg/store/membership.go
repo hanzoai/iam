@@ -212,11 +212,11 @@ const memberCandidates = 16
 // authority.
 //
 // The reach is org's org-wide members and nothing wider: a reserved org is never
-// searched, no one homed in one or holding platform authority by membership
-// (IsSuperAdmin) is ever matched, so no tenant's sign-in form can reach a
-// SuperAdmin. More than one match is ErrMemberAmbiguous, never a pick: whoever was
-// added second would be resolved as the first. A member who LIVES in org is the
-// in-org lookup's, not this.
+// searched and no one homed in one is ever matched, so no tenant's sign-in form
+// can reach a SuperAdmin (schema.User.SuperAdmin), whose home is the admin org.
+// More than one match is ErrMemberAmbiguous, never a pick: whoever was added
+// second would be resolved as the first. A member who LIVES in org is the in-org
+// lookup's, not this.
 func MemberByIdentifier(ctx context.Context, db orm.DB, org, identifier string) (*schema.User, error) {
 	identifier = strings.TrimSpace(identifier)
 	if org == "" || identifier == "" || policy.IsReservedOrg(org) {
@@ -260,11 +260,6 @@ func MemberByIdentifier(ctx context.Context, db orm.DB, org, identifier string) 
 			return nil, err
 		}
 		if u == nil || u.IsDeleted {
-			continue
-		}
-		if super, err := IsSuperAdmin(ctx, db, u.Owner, u.Name); err != nil {
-			return nil, err
-		} else if super {
 			continue
 		}
 		if match != nil {

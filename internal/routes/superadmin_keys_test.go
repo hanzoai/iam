@@ -3,9 +3,11 @@
 
 package routes_test
 
-// No secret key speaks for a SuperAdmin. A SuperAdmin signs in and holds
-// short-lived tokens; the rule is asked of whoever writes the key, however the
-// holder is spelled, on both write surfaces, and again at resolution.
+// No secret key speaks for a SuperAdmin, or for anyone else in the admin org. A
+// SuperAdmin signs in and holds short-lived tokens; the rule is asked of whoever
+// writes the key, however the holder is spelled, on both write surfaces, and
+// again at resolution. A brand org's person holding an admin-org membership is
+// not a SuperAdmin, and holds keys like anyone.
 
 import (
 	"context"
@@ -27,11 +29,7 @@ func keysNaming(t *testing.T, h *harness) []string {
 	}
 	var out []string
 	for _, k := range rows {
-		super, err := store.SuperAdminKey(context.Background(), h.db, k)
-		if err != nil {
-			t.Fatalf("classify %s/%s: %v", k.Owner, k.Name, err)
-		}
-		if super {
+		if store.SuperAdminKey(k) {
 			out = append(out, k.Owner+"/"+k.Name+" -> "+k.User)
 		}
 	}
@@ -42,7 +40,7 @@ func TestNoSecretKeyIsWrittenForASuperAdmin(t *testing.T) {
 	eachOrgAdmin(t, func(t *testing.T, h *harness, boss caller) {
 		t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-visor")
 		root := h.person(t, "admin/root")
-		for _, user := range []string{"hanzo/z", "hanzo/alice"} {
+		for _, user := range []string{"admin/z", "hanzo/z", "hanzo/alice"} {
 			if _, err := store.EnsureMembership(context.Background(), h.db, user, "orgb", store.RoleMember); err != nil {
 				t.Fatalf("seed %s in orgb: %v", user, err)
 			}
@@ -53,14 +51,13 @@ func TestNoSecretKeyIsWrittenForASuperAdmin(t *testing.T) {
 			c    caller
 			body string
 		}{
-			{"hanzo/boss", boss, `{"owner":"hanzo","name":"k1","user":"z"}`},
-			{"hanzo/boss", boss, `{"owner":"hanzo","name":"k2","user":"Z"}`},
-			{"hanzo/boss", boss, `{"owner":"hanzo","name":"k3","user":"hanzo/z"}`},
-			{"hanzo/boss", boss, `{"owner":"hanzo","name":"k4","user":"hanzo/Z"}`},
-			{"admin/root", root, `{"owner":"hanzo","name":"k5","user":"z"}`},
+			{"hanzo/boss", boss, `{"owner":"hanzo","name":"k1","user":"admin/z"}`},
+			{"hanzo/boss", boss, `{"owner":"hanzo","name":"k2","user":"admin/Z"}`},
+			{"admin/root", root, `{"owner":"hanzo","name":"k5","user":"admin/z"}`},
 			{"admin/root", root, `{"owner":"admin","name":"k6","user":"root"}`},
-			{"hanzo-visor", visor, `{"owner":"orgb","name":"k7","user":"hanzo/z"}`},
-			{"hanzo-visor", visor, `{"owner":"orgb","name":"k8","user":"hanzo/Z"}`},
+			{"admin/root", root, `{"owner":"admin","name":"k6","user":"nobody-yet"}`},
+			{"hanzo-visor", visor, `{"owner":"orgb","name":"k7","user":"admin/z"}`},
+			{"hanzo-visor", visor, `{"owner":"orgb","name":"k8","user":"admin/Z"}`},
 		}
 		for _, r := range refused {
 			if status, body := h.send(t, r.c, "POST", "/v1/iam/keys", r.body); status != 403 {
@@ -77,7 +74,9 @@ func TestNoSecretKeyIsWrittenForASuperAdmin(t *testing.T) {
 		}{
 			{"hanzo/boss", boss, `{"owner":"hanzo","name":"alice-key","user":"alice"}`},
 			{"hanzo-visor", visor, `{"owner":"orgb","name":"alice-member","user":"hanzo/alice"}`},
-			{"hanzo/boss", boss, `{"owner":"hanzo","name":"beacon","user":"z","scope":"publish"}`},
+			{"hanzo/boss", boss, `{"owner":"hanzo","name":"z-key","user":"z"}`},
+			{"hanzo-visor", visor, `{"owner":"orgb","name":"z-member","user":"hanzo/z"}`},
+			{"admin/root", root, `{"owner":"admin","name":"beacon","user":"z","scope":"publish"}`},
 		} {
 			if status, body := h.send(t, r.c, "POST", "/v1/iam/keys", r.body); status != 200 {
 				t.Fatalf("%s could not write %s: %d %s", r.who, r.body, status, body)
@@ -87,9 +86,9 @@ func TestNoSecretKeyIsWrittenForASuperAdmin(t *testing.T) {
 		// A key cannot be pointed at the operator after the fact either, and an update
 		// is asked by the class the key was minted with, not one the body claims.
 		for _, body := range []string{
-			`{"owner":"hanzo","name":"alice-key","user":"z"}`,
-			`{"owner":"hanzo","name":"alice-key","user":"hanzo/Z"}`,
-			`{"owner":"hanzo","name":"alice-key","user":"z","scope":"publish"}`,
+			`{"owner":"hanzo","name":"alice-key","user":"admin/z"}`,
+			`{"owner":"hanzo","name":"alice-key","user":"admin/Z"}`,
+			`{"owner":"hanzo","name":"alice-key","user":"admin/z","scope":"publish"}`,
 		} {
 			if status, resp := h.send(t, boss, "PUT", "/v1/iam/keys/hanzo/alice-key", body); status != 403 {
 				t.Errorf("hanzo's admin repointed a key with %s: %d %s", body, status, resp)
@@ -98,7 +97,7 @@ func TestNoSecretKeyIsWrittenForASuperAdmin(t *testing.T) {
 		if k, err := orm.Get[schema.Key](h.db, "hanzo/alice-key"); err != nil || k.User != "alice" {
 			t.Fatalf("the refused update moved the key: %+v %v", k, err)
 		}
-		if got := keysNaming(t, h); len(got) != 1 || got[0] != "hanzo/beacon -> z" {
+		if got := keysNaming(t, h); len(got) != 1 || got[0] != "admin/beacon -> z" {
 			t.Fatalf("key rows speaking for the operator: %v, want only the publishable one", got)
 		}
 	})
@@ -117,7 +116,7 @@ func TestTheMintIssuesNoSuperAdminASecretKey(t *testing.T) {
 		req.SetBasicAuth(minterApp, minterSecret)
 		return h.do(t, req)
 	}
-	for _, path := range []string{"/v1/iam/users/hanzo/z/keys", "/v1/iam/users/hanzo/Z/keys"} {
+	for _, path := range []string{"/v1/iam/users/admin/z/keys", "/v1/iam/users/admin/Z/keys"} {
 		if status, body := post(path); status != 403 {
 			t.Errorf("POST %s: %d %s", path, status, body)
 		}
@@ -125,7 +124,7 @@ func TestTheMintIssuesNoSuperAdminASecretKey(t *testing.T) {
 	if got := keysNaming(t, h); len(got) != 0 {
 		t.Fatalf("the mint wrote %v under a refusal", got)
 	}
-	if status, body := post("/v1/iam/users/hanzo/z/keys?type=publishable"); status != 200 {
+	if status, body := post("/v1/iam/users/admin/z/keys?type=publishable"); status != 200 {
 		t.Fatalf("the operator's org could not get a publishable key: %d %s", status, body)
 	}
 	if got := whoHolds(t, h, mint(t, h, userKeys)); got.Data.Owner != "hanzo" || got.Data.Name != "alice" {
@@ -134,8 +133,8 @@ func TestTheMintIssuesNoSuperAdminASecretKey(t *testing.T) {
 }
 
 // A secret key that already names a SuperAdmin — planted before the write gate
-// refused it, or held by someone made an operator since — resolves to nobody, and
-// resolves again once the membership that made them one is gone.
+// refused it — resolves to nobody. A key naming hanzo/z, who holds an admin-org
+// membership, resolves to hanzo/z: that membership makes nobody a SuperAdmin.
 func TestASuperAdminsKeyResolvesToNobody(t *testing.T) {
 	h := newHarness(t)
 	operatorFixtures(t, h)
@@ -151,21 +150,17 @@ func TestASuperAdminsKeyResolvesToNobody(t *testing.T) {
 			t.Fatalf("plant %s: %v", name, err)
 		}
 	}
-	plant("bare", "z", "sk-planted-bare-0001")
-	plant("folded", "hanzo/Z", "sk-planted-folded-01")
+	plant("operator", "admin/z", "sk-planted-oper-0001")
+	plant("folded", "admin/Z", "sk-planted-folded-01")
+	plant("member", "z", "sk-planted-member-01")
 
-	for _, secret := range []string{"sk-planted-bare-0001", "sk-planted-folded-01"} {
+	for _, secret := range []string{"sk-planted-oper-0001", "sk-planted-folded-01"} {
 		got := whoHolds(t, h, secret)
 		if got.Code != string(store.KeySuperAdmin) || got.Data.Name != "" {
 			t.Fatalf("%s resolved to %q/%q (code %q), want key_superadmin", secret, got.Data.Owner, got.Data.Name, got.Code)
 		}
 	}
-
-	if _, err := store.DeleteMembership(context.Background(), h.db, "hanzo/z", "admin"); err != nil {
-		t.Fatalf("revoke: %v", err)
-	}
-	if got := whoHolds(t, h, "sk-planted-bare-0001"); got.Data.Owner != "hanzo" || got.Data.Name != "z" {
-		t.Fatalf("after the operator membership ended the key resolved to %q/%q (code %q)",
-			got.Data.Owner, got.Data.Name, got.Code)
+	if got := whoHolds(t, h, "sk-planted-member-01"); got.Data.Owner != "hanzo" || got.Data.Name != "z" {
+		t.Fatalf("the key naming hanzo/z resolved to %q/%q (code %q)", got.Data.Owner, got.Data.Name, got.Code)
 	}
 }

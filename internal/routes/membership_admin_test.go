@@ -153,11 +153,11 @@ func TestAnAdminByMembershipReachesNothingOfTheSuperAdmin(t *testing.T) {
 	mallory := h.person(t, "mallory/mallory")
 
 	for _, r := range []struct{ method, path, body string }{
-		{"POST", "/v1/iam/keys", `{"owner":"hanzo","name":"mk","user":"z"}`},
-		{"POST", "/v1/iam/keys", `{"owner":"hanzo","name":"mk2","user":"hanzo/Z"}`},
-		{"DELETE", "/v1/iam/mfa", `{"owner":"hanzo","name":"z"}`},
-		{"POST", "/v1/iam/webauthn-credentials", `{"owner":"hanzo","name":"planted","user":"hanzo/z"}`},
-		{"DELETE", "/v1/iam/users/hanzo/z", ""},
+		{"POST", "/v1/iam/keys", `{"owner":"hanzo","name":"mk","user":"admin/z"}`},
+		{"POST", "/v1/iam/keys", `{"owner":"hanzo","name":"mk2","user":"admin/Z"}`},
+		{"DELETE", "/v1/iam/mfa", `{"owner":"admin","name":"z"}`},
+		{"POST", "/v1/iam/webauthn-credentials", `{"owner":"hanzo","name":"planted","user":"admin/z"}`},
+		{"DELETE", "/v1/iam/users/admin/z", ""},
 	} {
 		if status, body := h.send(t, mallory, r.method, r.path, r.body); status != 403 {
 			t.Errorf("hanzo's admin by membership: %s %s %s = %d %s", r.method, r.path, r.body, status, body)

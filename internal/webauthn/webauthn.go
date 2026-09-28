@@ -160,7 +160,7 @@ func addWebauthnCredential(db orm.DB) zip.TypedHandler[schema.WebauthnCredential
 		// for that account — the same authority the list asks to read it. Without this,
 		// a caller could file a credential of its own under User=admin/root, which the
 		// public signin ceremony then offers for that account.
-		if err := authz.AuthorizeUser(ctx, db, "POST", in.User); err != nil {
+		if err := authz.AuthorizeUser(ctx, "POST", in.User); err != nil {
 			return nil, err
 		}
 		// orm.New binds the store and applies defaults; copy the decoded domain
@@ -188,7 +188,7 @@ func updateWebauthnCredential(db orm.DB) zip.TypedHandler[schema.WebauthnCredent
 		if in.Owner == "" || in.Name == "" {
 			return nil, zip.ErrBadRequest("owner and name are required")
 		}
-		if err := authz.AuthorizeUser(ctx, db, "PUT", in.User); err != nil {
+		if err := authz.AuthorizeUser(ctx, "PUT", in.User); err != nil {
 			return nil, err
 		}
 		c, err := orm.Get[schema.WebauthnCredential](db, webauthnCredentialId(in.Owner, in.Name))
@@ -200,7 +200,7 @@ func updateWebauthnCredential(db orm.DB) zip.TypedHandler[schema.WebauthnCredent
 		}
 		// The stored row names whose device this is. Overwriting it is a write to that
 		// account, whoever the body now names.
-		if err := authz.AuthorizeUser(ctx, db, "PUT", c.User); err != nil {
+		if err := authz.AuthorizeUser(ctx, "PUT", c.User); err != nil {
 			return nil, err
 		}
 		// Overlay the decoded domain fields onto the loaded row, keeping the
@@ -232,7 +232,7 @@ func deleteWebauthnCredential(db orm.DB) zip.TypedHandler[webauthnCredentialKey,
 		}
 		// Removing a person's passkey is a write to their account, asked of the person
 		// the stored row names, the way filing one is.
-		if err := authz.AuthorizeUser(ctx, db, "DELETE", c.User); err != nil {
+		if err := authz.AuthorizeUser(ctx, "DELETE", c.User); err != nil {
 			return nil, err
 		}
 		if err := c.DeleteCtx(ctx); err != nil {

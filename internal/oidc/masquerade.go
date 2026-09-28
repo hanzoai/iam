@@ -38,11 +38,12 @@ import (
 // an org switch, so the tenant becomes reachable through the mechanism the
 // estate already has rather than a second one taught to every consumer.
 //
-// ONLY a SuperAdmin may, and the predicate is store.IsSuperAdmin — belonging to
-// the reserved admin org — which is the same question principal.Principal.Sudo
-// answers above this seam. A per-org isAdmin is a different, org-scoped fact:
-// reading it here would let the admin of one tenant step into every other, and
-// that is the entire escalation this endpoint would otherwise be.
+// ONLY a SuperAdmin may, and the predicate is schema.User.SuperAdmin — a person
+// whose own org is the reserved admin org — which is the same row
+// principal.Principal.Sudo is resolved from above this seam. A membership of the
+// admin org does not qualify, and neither does a per-org isAdmin: reading either
+// here would let the admin of one tenant step into every other, and that is the
+// entire escalation this endpoint would otherwise be.
 const (
 	PathAssume  = "/v1/iam/assume"
 	PathRelease = "/v1/iam/release"
@@ -116,13 +117,8 @@ func rescope(ctx context.Context, db orm.DB, in *assumeBody, org string) (*httpx
 	}
 	actor := user.Owner + "/" + user.Name
 
-	// The gate. An unreadable membership set has to STOP the act rather than pass
-	// it: the answer is spent on a refusal, so failing to read it is a refusal.
-	super, err := store.IsSuperAdmin(ctx, db, user.Owner, user.Name)
-	if err != nil {
-		return httpx.Bad(500, "server_error", ""), nil
-	}
-	if !super {
+	// The gate, asked of the row the presented token resolves to.
+	if !user.SuperAdmin() {
 		record(ctx, db, actionFor(org), actor, org, in.Forwarded, 403)
 		return httpx.Bad(403, "only a platform operator may step into an organization", ""), nil
 	}

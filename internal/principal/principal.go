@@ -33,28 +33,16 @@ import (
 //
 // Org is the tenant (the authenticated principal's own org, from the subject); User
 // is its name within that org (empty for a machine); Admin is the org-admin flag;
-// Sudo is platform authority — MEMBERSHIP of the reserved org, resolved from the
-// LOADED record and its membership rows, which is what policy.Claims.Sudo asks of a
-// signed token. App is non-nil only for a confidential client, and such a principal
-// is never Admin and never Sudo — its whole authority is its capability allowlist,
-// so a leaked client credential can neither read another tenant nor touch signing
-// material.
+// Sudo is platform authority — SuperAdmin, schema.User.SuperAdmin asked of the
+// LOADED record, which is what policy.Claims.Sudo asks of a signed token. App is
+// non-nil only for a confidential client, and such a principal is never Admin and
+// never Sudo — its whole authority is its capability allowlist, so a leaked client
+// credential can neither read another tenant nor touch signing material.
+//
+// Which orgs a principal belongs to is policy.Principal.MemberOf, the one
+// membership question: its home org or a membership row, never the admin org by
+// membership.
 type Principal = policy.Principal
-
-// MemberOf reports whether p may act in org through its HOME org or a membership.
-// It is the ONE membership question anything asks, so no caller re-derives the
-// set. Presence is the test, not the role: belonging is what a read needs, and it
-// is the same set policy.Claims.Sudo reads for the reserved org.
-func MemberOf(p *Principal, org string) bool {
-	if p == nil || org == "" {
-		return false
-	}
-	if org == p.Org {
-		return true
-	}
-	_, ok := p.Orgs[org]
-	return ok
-}
 
 type ctxKey struct{}
 
@@ -149,7 +137,7 @@ func ScopeRead(ctx context.Context, owner string) (string, error) {
 		}
 		return p.Org, nil
 	}
-	if !MemberOf(p, owner) {
+	if !p.MemberOf(owner) {
 		return "", errForeignOrg(p)
 	}
 	return owner, nil

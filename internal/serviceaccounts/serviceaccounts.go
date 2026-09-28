@@ -324,10 +324,10 @@ func orgFromBody(body []byte) string {
 // stated once, and this surface states it with them.
 //
 // The clause is load-bearing here specifically: create takes the target org from
-// the request BODY, and a principal's home org is part of its platform authority
-// (authz resolves Principal.Sudo from memberOf(policy.AdminOrg), which answers
-// home-or-membership). A minted row is therefore an identity with whatever the
-// named org confers, so the org a mint may name has to be a tenant.
+// the request BODY, and a principal's home org is its platform authority (a
+// person whose owner is the admin org is a SuperAdmin, schema.User.SuperAdmin). A
+// minted row is therefore an identity with whatever the named org confers, so the
+// org a mint may name has to be a tenant.
 //
 // The capability is unbound by org for a reason (an orchestrator provisions for
 // every tenant), so the binding that matters is not which tenant but whether the

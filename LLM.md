@@ -229,17 +229,16 @@ joins `orgs`, which is the set a resource server already reads to admit
 `X-Org-Id`. No consumer learns a second mechanism.
 
 **It is a LABEL, not a sandbox — say so.** An operator keeps the authority they
-already held. `authz.Principal.Super` is resolved from the membership ROWS, never
-from a token claim, so a claim cannot withdraw it here; making the token claim
-otherwise would be two answers to one question, and the weaker one would be a
-control we do not actually enforce.
+already held. `Principal.Sudo` is resolved from the user ROW, never from a token
+claim, so a claim cannot withdraw it here; making the token claim otherwise would
+be two answers to one question, and the weaker one would be a control we do not
+actually enforce.
 
-**ONE predicate.** `store.IsSuperAdmin` — belonging to the reserved `admin` org —
-which is the same question `authz.Principal.Super` answers above the seam. A
-per-org `IsAdmin` is a different, org-scoped fact; reading it would let the admin
-of one tenant step into every other, and that is the whole escalation these
-endpoints would otherwise be. Pinned: removing the predicate turns
-`TestAssume_orgAdminRefused` and `TestAssume_regularUserRefused` red.
+**ONE predicate** — `schema.User.SuperAdmin` (see "SuperAdmin" below). A per-org
+`IsAdmin` is a different, org-scoped fact, and a membership of `admin` is not
+SuperAdmin either; reading either would let the admin of one tenant step into
+every other, and that is the whole escalation these endpoints would otherwise be.
+Pinned: `TestAssume_orgAdminRefused`, `TestAssume_regularUserRefused`.
 
 **The collection answers one question with one shape** — "which organizations may
 I act in" — so a client never branches on who it is talking to: a person gets
@@ -265,6 +264,48 @@ stepped INTO so that tenant sees who was in it. `ActionAssumeOrg` /
 refuses to create, alter or delete one. Query it at
 `GET /v1/iam/audit-logs?owner=<org>` (indexed on organization, user, action,
 createdTime).
+
+## SuperAdmin — one predicate, on the row
+
+`schema.User.SuperAdmin`: a PERSON (`!Machine()`) whose row's `owner` is
+`admin`. Nothing else answers it. The Guard sets `Principal.Sudo` from it when it
+loads the caller's row, and every gate reads `p.Sudo` or asks the row directly
+(assume/release, device approval across tenants, unlink, bootstrap's
+credential freeze, the registry push gate). `authz.Claims.Sudo` is the same rule
+read off a token: its home org is `orgs[0]`, which `store.MemberOrgRefs` opens
+with the row's `owner`, so the row and every token minted from it agree. The
+token shape is unchanged; the `owner` claim is the minting app's org and decides
+nothing.
+
+- **A membership of `admin` confers nothing.** Not Sudo, and not `MemberOf`/
+  `AdminOf("admin")` either (hanzoai/authz ≥ v1.10.42), so a brand org's user
+  added to it neither reads nor edits the admin org's registry row. `hanzo/z`
+  with an admin membership is an ordinary hanzo account; `admin/z` is the
+  operator.
+- **A machine in `admin` is never SuperAdmin** — `User.Type` service-account or
+  application. `admin/provisioner` is declared `type: service` in universe's
+  provision document but the upsert writes it with no machine class, so it is a
+  person here and keeps platform authority. Stamping a class on it would end its
+  converge.
+- **The admin org is wider than SuperAdmin on two protective gates**, on
+  purpose: `store.SuperAdminKey` (no secret key names any account in `admin`,
+  machines included, nor a name nobody holds yet) and `users.Authorize` (only a
+  SuperAdmin writes an account in `admin`). Both read the owner as written;
+  resolving a name folds its case and never its org.
+- **`groups` is membership, not SuperAdmin.** The claim still lists every org a
+  person belongs to, so `admin` appears for a brand org's member of it. Two
+  relying parties read it as platform authority: the forge (`--admin-group
+  admin`, universe `hanzo-git.yaml`) and Hanzo CD (`hanzocd-rbac-cm.yaml`).
+  Moving them to `orgs[0]` needs the SuperAdmin to sign in through an app that
+  serves the admin org — reserved-org confinement refuses the brand apps.
+- **Provisioning** is `POST /v1/iam/admin/users/upsert` with `owner: admin` —
+  a named person declared IN the admin org. Nothing promotes from a brand org.
+- **Audit.** Every request the Guard admits for a SuperAdmin is one
+  `schema.ActionSuperAdmin` row (method, URI with query, status, client IP,
+  actor), filed under `admin`; so are a SuperAdmin's unlink of someone else's
+  sign-in method and a device approval into another org. The action is
+  `PlatformWritten`: the audit-log CRUD cannot create, alter or delete it.
+  assume/release/list-organizations keep their own rows.
 
 ## A mark is how a SUBJECT appears, and a subject is a person OR an org
 

@@ -135,11 +135,11 @@ type Claims struct {
 	// disagree about who belongs where — a second list assembled from a second
 	// query is how a consumer comes to grant on stale membership.
 	//
-	// This is the claim that carries SuperAdmin to a federated app, and it carries
-	// it as MEMBERSHIP: an operator anchored in a brand org appears here with the
-	// reserved org among their groups. Reading the home org instead is the drift
-	// corrected across this estate — it denies every operator who also does
-	// ordinary work, which is nearly all of them.
+	// It lists MEMBERSHIP, so "admin" among a person's groups says they belong to
+	// the reserved org, not that they are a SuperAdmin: a brand org's person added
+	// to it appears here too. SuperAdmin is the person's own org being "admin",
+	// which is the FIRST entry of `orgs` (authz.Claims.Sudo). A relying party that
+	// grants platform authority on `groups` grants it by membership.
 	Groups []string `json:"groups,omitempty"`
 	// Wallets is the chain-qualified addresses this person has PROVED control
 	// of — each one the result of a CAIP-122 challenge IAM minted, bound to its

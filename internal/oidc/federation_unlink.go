@@ -52,10 +52,11 @@ type unlinkForm struct {
 // unlink disconnects one sign-in identity from an account, so that provider can
 // no longer be used to sign in as that person. Their account and every other way
 // they sign in are untouched. Two principals may do it, and
-// only two: the account holder itself, and a SuperAdmin (a member of the reserved
-// admin org, the one predicate). An ORG ADMIN deliberately may NOT — unlinking is
-// not tenant administration, it is unpicking someone's own sign-in method, so the
-// generic org-admin rule is the wrong answer here.
+// only two: the account holder itself, and a SuperAdmin (schema.User.SuperAdmin,
+// asked of the caller's own row). An ORG ADMIN deliberately may NOT — unlinking
+// is not tenant administration, it is unpicking someone's own sign-in method, so
+// the generic org-admin rule is the wrong answer here. A SuperAdmin unlinking
+// someone else's method is recorded on the SuperAdmin trail.
 //
 // A holder unlinking itself must also be permitted by the application — the
 // provider link's CanUnlink flag — so an organization that mandates federated
@@ -73,7 +74,8 @@ func unlink(db orm.DB) zip.Handler {
 			return httpx.Err(c, "Please login first")
 		}
 		self := caller == f.User.Owner && name == f.User.Name
-		super, err := store.IsSuperAdmin(ctx, db, caller, name)
+		me, err := store.GetUserByName(ctx, db, caller, name)
+		super := err == nil && me.SuperAdmin()
 		if err != nil || (!self && !super) {
 			return httpx.Err(c, "you are not permitted to unlink another user's account")
 		}
@@ -123,6 +125,19 @@ func unlink(db orm.DB) zip.Handler {
 
 		if err := d.remove(ctx, db); err != nil {
 			return httpx.Err(c, err.Error())
+		}
+		if !self {
+			store.Record(ctx, db, &schema.AuditLog{
+				Owner:        me.Owner,
+				Organization: u.Owner,
+				User:         me.Owner + "/" + me.Name,
+				ClientIp:     httpx.ClientIP(c),
+				Method:       c.Method(),
+				RequestUri:   PathUnlink,
+				Action:       schema.ActionSuperAdmin,
+				Object:       u.Owner + "/" + u.Name + " " + d.field,
+				StatusCode:   200,
+			})
 		}
 		return httpx.Ok(c, nil)
 	}

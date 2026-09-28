@@ -223,34 +223,34 @@ func TestUnlink_SuperAdminMayRemoveTheOnlyCredential(t *testing.T) {
 	app, db := newUnlinkServer(t)
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
-	seedUserInOrg(t, db, "admin", "z", "z@hanzo.ai", "pw") // member of the reserved org
+	seedUserInOrg(t, db, "admin", "z", "z@hanzo.ai", "pw") // a person in the reserved org
 	linkGitHub(t, db, "alice", "gh-alice", true)
 	clearPassword(t, db, "alice")
 
-	code, _, _ := loginForCode(t, app, map[string]string{
-		"organization": "admin", "username": "z", "password": "pw",
-		"clientId": "conf", "redirectUri": testRedirect, "scope": "openid",
-	})
-	_, tok := exchangeCode(t, app, url.Values{
-		"code": {code}, "client_id": {"conf"}, "client_secret": {"s3cret"}, "redirect_uri": {testRedirect},
-	})
-	super, _ := tok["access_token"].(string)
-	if super == "" {
-		t.Skip("no SuperAdmin grant available through this application")
-	}
+	// A reserved-org person does not sign in through a tenant's application, so
+	// the bearer is signed directly under the trusted cert (directSubjectToken).
+	super := directSubjectToken(t, db, "cert-conf", "admin", "z")
 
 	if _, m := doUnlink(t, app, super, "GitHub", "hanzo", "alice"); m["status"] != "ok" {
 		t.Fatalf("a SuperAdmin must be able to force the unlink, got %v", m["msg"])
 	}
+	// Unpicking someone else's sign-in method is a platform act, so it is on the
+	// SuperAdmin trail, naming who did it and whose method went.
+	rows, err := orm.TypedQuery[schema.AuditLog](db).Filter("Action=", schema.ActionSuperAdmin).GetAll(context.Background())
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("SuperAdmin trail = %d rows (%v), want 1", len(rows), err)
+	}
+	if r := rows[0]; r.User != "admin/z" || r.Organization != "hanzo" || r.Object != "hanzo/alice github" || r.RequestUri != PathUnlink {
+		t.Fatalf("trail row user=%q org=%q object=%q uri=%q, want admin/z unlinking hanzo/alice's github at %s",
+			r.User, r.Organization, r.Object, r.RequestUri, PathUnlink)
+	}
 }
 
-// The operator who actually exists. Anchored in a brand org, holding the
-// reserved-org membership an existing SuperAdmin granted — the deliberate,
-// signed, revocable way operators are made. Asking the HOME org refused exactly
-// this identity, so the platform's recovery path was shut to every operator who
-// is also an ordinary member of some brand. TestUnlink_CrossUserRefused is the
-// other half: without that membership the same request is still refused.
-func TestUnlink_BrandAnchoredOperatorMayRemoveTheOnlyCredential(t *testing.T) {
+// An admin-org membership held from a brand org is not the recovery path. The
+// account lives in hanzo, so it is not a SuperAdmin, and unlinking someone
+// else's method is refused exactly as TestUnlink_CrossUserRefused refuses it
+// without the membership.
+func TestUnlink_AnAdminMembershipIsNotTheRecoveryPath(t *testing.T) {
 	app, db := newUnlinkServer(t)
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
@@ -268,14 +268,16 @@ func TestUnlink_BrandAnchoredOperatorMayRemoveTheOnlyCredential(t *testing.T) {
 	_, tok := exchangeCode(t, app, url.Values{
 		"code": {code}, "client_id": {"conf"}, "client_secret": {"s3cret"}, "redirect_uri": {testRedirect},
 	})
-	operator, _ := tok["access_token"].(string)
-	if operator == "" {
-		t.Fatalf("the operator must be able to sign in: %v", tok)
+	member, _ := tok["access_token"].(string)
+	if member == "" {
+		t.Fatalf("hanzo/op must be able to sign in: %v", tok)
 	}
 
-	if _, m := doUnlink(t, app, operator, "GitHub", "hanzo", "alice"); m["status"] != "ok" {
-		t.Fatalf("an operator holding the reserved-org membership must be able to force "+
-			"the unlink, got %v", m["msg"])
+	if _, m := doUnlink(t, app, member, "GitHub", "hanzo", "alice"); m["status"] != "error" {
+		t.Fatalf("an admin-org membership forced another person's unlink: %v", m)
+	}
+	if u := userRow(t, db, "alice"); u.GitHub != "gh-alice" {
+		t.Fatalf("alice's GitHub link = %q after a refusal", u.GitHub)
 	}
 }
 

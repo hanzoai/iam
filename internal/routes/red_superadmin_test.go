@@ -23,20 +23,20 @@ func TestRed_SuperAdmin_OrgAdminCannotWriteThroughSCIM(t *testing.T) {
 	operatorFixtures(t, h)
 	boss := h.person(t, "hanzo/boss")
 
-	if status, body := h.send(t, boss, "PATCH", "/v1/iam/scim/v2/Users/hanzo/z", scimPassword); status != 403 {
+	if status, body := h.send(t, boss, "PATCH", "/v1/iam/scim/v2/Users/admin/z", scimPassword); status != 403 {
 		t.Errorf("SCIM PATCH of the operator's password as hanzo's admin answered %d: %s", status, body)
 	}
-	if got := digest(t, h, "hanzo", "z"); got != secretUserHash {
+	if got := digest(t, h, "admin", "z"); got != secretUserHash {
 		t.Errorf("the operator's password changed through SCIM")
 	}
 	replace := `{"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"z","emails":[{"value":"taken@evil.test","primary":true}]}`
-	if status, body := h.send(t, boss, "PUT", "/v1/iam/scim/v2/Users/hanzo/z", replace); status != 403 {
+	if status, body := h.send(t, boss, "PUT", "/v1/iam/scim/v2/Users/admin/z", replace); status != 403 {
 		t.Errorf("SCIM PUT of the operator as hanzo's admin answered %d: %s", status, body)
 	}
-	if status, body := h.send(t, boss, "DELETE", "/v1/iam/scim/v2/Users/hanzo/z", ""); status != 403 {
+	if status, body := h.send(t, boss, "DELETE", "/v1/iam/scim/v2/Users/admin/z", ""); status != 403 {
 		t.Errorf("SCIM DELETE of the operator as hanzo's admin answered %d: %s", status, body)
 	}
-	if digest(t, h, "hanzo", "z") == "" {
+	if digest(t, h, "admin", "z") == "" {
 		t.Errorf("the operator's account was deleted through SCIM")
 	}
 }
@@ -49,7 +49,7 @@ func TestRed_SuperAdmin_OrgAdminCannotRemoveTheirPasskeyOrToken(t *testing.T) {
 	ctx := context.Background()
 
 	pk := orm.New[schema.WebauthnCredential](h.db)
-	pk.Owner, pk.Name, pk.User = "hanzo", "operator-key", "hanzo/z"
+	pk.Owner, pk.Name, pk.User = "hanzo", "operator-key", "admin/z"
 	pk.SetId("hanzo/operator-key")
 	if err := pk.CreateCtx(ctx); err != nil {
 		t.Fatal(err)
@@ -61,7 +61,7 @@ func TestRed_SuperAdmin_OrgAdminCannotRemoveTheirPasskeyOrToken(t *testing.T) {
 	}
 
 	tok := orm.New[schema.Token](h.db)
-	tok.Owner, tok.Name, tok.User = "hanzo", "operator-session", "hanzo/z"
+	tok.Owner, tok.Name, tok.User = "hanzo", "operator-session", "admin/z"
 	tok.SetId("hanzo/operator-session")
 	if err := tok.CreateCtx(ctx); err != nil {
 		t.Fatal(err)
@@ -73,16 +73,16 @@ func TestRed_SuperAdmin_OrgAdminCannotRemoveTheirPasskeyOrToken(t *testing.T) {
 	}
 }
 
-// The known gap, pinned: an org admin mints an API key whose holder is the
-// operator anchored in that org, and the key resolves to the operator's row.
+// An org admin mints an API key in their own org naming the operator, who works
+// there by a membership. No such key resolves to the operator's row.
 func TestRed_SuperAdmin_OrgAdminCannotMintAKeyForThem(t *testing.T) {
 	h := newHarness(t)
 	operatorFixtures(t, h)
 	boss := h.person(t, "hanzo/boss")
 
-	status, body := h.send(t, boss, "POST", "/v1/iam/keys", `{"owner":"hanzo","name":"planted","user":"z"}`)
+	status, body := h.send(t, boss, "POST", "/v1/iam/keys", `{"owner":"hanzo","name":"planted","user":"admin/z"}`)
 	if status != 200 {
-		return // refused: the gap is closed
+		return // refused
 	}
 	var e struct {
 		Data struct {
@@ -97,7 +97,6 @@ func TestRed_SuperAdmin_OrgAdminCannotMintAKeyForThem(t *testing.T) {
 	}
 	u, err := store.UserByAccessKey(context.Background(), h.db, secret)
 	if err == nil && u != nil {
-		super, _ := store.IsSuperAdmin(context.Background(), h.db, u.Owner, u.Name)
-		t.Errorf("hanzo's admin minted a key that resolves to %s/%s (SuperAdmin=%v)", u.Owner, u.Name, super)
+		t.Errorf("hanzo's admin minted a key that resolves to %s/%s (SuperAdmin=%v)", u.Owner, u.Name, u.SuperAdmin())
 	}
 }

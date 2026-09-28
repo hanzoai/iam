@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
@@ -453,7 +454,7 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 	if existing == nil {
 		return nil, zip.ErrNotFound("user " + owner + "/" + name + " not found")
 	}
-	if err := Authorize(ctx, a.db, existing.Owner, existing.Name); err != nil {
+	if err := Authorize(ctx, existing.Owner); err != nil {
 		return nil, err
 	}
 
@@ -580,7 +581,7 @@ func (a *API) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 	if existing == nil {
 		return nil, zip.ErrNotFound("user " + in.Owner + "/" + in.Name + " not found")
 	}
-	if err := Authorize(ctx, a.db, existing.Owner, existing.Name); err != nil {
+	if err := Authorize(ctx, existing.Owner); err != nil {
 		return nil, err
 	}
 	// Take the account off every roster BEFORE removing it. The membership rows
@@ -606,40 +607,28 @@ func (a *API) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 	return &DeleteOutput{Deleted: true}, nil
 }
 
-// Authorize refuses a write to a SuperAdmin's account unless the caller is itself
-// a SuperAdmin person. It covers everything that is theirs: the row (password,
-// address, phone, profile), its deletion, its second factors, the credentials
-// that name them, and the organizations they belong to.
+// Authorize refuses a write to an account in the admin org unless the caller is
+// a SuperAdmin. It covers everything that is theirs: the row (password, address,
+// phone, profile), its deletion, its second factors, the credentials that name
+// them, and the organizations they belong to.
 //
-// The ordinary gates do not answer this. They ask who may write an org's users,
-// and a SuperAdmin anchored in a brand org is one of that org's users — so the
-// org's admin, or an application holding the user-admin capability, could set
-// the password of the platform's own operator and sign in as them. Platform
-// authority can only be written by platform authority, and an application never
-// holds it.
+// The admin org is where every SuperAdmin lives (schema.User.SuperAdmin), so this
+// is the gate on a SuperAdmin's account, and it holds for the platform machines
+// beside them and for a name no row holds yet: platform authority is written
+// only by platform authority, and an application never holds it. It asks the
+// owner as written, because resolving the name to its row folds the case of the
+// name and never changes its org.
 //
-// The identity is the RESOLVED row's, because the lookup folds case and the
-// membership read does not: asking of "hanzo/Z" as written would miss the
-// admin-org membership of hanzo/z and wave the write through. A name no row holds
-// is asked as written, which still catches the reserved org itself. An unreadable
-// membership set refuses.
-func Authorize(ctx context.Context, db orm.DB, owner, name string) error {
+// The ordinary gates do not answer this. They ask who may write an org's users;
+// a membership write names a USER in the admin org while authorizing the org it
+// grants, so without this an org's admin could add a SuperAdmin to their org or
+// take them out of it.
+func Authorize(ctx context.Context, owner string) error {
 	if p, ok := principal.From(ctx); ok && p.Sudo && p.App == nil {
 		return nil
 	}
-	u, err := store.GetUserByName(ctx, db, owner, name)
-	if err != nil {
-		return zip.ErrInternal(err.Error())
-	}
-	if u != nil {
-		owner, name = u.Owner, u.Name
-	}
-	super, err := store.IsSuperAdmin(ctx, db, owner, name)
-	if err != nil {
-		return zip.ErrInternal(err.Error())
-	}
-	if super {
-		return zip.ErrForbidden("only a SuperAdmin may change a SuperAdmin's account")
+	if owner == policy.AdminOrg {
+		return zip.ErrForbidden("only a SuperAdmin may change an account in the admin organization")
 	}
 	return nil
 }

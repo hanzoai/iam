@@ -95,12 +95,11 @@ func buildUserinfo(u *schema.User, claims *Claims, row *schema.Token, iss string
 	// access token carries, so a client that reads one and a client that reads the
 	// other cannot reach two different answers about the same person.
 	//
-	// It is here because `owner` alone cannot express platform authority. Owner is
-	// where an identity is ANCHORED — its billing, its default scope. Being an
-	// operator is MEMBERSHIP of the reserved org, held alongside an ordinary home
-	// org, so a relying party reading owner denies every operator who also does
-	// ordinary work. authz.Claims.PlatformSudo is the predicate over this field;
-	// emitted regardless of scope, because it is identity rather than profile.
+	// Its first entry is the org the account lives in, which is what platform
+	// authority is read from: authz.Claims.Sudo holds for a person whose first
+	// entry is the reserved admin org, and a later admin-org entry — a membership
+	// held from another org — confers nothing. Emitted regardless of scope,
+	// because it is identity rather than profile.
 	if len(orgs) > 0 {
 		info["orgs"] = orgs
 	}

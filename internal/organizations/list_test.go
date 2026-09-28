@@ -235,26 +235,36 @@ func TestList_pagesWithoutRepeatingOrDropping(t *testing.T) {
 	}
 }
 
-// An operator is usually anchored in a BRAND org and holds the reserved org as a
-// membership, because they also do ordinary work. Two things must hold for them:
-// the reserved org is not offered as somewhere to switch to — assume refuses it,
-// so listing it would be a destination that cannot be reached — and their own
-// organizations filling the page must not END the walk, or every tenant behind
-// them is unreachable.
-func TestList_anOperatorAnchoredInABrandOrg(t *testing.T) {
+// An admin-org membership held from a brand org is not an operator's scope: the
+// person sees their own organizations and nothing behind them, and the reserved
+// org is not offered as somewhere to switch to.
+func TestList_anAdminMembershipIsNotTheRegistry(t *testing.T) {
 	h := newHarness(t)
 	seedMany(t, h.db, 4)
-	// The reserved org has a row of its own, as it does in production — without
-	// one, filtering it would look correct because it was never resolvable.
 	seedOrg(t, h.db, policy.AdminOrg)
 	seedMembership(t, h.db, "hanzo/boss", policy.AdminOrg, store.RoleAdmin)
 
-	status, p, body := h.list(t, "hanzo/boss", "?limit=1")
+	status, p, body := h.list(t, "hanzo/boss", "")
 	if status != 200 {
 		t.Fatalf("status=%d body=%s, want 200", status, body)
 	}
-	if got := names(p); contains(got, policy.AdminOrg) {
-		t.Fatalf("orgs=%v offers the platform organization as a tenant", got)
+	if got := names(p); len(got) != 1 || got[0] != "hanzo" || p.Cursor != "" {
+		t.Fatalf("orgs=%v cursor=%q, want just their own org and no walk", got, p.Cursor)
+	}
+}
+
+// A SuperAdmin who also works in a brand org has that org as their own. It must
+// not END the walk when it fills the page, or every tenant behind it is
+// unreachable, and the reserved org they live in is never offered.
+func TestList_aSuperAdminsOwnOrgsDoNotEndTheWalk(t *testing.T) {
+	h := newHarness(t)
+	seedMany(t, h.db, 4)
+	seedOrg(t, h.db, policy.AdminOrg)
+	seedMembership(t, h.db, "admin/root", "hanzo", store.RoleMember)
+
+	status, p, body := h.list(t, "admin/root", "?limit=1")
+	if status != 200 {
+		t.Fatalf("status=%d body=%s, want 200", status, body)
 	}
 	if got := names(p); len(got) != 1 || got[0] != "hanzo" {
 		t.Fatalf("first page = %v, want just their own org", got)
@@ -266,7 +276,7 @@ func TestList_anOperatorAnchoredInABrandOrg(t *testing.T) {
 	seen := map[string]bool{}
 	cursor := p.Cursor
 	for range 20 {
-		_, next, _ := h.list(t, "hanzo/boss", "?limit=1&cursor="+url.QueryEscape(cursor))
+		_, next, _ := h.list(t, "admin/root", "?limit=1&cursor="+url.QueryEscape(cursor))
 		for _, n := range names(next) {
 			seen[n] = true
 		}

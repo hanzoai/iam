@@ -592,45 +592,6 @@ func GetTokenByUserCode(_ context.Context, db orm.DB, userCode string) (*schema.
 	return t, err
 }
 
-// IsSuperAdmin reports whether the identity owner/name BELONGS to the reserved
-// organization: anchored there, or holding a membership there. THE SuperAdmin
-// predicate, for a subsystem BELOW the authz seam (device approval, federation
-// unlink) that cannot import authz — authz imports oidc, so the dependency only
-// runs one way. It asks what principal.Principal.Sudo carries and what the published
-// authz.Claims.Sudo asks of a signed token, so one identity is an operator
-// everywhere or nowhere.
-//
-// It takes an IDENTITY, not an org name, because that is the shape of the
-// question. An operator is someone an existing SuperAdmin put IN the reserved
-// org (memberships.mayGrant refuses that row to anyone else), and most are
-// anchored in a brand org because they also do ordinary work there, so the home
-// org alone cannot answer it.
-//
-// It reports the read error rather than folding it into the answer. Which way an
-// unreadable membership set is unsafe depends on the caller: one that GRANTS on a
-// true wants false, one that REFUSES on a true wants true, and a single hardcoded
-// direction is fail-open for half of them. Callers decide, and none of them may
-// spend the answer without looking. A per-org isAdmin flag is a different,
-// org-scoped question and never answers this one.
-func IsSuperAdmin(ctx context.Context, db orm.DB, owner, name string) (bool, error) {
-	if owner == policy.AdminOrg {
-		return true, nil
-	}
-	if owner == "" || name == "" {
-		return false, nil
-	}
-	rows, err := MembershipsByUser(ctx, db, owner+"/"+name)
-	if err != nil {
-		return false, err
-	}
-	for _, m := range rows {
-		if m != nil && m.Org == policy.AdminOrg {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
 // GetSigningCert resolves a TRUSTED signing certificate by name (the JWKS
 // `kid`), searching only the reserved platform owners in order. A cert owned by
 // any other org is never returned, so an attacker-created cert with a colliding

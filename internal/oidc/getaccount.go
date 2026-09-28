@@ -16,9 +16,9 @@ import (
 // PathAccount (canonical.go) is the native account endpoint — what
 // the hanzo.id portal's account page and the gateway admin-guard call.
 //
-// SECURITY CONTRACT. The gateway admin-guard derives the global-admin
-// (SuperAdmin) predicate from the `owner` this returns — a caller is a global
-// admin iff `data.owner == AdminOrg` (gateway/cmd/admin-guard). So the response
+// SECURITY CONTRACT. The gateway admin-guard derives the SuperAdmin predicate
+// from the `owner` this returns — a caller is a SuperAdmin iff
+// `data.owner == AdminOrg` (gateway/cmd/admin-guard). So the response
 // shape MUST match v1 exactly — {status, sub, name, data:<user>, data2:<org>} —
 // and every secret (password hash, access secret, TOTP, recovery codes) MUST be
 // redacted. Anonymous callers get {status:"error"} (200, casibase convention),

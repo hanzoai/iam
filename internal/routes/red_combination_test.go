@@ -14,7 +14,7 @@ import (
 )
 
 // The surfaces the combination test does not visit, each asked as an admin of
-// hanzo by membership against hanzo/z, the SuperAdmin anchored in hanzo.
+// hanzo by membership against admin/z, the SuperAdmin who also works in hanzo.
 func TestRedFinal_AdminByMembershipReachesNoneOfZ(t *testing.T) {
 	h := newHarness(t)
 	operatorFixtures(t, h)
@@ -26,13 +26,13 @@ func TestRedFinal_AdminByMembershipReachesNoneOfZ(t *testing.T) {
 	mallory := h.person(t, "mallory/mallory")
 
 	pk := orm.New[schema.WebauthnCredential](h.db)
-	pk.Owner, pk.Name, pk.User = "hanzo", "z-key", "hanzo/z"
+	pk.Owner, pk.Name, pk.User = "hanzo", "z-key", "admin/z"
 	pk.SetId("hanzo/z-key")
 	if err := pk.CreateCtx(ctx); err != nil {
 		t.Fatal(err)
 	}
 	tok := orm.New[schema.Token](h.db)
-	tok.Owner, tok.Name, tok.User = "hanzo", "z-session", "hanzo/z"
+	tok.Owner, tok.Name, tok.User = "hanzo", "z-session", "admin/z"
 	tok.SetId("hanzo/z-session")
 	if err := tok.CreateCtx(ctx); err != nil {
 		t.Fatal(err)
@@ -40,25 +40,28 @@ func TestRedFinal_AdminByMembershipReachesNoneOfZ(t *testing.T) {
 
 	scimPw := `{"schemas":["urn:ietf:params:scim:api:messages:2.0:PatchOp"],"Operations":[{"op":"replace","path":"password","value":"new password here"}]}`
 	for _, r := range []struct{ method, path, body string }{
-		{"PUT", "/v1/iam/users/hanzo/z", `{"user":{"email":"x@evil.test"},"password":"new password here"}`},
-		{"PUT", "/v1/iam/users/hanzo/Z", `{"user":{"email":"x@evil.test"},"password":"new password here"}`},
-		{"PATCH", "/v1/iam/scim/v2/Users/hanzo/z", scimPw},
-		{"DELETE", "/v1/iam/scim/v2/Users/hanzo/z", ""},
-		{"POST", "/v1/iam/mfa/setup/initiate", `{"owner":"hanzo","name":"z"}`},
+		{"PUT", "/v1/iam/users/admin/z", `{"user":{"email":"x@evil.test"},"password":"new password here"}`},
+		{"PUT", "/v1/iam/users/admin/Z", `{"user":{"email":"x@evil.test"},"password":"new password here"}`},
+		{"PATCH", "/v1/iam/scim/v2/Users/admin/z", scimPw},
+		{"DELETE", "/v1/iam/scim/v2/Users/admin/z", ""},
+		{"POST", "/v1/iam/mfa/setup/initiate", `{"owner":"admin","name":"z"}`},
 		{"DELETE", "/v1/iam/webauthn-credentials/hanzo/z-key", ""},
 		{"DELETE", "/v1/iam/tokens/hanzo/z-session", ""},
-		{"POST", "/v1/iam/tokens", `{"owner":"hanzo","name":"planted-tok","user":"hanzo/z"}`},
-		{"POST", "/v1/iam/memberships", `{"user":"hanzo/z","org":"hanzo"}`},
-		{"POST", "/v1/iam/delete-membership", `{"user":"hanzo/z","org":"hanzo"}`},
-		{"POST", "/v1/iam/keys", `{"owner":"hanzo","name":"mk3","user":"HANZO/z"}`},
+		{"POST", "/v1/iam/tokens", `{"owner":"hanzo","name":"planted-tok","user":"admin/z"}`},
+		{"POST", "/v1/iam/memberships", `{"user":"admin/z","org":"hanzo"}`},
+		{"POST", "/v1/iam/delete-membership", `{"user":"admin/z","org":"hanzo"}`},
+		{"POST", "/v1/iam/keys", `{"owner":"hanzo","name":"mk3","user":"admin/Z"}`},
 	} {
 		status, body := h.send(t, mallory, r.method, r.path, r.body)
 		if status == 200 || status == 201 {
 			t.Errorf("%s %s as hanzo's admin by membership = %d %s", r.method, r.path, status, body)
 		}
 	}
-	if got := digest(t, h, "hanzo", "z"); got != secretUserHash {
+	if got := digest(t, h, "admin", "z"); got != secretUserHash {
 		t.Errorf("z's password changed")
+	}
+	if m, err := store.MembershipIn(ctx, h.db, "admin/z", "hanzo", "", ""); err != nil || m == nil {
+		t.Errorf("z's hanzo membership did not survive the refusal (%v, %v)", m, err)
 	}
 	if _, err := orm.Get[schema.WebauthnCredential](h.db, "hanzo/z-key"); err != nil {
 		t.Errorf("z's passkey was removed: %v", err)
@@ -75,9 +78,10 @@ func TestRedFinal_AdminByMembershipReachesNoneOfZ(t *testing.T) {
 	}
 }
 
-// A key written for someone who is NOT yet a SuperAdmin, who is made one later,
-// must stop resolving: the resolver asks on every resolution.
-func TestRedFinal_KeyStopsWhenItsHolderBecomesSuperAdmin(t *testing.T) {
+// An admin-org membership is not a promotion. A key written for a hanzo account
+// keeps speaking for it after that account is added to the admin org: the account
+// is no more a SuperAdmin than before, and the resolver asks on every resolution.
+func TestRedFinal_AnAdminMembershipIsNoPromotion(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 	seedUser(t, h.db, "hanzo", "rising", false)
@@ -88,13 +92,11 @@ func TestRedFinal_KeyStopsWhenItsHolderBecomesSuperAdmin(t *testing.T) {
 	if err := k.CreateCtx(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if u, err := store.UserByAccessKey(ctx, h.db, "sk-live-RISING"); err != nil || u == nil {
-		t.Fatalf("control: the key did not resolve before promotion (%v)", err)
-	}
-	if _, err := store.EnsureMembership(ctx, h.db, "hanzo/rising", "admin", store.RoleMember); err != nil {
+	if _, err := store.EnsureMembership(ctx, h.db, "hanzo/rising", "admin", store.RoleAdmin); err != nil {
 		t.Fatal(err)
 	}
-	if u, err := store.UserByAccessKey(ctx, h.db, "sk-live-RISING"); err == nil && u != nil {
-		t.Errorf("a key kept speaking for its holder after they became a SuperAdmin: %s/%s", u.Owner, u.Name)
+	u, err := store.UserByAccessKey(ctx, h.db, "sk-live-RISING")
+	if err != nil || u == nil || u.Owner != "hanzo" || u.Name != "rising" || u.SuperAdmin() {
+		t.Fatalf("the key resolved to %+v (%v), want hanzo/rising, not a SuperAdmin", u, err)
 	}
 }

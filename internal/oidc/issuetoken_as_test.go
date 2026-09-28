@@ -280,29 +280,34 @@ func TestAs_externalIdCollidingWithForeignSubject_resolvesOwnMember(t *testing.T
 	}
 }
 
-// (d) The org-key arm can never mint for a SuperAdmin — not even one anchored in
-// the key's own brand org — so it cannot reach the cross-tenant identities the
-// admin capability gates. The reserved gate the confidential arm uses is not even
-// consulted: this refusal is the org key's own confinement.
+// (d) The org-key arm can never mint for a SuperAdmin: a SuperAdmin lives in the
+// admin org, and confinement answers a target outside the key's org as an id
+// nobody holds — which also keeps the arm from reporting who is in the admin org.
+// A member of the key's org holding an admin-org membership is not a SuperAdmin,
+// and is acted for like any other member.
 func TestAs_superAdminTarget_refused(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-app", secret: "app-secret"})
 	seedActUser(t, db, "hanzo", "root", "ext-root")
-	seedMembership(t, db, "hanzo/root", "admin", "admin") // a SuperAdmin in a brand org
-	seedActUser(t, db, "admin", "z", "ext-z")             // a reserved-org identity
+	seedMembership(t, db, "hanzo/root", "admin", "admin") // an admin-org membership held from hanzo
+	seedActUser(t, db, "admin", "z", "ext-z")             // the SuperAdmin
 	seedActKey(t, db, "hanzo", "op", "sk-live-optoken", "hanzo-app", true)
 
-	resp, body := do(t, app, asReq("sk-live-optoken", "?id=hanzo/root"))
-	if resp.StatusCode != 403 {
-		t.Fatalf("SuperAdmin target status = %d, want 403; body=%s", resp.StatusCode, body)
-	}
-	// And a reserved-org target (owner == admin) never reaches the mint either: it
-	// lives in a different org than the hanzo key, so confinement answers it as an
-	// id nobody holds — which is also what keeps the arm from reporting who is in
-	// the admin org.
-	resp, body = do(t, app, asReq("sk-live-optoken", "?id=admin/z"))
+	resp, body := do(t, app, asReq("sk-live-optoken", "?id=admin/z"))
 	if resp.StatusCode != 200 || decode(t, body)["status"] != "error" {
-		t.Fatalf("reserved-org target = %d %s, want the 200 + status:error absence envelope", resp.StatusCode, body)
+		t.Fatalf("SuperAdmin target = %d %s, want the 200 + status:error absence envelope", resp.StatusCode, body)
+	}
+
+	resp, body = do(t, app, asReq("sk-live-optoken", "?id=hanzo/root"))
+	if resp.StatusCode != 200 {
+		t.Fatalf("hanzo/root, a member of hanzo, status = %d, want 200; body=%s", resp.StatusCode, body)
+	}
+	claims, err := verifyToken(context.Background(), db, dataMap(t, body)["accessToken"].(string))
+	if err != nil || claims.Subject != "hanzo/root" {
+		t.Fatalf("minted for %q (%v), want hanzo/root", claims.Subject, err)
+	}
+	if len(claims.Orgs) == 0 || claims.Orgs[0].Org != "hanzo" {
+		t.Fatalf("the token's home org = %v, want hanzo first", claims.Orgs)
 	}
 }
 

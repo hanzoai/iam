@@ -407,9 +407,10 @@ func upsertUser(db orm.DB) zip.TypedHandler[person, reply] {
 			return refuse(400, "owner and name are required"), nil
 		}
 		// The row is filed under both names, so both are stored as they arrive —
-		// see verbatim. The owner is the account's TENANCY, and belonging to the
-		// reserved org is SuperAdmin (store.IsSuperAdmin), so the tenant a name
-		// resolves to is the whole of what this account is.
+		// see verbatim. The owner is the account's TENANCY, and a person whose owner
+		// is the reserved org is a SuperAdmin (schema.User.SuperAdmin), so the tenant
+		// a name resolves to is the whole of what this account is. This is how a
+		// SuperAdmin is provisioned: a named person declared IN the admin org.
 		if bad := verbatim("owner", in.Owner); bad != nil {
 			return bad, nil
 		}
@@ -456,12 +457,8 @@ func upsertUser(db orm.DB) zip.TypedHandler[person, reply] {
 			// A SuperAdmin's password, address and phone are how they sign in and how
 			// they recover, so a declaration sets them at creation and never again. The
 			// service token is not a SuperAdmin, and writing any of the three onto an
-			// existing operator is taking the account. An unreadable membership set
-			// refuses.
-			super, err := store.IsSuperAdmin(ctx, db, existing.Owner, existing.Name)
-			if err != nil {
-				return refuse(500, "server_error"), nil
-			}
+			// existing operator is taking the account.
+			super := existing.SuperAdmin()
 			display, email := pick(in.DisplayName, existing.DisplayName), store.NormalizeEmail(pick(in.Email, existing.Email))
 			phone := store.NormalizePhone(pick(in.Phone, existing.Phone))
 			// A declaration presents the same credential on every run, so an unchanged
@@ -539,10 +536,10 @@ func upsertUser(db orm.DB) zip.TypedHandler[person, reply] {
 // one string or the request is answered.
 //
 // A trim is not a courtesy here, it is a second spelling. The predicates that
-// decide what an identity IS ask by name — policy.IsReservedOrg("admin ") is false
-// and store.IsSuperAdmin("admin") is true — so a padded name passes the boundary
-// as one tenant and lands in another, and the declaration that reached the
-// reserved org never spells it. Refused rather than normalized: silently
+// decide what an identity IS compare the owner verbatim —
+// policy.IsReservedOrg("admin ") is false and schema.User.SuperAdmin holds for
+// owner "admin" — so a padded name passes the boundary as one tenant and lands in
+// another, and the declaration that reached the reserved org never spells it. Refused rather than normalized: silently
 // rewriting a name into a tenant nobody wrote down is the outcome being avoided,
 // not a convenience, and there is nothing here to be tolerant about — every
 // caller composes these names from its own configuration.

@@ -181,7 +181,7 @@ func deviceInfoHandler(db orm.DB) zip.Handler {
 		if err != nil || app == nil {
 			return httpx.Err(c, refuse)
 		}
-		if ok, err := mayApprove(ctx, db, user, row, app); err != nil || !ok {
+		if !mayApprove(user, row, app) {
 			return httpx.Err(c, "your organization may not approve this device sign-in")
 		}
 		label := app.DisplayName
@@ -371,13 +371,28 @@ func approveDevice(c *zip.Ctx, db orm.DB, user *schema.User, userCode string) er
 	if err != nil || app == nil {
 		return httpx.Err(c, refuse)
 	}
-	if ok, err := mayApprove(ctx, db, user, row, app); err != nil || !ok {
+	if !mayApprove(user, row, app) {
 		return httpx.Err(c, "your organization may not approve this device sign-in")
 	}
 
 	row.User = user.Owner + "/" + user.Name
 	if err := store.SaveToken(ctx, db, row); err != nil {
 		return httpx.Err(c, refuse)
+	}
+	// A SuperAdmin approving a sign-in to another organization's application is
+	// platform authority crossing a tenant, so it goes on the SuperAdmin trail.
+	if user.SuperAdmin() && user.Owner != row.Organization {
+		store.Record(ctx, db, &schema.AuditLog{
+			Owner:        user.Owner,
+			Organization: row.Organization,
+			User:         row.User,
+			ClientIp:     httpx.ClientIP(c),
+			Method:       c.Method(),
+			RequestUri:   c.Path(),
+			Action:       schema.ActionSuperAdmin,
+			Object:       app.ClientId,
+			StatusCode:   200,
+		})
 	}
 	return httpx.Ok(c, row.User)
 }
@@ -390,19 +405,14 @@ func approveDevice(c *zip.Ctx, db orm.DB, user *schema.User, userCode string) er
 // is the DEVICE row's, captured when the code was issued. An app that serves any
 // org admits any org that is not reserved — the same rule its authorization code
 // is minted under (MintFor), so a self-service account in an org of its own
-// approves `hanzo auth login` exactly as it signs in to the console. A SuperAdmin —
-// a member of the reserved admin org, the one predicate — crosses tenants
-// deliberately: that is the identity an operator signs a CLI into any brand's app
-// with.
-func mayApprove(ctx context.Context, db orm.DB, user *schema.User, row *schema.Token, app *schema.Application) (bool, error) {
-	if user.Owner == row.Organization {
-		return true, nil
+// approves `hanzo auth login` exactly as it signs in to the console. A SuperAdmin
+// (schema.User.SuperAdmin) crosses tenants deliberately: that is the identity an
+// operator signs a CLI into any brand's app with, and approveDevice records it.
+func mayApprove(user *schema.User, row *schema.Token, app *schema.Application) bool {
+	if user.Owner == row.Organization || user.SuperAdmin() {
+		return true
 	}
-	super, err := store.IsSuperAdmin(ctx, db, user.Owner, user.Name)
-	if err != nil || super {
-		return super, err
-	}
-	return app.ServesAnyOrg() && !policy.IsReservedOrg(user.Owner), nil
+	return app.ServesAnyOrg() && !policy.IsReservedOrg(user.Owner)
 }
 
 // deviceDead is the one answer for a device_code that cannot be redeemed —

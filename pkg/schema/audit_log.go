@@ -58,6 +58,15 @@ const (
 	ActionReleaseOrg = "release-organization"
 	ActionListOrgs   = "list-organizations"
 
+	// A request a SuperAdmin made with platform authority — every one the Guard
+	// admits for them, read or write, whatever its route and answer — and the
+	// platform acts IAM performs for one outside the Guard: unlinking another
+	// person's sign-in method, approving a device sign-in for another
+	// organization's application. Filed under the actor's own org, the admin org,
+	// so the whole trail of platform authority is one query; Organization names
+	// the org acted on when there is one.
+	ActionSuperAdmin = "superadmin"
+
 	// A workload in a Kubernetes namespace obtaining its application's token by
 	// presenting the ServiceAccount token its cluster minted for it (RFC 7523).
 	// The row names the service account that asked, so the trail reads the same
@@ -84,7 +93,7 @@ func PlatformWritten(action string) bool {
 	switch action {
 	case ActionConsentTraining, ActionIssueUserToken, ActionMintUserKeys,
 		ActionRevokeUserKeys, ActionTokenExchange, ActionAs,
-		ActionAssumeOrg, ActionReleaseOrg, ActionListOrgs, ActionWorkloadToken,
+		ActionAssumeOrg, ActionReleaseOrg, ActionListOrgs, ActionSuperAdmin, ActionWorkloadToken,
 		ActionInviteSend, ActionInviteAccept, ActionInviteRefused, ActionInviteSignupRefused,
 		ActionInviteCodeSent:
 		return true

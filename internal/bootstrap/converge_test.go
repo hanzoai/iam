@@ -8,14 +8,10 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/hanzoai/orm"
-	"github.com/zap-proto/zip"
-
 	policy "github.com/hanzoai/authz"
+	"github.com/hanzoai/orm"
 
 	"github.com/hanzoai/iam/internal/cred"
-	"github.com/hanzoai/iam/internal/routes"
-	"github.com/hanzoai/iam/internal/testdb"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -204,14 +200,15 @@ func TestUpsertUser_refusesAMachineRow(t *testing.T) {
 // F. A SuperAdmin's password, address and phone are how they sign in and how they
 // recover. The service token is not a SuperAdmin, so a declaration sets the three
 // when it creates the account and never after — a rewrite is a takeover of the
-// platform's operator. Both kinds are covered: anchored in a brand org with a
-// membership in the reserved one, and homed in the reserved org itself.
+// platform's operator. A SuperAdmin is a person declared IN the reserved org; a
+// brand org's person holding an admin-org membership is not one, and converges
+// like any other account.
 func TestUpsertUser_neverRewritesASuperAdminsCredentials(t *testing.T) {
 	app, db := boot(t)
 	first := `{"owner":"%s","name":"%s","email":"op@hanzo.test","phone":"+15550100","password":"their own"}`
 	taken := `{"owner":"%s","name":"%s","displayName":"Renamed","email":"taken@evil.test","phone":"+15550199","password":"taken"}`
 
-	for _, who := range [][2]string{{"hanzo", "z"}, {policy.AdminOrg, "ops"}, {"hanzo", "alice"}} {
+	for _, who := range [][2]string{{policy.AdminOrg, "z"}, {policy.AdminOrg, "ops"}, {"hanzo", "z"}, {"hanzo", "alice"}} {
 		owner, name := who[0], who[1]
 		if st, m := post(t, app, "/v1/iam/admin/users/upsert", svcToken, fmt.Sprintf(first, owner, name)); st != 200 {
 			t.Fatalf("create %s/%s: status=%d body=%v", owner, name, st, m)
@@ -221,7 +218,7 @@ func TestUpsertUser_neverRewritesASuperAdminsCredentials(t *testing.T) {
 		t.Fatalf("grant: %v", err)
 	}
 
-	for _, who := range [][2]string{{"hanzo", "z"}, {"hanzo", "Z"}, {policy.AdminOrg, "ops"}} {
+	for _, who := range [][2]string{{policy.AdminOrg, "z"}, {policy.AdminOrg, "Z"}, {policy.AdminOrg, "ops"}} {
 		owner, name := who[0], who[1]
 		before := row(t, db, owner, name)
 		if st, m := post(t, app, "/v1/iam/admin/users/upsert", svcToken, fmt.Sprintf(taken, owner, name)); st != 200 {
@@ -239,33 +236,14 @@ func TestUpsertUser_neverRewritesASuperAdminsCredentials(t *testing.T) {
 		}
 	}
 
-	// Everyone else converges exactly as before.
-	if st, m := post(t, app, "/v1/iam/admin/users/upsert", svcToken, fmt.Sprintf(taken, "hanzo", "alice")); st != 200 {
-		t.Fatalf("converge hanzo/alice: status=%d body=%v", st, m)
-	}
-	alice := row(t, db, "hanzo", "alice")
-	if !cred.Verify(alice.PasswordType, "taken", alice.PasswordHash) || alice.Email != "taken@evil.test" {
-		t.Errorf("an ordinary member's declared password and address did not land")
-	}
-}
-
-// An unreadable membership set cannot say the row is not a SuperAdmin's, so the
-// converge refuses rather than rewrite it.
-func TestUpsertUser_refusesWhenTheMembershipSetCannotBeRead(t *testing.T) {
-	_, db := boot(t)
-	app := zip.New(zip.Config{AppName: "bootstrap-fault", DisableStartupMessage: true})
-	routes.Route(app, testdb.Unreadable(db, "memberships"))
-	if err := app.Build(); err != nil {
-		t.Fatalf("build: %v", err)
-	}
-	seed(t, db, "hanzo", "z", "", "Operator", false)
-
-	st, m := post(t, app, "/v1/iam/admin/users/upsert", svcToken,
-		`{"owner":"hanzo","name":"z","email":"taken@evil.test","password":"taken"}`)
-	if st != 500 {
-		t.Fatalf("status = %d (%v), want 500 — a converge rewrote a row it could not classify", st, m)
-	}
-	if after := row(t, db, "hanzo", "z"); after.PasswordHash != "" || after.Email != "" {
-		t.Fatalf("the row changed under a refusal: %+v", after)
+	// Everyone else converges exactly as before, the admin-org member included.
+	for _, name := range []string{"z", "alice"} {
+		if st, m := post(t, app, "/v1/iam/admin/users/upsert", svcToken, fmt.Sprintf(taken, "hanzo", name)); st != 200 {
+			t.Fatalf("converge hanzo/%s: status=%d body=%v", name, st, m)
+		}
+		u := row(t, db, "hanzo", name)
+		if !cred.Verify(u.PasswordType, "taken", u.PasswordHash) || u.Email != "taken@evil.test" {
+			t.Errorf("hanzo/%s: the declared password and address did not land", name)
+		}
 	}
 }

@@ -18,11 +18,10 @@ import (
 // correct secret, so the only thing between the request and a token is the rule
 // under test — remove it and they mint.
 
-// seedOperator creates a user anchored in a brand org who holds a membership in
-// the reserved org. This is the shape an operator actually has — someone who runs
-// the platform and also does ordinary work — and the shape a guard written on the
-// org NAME cannot see.
-func seedOperator(t *testing.T, db orm.DB, org, name, password string) {
+// seedMember creates a user anchored in a brand org who holds a membership in the
+// reserved org. It is not a SuperAdmin — a SuperAdmin is a person whose own org is
+// the reserved one — so every mint treats it as the ordinary member it is.
+func seedMember(t *testing.T, db orm.DB, org, name, password string) {
 	t.Helper()
 	seedUserInOrg(t, db, org, name, name+"@"+org+".example", password)
 	if _, err := store.EnsureMembership(tctx(), db, org+"/"+name, policy.AdminOrg, store.RoleAdmin); err != nil {
@@ -37,20 +36,25 @@ func mintedToken(t *testing.T, body []byte) string {
 	return tok
 }
 
-// A general minter reaching an operator whose id reads "hanzo/z". Both that id and
-// "admin/z" name the same authority; only one of them looks reserved.
-func TestOnBehalfOfMintCannotReachAnOperatorInABrandOrg(t *testing.T) {
+// A general minter reaching the SuperAdmin admin/z is refused, however the id is
+// spelled; hanzo/z, a hanzo account holding an admin-org membership, is an
+// ordinary target.
+func TestOnBehalfOfMintCannotReachASuperAdmin(t *testing.T) {
 	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console") // general minter, not an admin minter
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
-	seedOperator(t, db, "hanzo", "z", "correct-horse")
+	seedUserInOrg(t, db, policy.AdminOrg, "z", "z@hanzo.example", "correct-horse")
+	seedMember(t, db, "hanzo", "z", "correct-horse")
 
-	resp, body := do(t, app, keyReq("POST", PathTokensIssue, "hanzo-console", "top-secret", "?id=hanzo/z"))
-	if resp.StatusCode != 403 {
-		t.Fatalf("a general minter reached an operator target hanzo/z (status=%d); body=%s", resp.StatusCode, body)
+	for _, id := range []string{"admin/z", "admin/Z"} {
+		resp, body := do(t, app, keyReq("POST", PathTokensIssue, "hanzo-console", "top-secret", "?id="+id))
+		if resp.StatusCode != 403 || mintedToken(t, body) != "" {
+			t.Fatalf("a general minter reached the SuperAdmin as %s (status=%d); body=%s", id, resp.StatusCode, body)
+		}
 	}
-	if mintedToken(t, body) != "" {
-		t.Fatalf("a token was minted for an operator: %s", body)
+	resp, body := do(t, app, keyReq("POST", PathTokensIssue, "hanzo-console", "top-secret", "?id=hanzo/z"))
+	if resp.StatusCode != 200 || mintedToken(t, body) == "" {
+		t.Fatalf("hanzo/z, an ordinary member, was refused (status=%d); body=%s", resp.StatusCode, body)
 	}
 }
 
@@ -101,25 +105,26 @@ func TestMintConfinesAReservedOrgPrincipalToItsOwnApplication(t *testing.T) {
 	}
 }
 
-// The exchange is the path tokens/issue is retired into, so it has to ask the same
-// question. An operator's id reads "hanzo/z" and names the same authority as
-// "admin/z"; only one of them looks reserved.
-func TestExchangeCannotReachAnOperatorInABrandOrg(t *testing.T) {
+// The exchange is the path tokens/issue is retired into, so it asks the same
+// question of the RESOLVED subject: the SuperAdmin admin/z needs the admin
+// capability (TestTokenExchange_reservedOrgSubject_requiresAdminCapability), and a
+// hanzo account holding an admin-org membership exchanges like any member.
+func TestExchangeTreatsAnAdminMembershipAsAnOrdinarySubject(t *testing.T) {
 	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-chat") // a general client, no admin capability
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-chat", secret: "top-secret"})
-	seedOperator(t, db, "hanzo", "z", "correct-horse")
+	seedMember(t, db, "hanzo", "z", "correct-horse")
 
 	subject := subjectTokenFor(t, app, "hanzo-chat", "top-secret", "hanzo", "z", "correct-horse")
 	status, body := exchange(t, app, "hanzo-chat", "top-secret", url.Values{
 		"subject_token":      {subject},
 		"subject_token_type": {"urn:ietf:params:oauth:token-type:access_token"},
 	})
-	if status != 403 {
-		t.Fatalf("the exchange re-scoped an operator token (status=%d); body=%v", status, body)
+	if status != 200 {
+		t.Fatalf("hanzo/z was refused the exchange (status=%d); body=%v", status, body)
 	}
-	if tok, _ := body["access_token"].(string); tok != "" {
-		t.Fatalf("a token was minted for an operator: %v", body)
+	if tok, _ := body["access_token"].(string); tok == "" {
+		t.Fatalf("no token minted for hanzo/z: %v", body)
 	}
 }
 
@@ -144,26 +149,21 @@ func TestExchangeStillWorksForAnOrdinarySubject(t *testing.T) {
 	}
 }
 
-// A one-character case change used to walk through the gate. The lookup that
-// RESOLVES a user folds case; the one that reads MEMBERSHIPS does not. So
-// "hanzo/Z" missed the membership read, the gate saw an ordinary user, and the
-// claims — built from the resolved row — carried the admin org regardless.
-//
-// Both spellings name one operator, so both must be refused the same way.
+// Every spelling of the SuperAdmin's id is refused the same way: resolving a name
+// folds its case and never changes its org, so the reserved-org gate on the id
+// answers for all of them. A spelling of the org that is not the reserved one
+// names nobody. What must never happen is a token.
 func TestACaseVariantIsTheSameOperator(t *testing.T) {
-	for _, id := range []string{"hanzo/z", "hanzo/Z", "HANZO/z", "Hanzo/Z"} {
+	for _, id := range []string{"admin/z", "admin/Z", "ADMIN/z", "Admin/Z"} {
 		t.Run(id, func(t *testing.T) {
 			t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-sandbox") // general minter, no admin capability
 			app, db := newServer(t)
 			seedApp(t, db, appOpts{clientID: "hanzo-sandbox", secret: "top-secret"})
-			seedOperator(t, db, "hanzo", "z", "correct-horse")
+			seedUserInOrg(t, db, policy.AdminOrg, "z", "z@hanzo.example", "correct-horse")
 
 			_, body := do(t, app, keyReq("POST", PathTokensIssue, "hanzo-sandbox", "top-secret", "?id="+id))
-			// The property is that no token comes back, however the id is spelled.
-			// A spelling that resolves nobody is refused for that reason instead,
-			// which is equally fine — what must never happen is a token.
 			if tok := mintedToken(t, body); tok != "" {
-				t.Fatalf("%s minted a token for an operator: %s", id, body)
+				t.Fatalf("%s minted a token for the SuperAdmin: %s", id, body)
 			}
 		})
 	}
