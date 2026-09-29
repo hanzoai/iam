@@ -70,6 +70,10 @@ type loginForm struct {
 	RecoveryCode      string `json:"recoveryCode"`
 	EnableMfaRemember bool   `json:"enableMfaRemember"`
 	Challenge         string `json:"challenge"`
+
+	// session is set by the handler, never bound: the person was proved by
+	// the session cookie rather than by a credential in this request.
+	session bool
 }
 
 // routeLogin registers POST /v1/iam/login.
@@ -160,6 +164,7 @@ func loginHandler(db orm.DB) zip.Handler {
 					if user == nil || user.IsForbidden || user.IsDeleted {
 						return httpx.ErrCode(c, "please sign in first", CodeLoginRequired)
 					}
+					f.session = true
 					return loginGrant(c, db, user, f)
 				}
 				// No session, and this flow has no credential to fall back on: the
@@ -356,6 +361,9 @@ func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
 	// silent SSO would each have had to remember it. One mint path, one set of
 	// rules, no endpoint that can forget one.
 	out, err := MintFor(ctx, db, app, user.Owner+"/"+user.Name, f.mint())
+	if errors.Is(err, errAttended) {
+		return httpx.ErrCode(c, err.Error(), CodeLoginRequired)
+	}
 	if err != nil {
 		return httpx.Err(c, err.Error())
 	}
@@ -398,6 +406,7 @@ func (f loginForm) mint() Mint {
 		CodeChallenge:       f.CodeChallenge,
 		CodeChallengeMethod: f.CodeChallengeMethod,
 		Resource:            f.Resource,
+		Session:             f.session,
 	}
 }
 

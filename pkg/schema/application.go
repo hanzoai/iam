@@ -19,6 +19,7 @@ import (
 	"crypto/subtle"
 	"net/url"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 )
 
@@ -358,6 +359,16 @@ func isLoopbackLiteral(u *url.URL) bool {
 // identified without proof, is the endpoint's question, not this one.
 func (a *Application) Proves(secret string) bool {
 	return a.ClientSecret == "" || subtle.ConstantTimeCompare([]byte(secret), []byte(a.ClientSecret)) == 1
+}
+
+// Attended reports whether every grant through this application needs a person
+// present: a credential proved in the sign-in that asks for it, never a session
+// that already exists. It holds for a public client of a reserved org, such as
+// admin-cli. Its code is redeemed with the PKCE verifier alone, at a loopback
+// address any local process can listen on, so a code answered from a
+// SuperAdmin's session would be a platform token for whoever started the flow.
+func (a *Application) Attended() bool {
+	return a.ClientSecret == "" && policy.IsReservedOrg(a.Organization)
 }
 
 // IsPasswordEnabled reports whether password sign-in is available: the explicit
