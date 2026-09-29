@@ -94,3 +94,29 @@ func TestUpsertApplication_isSharedDoesNotDisturbTheSecret(t *testing.T) {
 		t.Fatalf("isShared did not persist")
 	}
 }
+
+// An application of a reserved org serves that org alone. The upsert refuses to
+// create one shared or with an org choice, and refuses to share one it already
+// holds, naming the rule; the stored row keeps what it had.
+func TestUpsertApplication_aReservedOrgAppIsNeverShared(t *testing.T) {
+	app, db := boot(t)
+	ctx := context.Background()
+	const path = "/v1/iam/admin/applications/upsert"
+	base := `{"organization":"admin","name":"admin-cli","clientId":"admin-cli","public":true`
+
+	if st, m := post(t, app, path, svcToken, base+`,"isShared":true}`); st != 400 {
+		t.Fatalf("created shared: status=%d body=%v, want 400", st, m)
+	}
+	if a, _ := store.GetApplicationByName(ctx, db, "admin", "admin-cli"); a != nil {
+		t.Fatalf("a refused create stored a row: %+v", a)
+	}
+	if st, m := post(t, app, path, svcToken, base+`}`); st != 200 {
+		t.Fatalf("a confined admin-org app: status=%d body=%v", st, m)
+	}
+	if st, m := post(t, app, path, svcToken, base+`,"isShared":true}`); st != 400 {
+		t.Fatalf("shared an admin-org app: status=%d body=%v, want 400", st, m)
+	}
+	if a, _ := store.GetApplicationByName(ctx, db, "admin", "admin-cli"); a == nil || a.IsShared {
+		t.Fatalf("the stored row = %+v, want it confined", a)
+	}
+}

@@ -405,6 +405,18 @@ answer — KMS reads the org from the token, so absence is its only observable a
 it answers 404; here the org is a stated parameter, so there is a decision to
 report and reporting it is the point.
 
+**An application of a reserved org serves that org alone.** A shared admin-org
+app would sign anybody in through the platform's own client with `admin` as
+the token's `owner`. `schema.Application.ServesAnyOrg` is false for an app
+whose `organization` is reserved, whatever its `isShared`/`orgChoiceMode` say,
+so a row stored that way admits no tenant (and a shared app's roster lookup,
+`servesMembers`, never searches the admin org). The row itself refuses the
+state: `BeforeCreate`/`BeforeUpdate` return `schema.ErrUnconfined`, so the
+applications API (400, SuperAdmin included), the operator upsert (400) and the
+seed (boot stops, naming the rule) all meet it. A stored unconfined row blocks
+every write to it until it is confined, the seed's `markPlatform` and
+`reconcileApp` included.
+
 **Cross-tenant reach exists only where a grant says so**, and a grant HONOURS the
 org it names (returning that org's real data, correctly attributed) — it never
 substitutes:

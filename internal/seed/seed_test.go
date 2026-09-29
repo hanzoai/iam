@@ -631,3 +631,32 @@ func TestApply_DeclaredAdminApplicationsAreThePlatforms(t *testing.T) {
 		t.Fatal("the next run did not mark the declared application again")
 	}
 }
+
+// init_data may not declare an application of a reserved org shared or offering
+// an org choice: the first boot refuses to create it and a later declaration
+// refuses to reconcile it, and either stops the boot naming the rule.
+func TestSeed_AReservedOrgAppIsNeverShared(t *testing.T) {
+	ctx := context.Background()
+	for _, declared := range []string{`"isShared":true`, `"orgChoiceMode":"create"`} {
+		db := openDB(t)
+		path := filepath.Join(t.TempDir(), "init_data.json")
+		doc := `{"applications": [{"owner":"admin","name":"admin-console","clientId":"admin-console","organization":"admin",` + declared + `}]}`
+		_ = os.WriteFile(path, []byte(doc), 0o600)
+		if _, err := FromInitData(ctx, db, path); err == nil || !strings.Contains(err.Error(), schema.ErrUnconfined.Error()) {
+			t.Fatalf("declared %s on create: err=%v, want the confinement refusal", declared, err)
+		}
+
+		_ = os.WriteFile(path, []byte(`{"applications": [{"owner":"admin","name":"admin-console","clientId":"admin-console","organization":"admin"}]}`), 0o600)
+		if _, err := FromInitData(ctx, db, path); err != nil {
+			t.Fatalf("a confined declaration: %v", err)
+		}
+		_ = os.WriteFile(path, []byte(doc), 0o600)
+		if _, err := FromInitData(ctx, db, path); err == nil || !strings.Contains(err.Error(), schema.ErrUnconfined.Error()) {
+			t.Fatalf("declared %s on reconcile: err=%v, want the confinement refusal", declared, err)
+		}
+		app, err := orm.Get[schema.Application](db, "admin/admin-console")
+		if err != nil || app.ServesAnyOrg() || app.IsShared || app.OrgChoiceMode != "" {
+			t.Fatalf("stored row shared=%v choice=%q (%v), want it confined", app.IsShared, app.OrgChoiceMode, err)
+		}
+	}
+}

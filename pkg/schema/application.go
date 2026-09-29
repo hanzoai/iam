@@ -17,6 +17,7 @@ package schema
 
 import (
 	"crypto/subtle"
+	"errors"
 	"net/url"
 
 	policy "github.com/hanzoai/authz"
@@ -280,7 +281,17 @@ func (a *Application) GetId() string {
 //
 // A set, not a comparison, because the failure was a comparison that looked
 // complete. Adding a mode now means adding it here, where the reading of it is.
+//
+// An application of a reserved org serves that org alone, whatever it declares:
+// a shared admin-org application would sign anybody in through the platform's
+// own client, with the admin org as the token's owner.
 func (a *Application) ServesAnyOrg() bool {
+	return a.others() && !policy.IsReservedOrg(a.Organization)
+}
+
+// others reports whether the application declares that it serves orgs other
+// than its own: shared, or offering an org choice.
+func (a *Application) others() bool {
 	if a.IsShared {
 		return true
 	}
@@ -289,6 +300,26 @@ func (a *Application) ServesAnyOrg() bool {
 		return false
 	}
 	return true
+}
+
+// ErrUnconfined refuses an application of a reserved org that declares it
+// serves other orgs.
+var ErrUnconfined = errors.New("an application of a reserved organization serves that organization alone: it cannot be shared or offer an org choice")
+
+// BeforeCreate refuses to store an unconfined application of a reserved org.
+// The rule sits on the row, so the applications API, the operator upsert and
+// the seed all meet it.
+func (a *Application) BeforeCreate() error {
+	if a.others() && policy.IsReservedOrg(a.Organization) {
+		return ErrUnconfined
+	}
+	return nil
+}
+
+// BeforeUpdate refuses the same on every update, a stored row included: such
+// a row is written again only once it serves its own org alone.
+func (a *Application) BeforeUpdate(*Application) error {
+	return a.BeforeCreate()
 }
 
 // orgChoiceNone is the admin console's spelling of "offer no org picker" — the
