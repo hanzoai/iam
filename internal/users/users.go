@@ -14,6 +14,7 @@ package users
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -454,7 +455,7 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 	if existing == nil {
 		return nil, zip.ErrNotFound("user " + owner + "/" + name + " not found")
 	}
-	if err := Authorize(ctx, existing.Owner); err != nil {
+	if err := Authorize(ctx, a.db, existing.Owner, existing.Name); err != nil {
 		return nil, err
 	}
 
@@ -581,7 +582,7 @@ func (a *API) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 	if existing == nil {
 		return nil, zip.ErrNotFound("user " + in.Owner + "/" + in.Name + " not found")
 	}
-	if err := Authorize(ctx, existing.Owner); err != nil {
+	if err := Authorize(ctx, a.db, existing.Owner, existing.Name); err != nil {
 		return nil, err
 	}
 	// Take the account off every roster BEFORE removing it. The membership rows
@@ -598,7 +599,10 @@ func (a *API) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 	// A crash between the two leaves a live account holding its home org and
 	// missing its team rows: strictly LESS access than before, which is the
 	// direction to fail in, and the retry finishes the job.
-	if _, err := store.ForgetUser(ctx, a.db, in.Owner+"/"+in.Name); err != nil {
+	if _, err := store.ForgetUser(ctx, a.db, existing.Owner+"/"+existing.Name); err != nil {
+		if errors.Is(err, store.ErrLastOwner) {
+			return nil, zip.ErrConflict(err.Error())
+		}
 		return nil, zip.ErrInternal(err.Error())
 	}
 	if err := existing.Delete(); err != nil {
@@ -607,28 +611,44 @@ func (a *API) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 	return &DeleteOutput{Deleted: true}, nil
 }
 
-// Authorize refuses a write to an account in the admin org unless the caller is
-// a SuperAdmin. It covers everything that is theirs: the row (password, address,
-// phone, profile), its deletion, its second factors, the credentials that name
-// them, and the organizations they belong to.
+// Authorize refuses a write to an account the caller may not change. It covers
+// everything that is the account's: the row (password, address, phone, profile),
+// its deletion, its second factors and the credentials that name it.
 //
-// The admin org is where every SuperAdmin lives (schema.User.SuperAdmin), so this
-// is the gate on a SuperAdmin's account, and it holds for the platform machines
-// beside them and for a name no row holds yet: platform authority is written
-// only by platform authority, and an application never holds it. It asks the
-// owner as written, because resolving the name to its row folds the case of the
-// name and never changes its org.
+// An account in the admin org is written only by a SuperAdmin: that is where
+// every SuperAdmin lives (schema.User.SuperAdmin), and platform authority is
+// written only by platform authority. It asks the owner as written, because
+// resolving the name to its row folds the case of the name and never changes its
+// org.
 //
-// The ordinary gates do not answer this. They ask who may write an org's users;
-// a membership write names a USER in the admin org while authorizing the org it
-// grants, so without this an org's admin could add a SuperAdmin to their org or
-// take them out of it.
-func Authorize(ctx context.Context, owner string) error {
-	if p, ok := principal.From(ctx); ok && p.Sudo && p.App == nil {
+// An account holding an org's owner role is written by no other person but a
+// SuperAdmin: an admin who could reset an owner's password or factors could sign
+// in as the owner. An application is left to its capability allowlist, which is
+// how the platform writes a person's own row for them.
+func Authorize(ctx context.Context, db orm.DB, owner, name string) error {
+	p, ok := principal.From(ctx)
+	if ok && p.Sudo && p.App == nil {
 		return nil
 	}
 	if owner == policy.AdminOrg {
 		return zip.ErrForbidden("only a SuperAdmin may change an account in the admin organization")
+	}
+	if !ok || p.App != nil || (p.Org == owner && strings.EqualFold(p.User, name)) {
+		return nil
+	}
+	u, err := store.GetUserByName(ctx, db, owner, name)
+	if err != nil {
+		return zip.ErrInternal(err.Error())
+	}
+	if u == nil {
+		return nil
+	}
+	owned, err := store.Owned(ctx, db, u.Owner+"/"+u.Name)
+	if err != nil {
+		return zip.ErrInternal(err.Error())
+	}
+	if len(owned) > 0 {
+		return zip.ErrForbidden("only its holder or a SuperAdmin may change the account of an organization's owner")
 	}
 	return nil
 }

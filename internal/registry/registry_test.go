@@ -30,6 +30,7 @@ import (
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 
+	"github.com/hanzoai/iam/internal/testdb"
 	"github.com/hanzoai/iam/internal/testhttp"
 )
 
@@ -457,7 +458,7 @@ func TestToken_SuperAdminKey_Denied(t *testing.T) {
 	app, db, _ := newServer(t)
 	seedKeyRow(t, db, "admin", "z", true, "pk-SUPERADMINkey0001", "sk-SUPERADMINkey0001")
 	seedKeyRow(t, db, "hanzo", "op", false, "pk-OPERATORkey00001", "sk-OPERATORkey00001")
-	if _, err := store.EnsureMembership(context.Background(), db, "hanzo/op", "admin", store.RoleAdmin); err != nil {
+	if err := testdb.Member(context.Background(), db, "hanzo/op", "admin", store.RoleAdmin); err != nil {
 		t.Fatalf("grant: %v", err)
 	}
 

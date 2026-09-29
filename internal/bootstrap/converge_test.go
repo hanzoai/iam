@@ -12,6 +12,7 @@ import (
 	"github.com/hanzoai/orm"
 
 	"github.com/hanzoai/iam/internal/cred"
+	"github.com/hanzoai/iam/internal/testdb"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -214,7 +215,7 @@ func TestUpsertUser_neverRewritesASuperAdminsCredentials(t *testing.T) {
 			t.Fatalf("create %s/%s: status=%d body=%v", owner, name, st, m)
 		}
 	}
-	if _, err := store.EnsureMembership(context.Background(), db, "hanzo/z", policy.AdminOrg, store.RoleMember); err != nil {
+	if err := testdb.Member(context.Background(), db, "hanzo/z", policy.AdminOrg, store.RoleMember); err != nil {
 		t.Fatalf("grant: %v", err)
 	}
 

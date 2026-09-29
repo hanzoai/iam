@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/hanzoai/iam/internal/testdb"
 	"github.com/hanzoai/iam/pkg/pkce"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -20,7 +21,7 @@ func TestConfined_StoredSharedAdminAppAdmitsNoTenant(t *testing.T) {
 		t.Fatalf("store the legacy row: %v", err)
 	}
 	seedUserInOrg(t, db, "hanzo", "alice", "alice@hanzo.ai", "pw")
-	if _, err := store.EnsureMembership(tctx(), db, "hanzo/alice", "admin", store.RoleAdmin); err != nil {
+	if err := testdb.Member(tctx(), db, "hanzo/alice", "admin", store.RoleAdmin); err != nil {
 		t.Fatalf("grant the admin-org membership: %v", err)
 	}
 

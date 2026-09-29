@@ -9,6 +9,7 @@ import (
 
 	"github.com/hanzoai/orm"
 
+	"github.com/hanzoai/iam/internal/testdb"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -92,7 +93,7 @@ func TestRedFinal_AnAdminMembershipIsNoPromotion(t *testing.T) {
 	if err := k.CreateCtx(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.EnsureMembership(ctx, h.db, "hanzo/rising", "admin", store.RoleAdmin); err != nil {
+	if err := testdb.Member(ctx, h.db, "hanzo/rising", "admin", store.RoleAdmin); err != nil {
 		t.Fatal(err)
 	}
 	u, err := store.UserByAccessKey(ctx, h.db, "sk-live-RISING")

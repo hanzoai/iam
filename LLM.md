@@ -278,11 +278,13 @@ with the row's `owner`, so the row and every token minted from it agree. The
 token shape is unchanged; the `owner` claim is the minting app's org and decides
 nothing.
 
-- **A membership of `admin` confers nothing.** Not Sudo, and not `MemberOf`/
-  `AdminOf("admin")` either (hanzoai/authz ≥ v1.10.42), so a brand org's user
-  added to it neither reads nor edits the admin org's registry row. `hanzo/z`
-  with an admin membership is an ordinary hanzo account; `admin/z` is the
-  operator.
+- **Only the admin org's own accounts are its members.** `EnsureMembershipIn`
+  refuses an `admin` membership for an account of any other org
+  (`store.ErrAdminOrgMember`), whoever asks. A row written before that confers
+  nothing: not Sudo, and not `MemberOf`/`AdminOf("admin")` either (hanzoai/authz
+  ≥ v1.10.42). Boot lists each once on the audit trail
+  (`admin-organization-stranger`). `hanzo/z` is an ordinary hanzo account;
+  `admin/z` is the operator.
 - **A machine in `admin` is never SuperAdmin** — `User.Type` service-account or
   application; its token carries `type: "application"` (`kindOf`), so
   `authz.Claims.Sudo` refuses it. `admin/provisioner` is declared `type: service` in universe's
@@ -315,6 +317,32 @@ nothing.
   `Object` `{sub, client, audience, scope, kind, jti, expires, assumed}`. A
   failed write returns `server_error`. Refresh rotates in one transaction, so a
   failed write consumes nothing and racing rotations mint once.
+
+## Org roles — owner > admin > member, each in one org
+
+An org-wide membership row carries the role; a workspace or project row admits
+its org as a member and never administers it (`store.OrgRoles`, read by the
+token's `orgs` claim and by the Guard alike). A home account's role is the higher
+of its `isAdmin` bit and its home row, so an owner row makes it owner.
+
+- **Owner** (`authz.Principal.OwnerOf`, `authz.Owns`): deletes the org (decided at
+  the op seam, `Authorize`), and gives, takes and hands over the owner role. A
+  SuperAdmin does the same, on the SuperAdmin trail.
+- **Admin**: runs members and admins (`POST`, `PUT`, `delete-membership`), never
+  an owner's row. An application with `IAM_ORG_ADMIN_APPS` is an admin and owns
+  nothing.
+- **The last owner stays.** `store.DeleteMembership`, `SetRole` and `ForgetUser`
+  refuse, in the transaction that would do it, to leave an org ownerless
+  (`ErrLastOwner`; an account delete answers 409). Handing over is two `PUT`s.
+- **An owner's account is written by the owner or a SuperAdmin** (`users.Authorize`):
+  no other person resets its password, factors, tokens or passkeys, or deletes it.
+- **Every org is born owned.** `POST /v1/iam/organizations` with `founder` (the
+  creator's key or subject) makes them the first owner, and self-service
+  onboarding writes the owner row itself. At boot `store.BackfillOwners` gives an
+  ownerless org the founder it recorded, and files each org with none as
+  `organization-ownerless` once — nothing is guessed.
+- **Audit**: `organization-role` (user, from, to, actor) and `organization-delete`,
+  filed under the org, `PlatformWritten`.
 
 ## A mark is how a SUBJECT appears, and a subject is a person OR an org
 

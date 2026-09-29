@@ -38,16 +38,16 @@ func orgsOf(t *testing.T, refs []schema.OrgRef) (byOrg map[string]string, order 
 }
 
 // A user with a home org AND explicit team memberships gets both in the access
-// token AND the id_token: home first (role from HomeRole, not an explicit row),
-// then the team org with its coarse role, deduped.
+// token AND the id_token: home first, then the team org with its coarse role,
+// deduped. An owner row for the home org makes its ref owner.
 func TestOrgsClaim_UserCarriesHomeAndTeams(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "pw") // regular user hanzo/alice → home role member
 
 	ctx := context.Background()
-	// A redundant explicit home-org row (owner role) must NOT override the home
-	// entry; a real team membership must appear.
+	// An owner row for the home org lifts its ref to owner; a team membership
+	// appears beside it.
 	if _, err := store.EnsureMembership(ctx, db, "hanzo/alice", "hanzo", store.RoleOwner); err != nil {
 		t.Fatal(err)
 	}
@@ -77,8 +77,8 @@ func TestOrgsClaim_UserCarriesHomeAndTeams(t *testing.T) {
 		if len(order) == 0 || order[0] != "hanzo" {
 			t.Fatalf("%s orgs order = %v, want home org 'hanzo' first", tt.name, order)
 		}
-		if byOrg["hanzo"] != store.RoleMember {
-			t.Fatalf("%s home role = %q, want member (home wins over the explicit owner row)", tt.name, byOrg["hanzo"])
+		if byOrg["hanzo"] != store.RoleOwner {
+			t.Fatalf("%s home role = %q, want owner (the home owner row)", tt.name, byOrg["hanzo"])
 		}
 		if byOrg["team-x"] != store.RoleAdmin {
 			t.Fatalf("%s team-x role = %q, want admin", tt.name, byOrg["team-x"])

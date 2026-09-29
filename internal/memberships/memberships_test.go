@@ -311,11 +311,20 @@ func TestEnsureMembership_reservedOrgRequiresSuper(t *testing.T) {
 		t.Fatalf("CapOrgAdmin ensure into a normal org env=%+v, want ok (legit power broken)", ok)
 	}
 
-	// And a real SuperAdmin MAY grant a reserved-org membership (the escape hatch).
+	// A SuperAdmin grants into built-in, and grants nobody of another org into
+	// the admin org: its people are its own accounts.
 	_, sup := h.post(t, "/v1/iam/memberships",
-		map[string]string{"user": "hanzo/alice", "org": "admin", "role": "admin"}, h.token(t, "admin/root"))
+		map[string]string{"user": "hanzo/alice", "org": "built-in", "role": "admin"}, h.token(t, "admin/root"))
 	if sup.Status != "ok" {
-		t.Fatalf("SuperAdmin ensure into admin env=%+v, want ok", sup)
+		t.Fatalf("SuperAdmin ensure into built-in env=%+v, want ok", sup)
+	}
+	_, adm := h.post(t, "/v1/iam/memberships",
+		map[string]string{"user": "hanzo/alice", "org": "admin", "role": "admin"}, h.token(t, "admin/root"))
+	if adm.Status != "error" || adm.Msg != store.ErrAdminOrgMember.Error() {
+		t.Fatalf("SuperAdmin ensure of hanzo/alice into admin env=%+v, want %q", adm, store.ErrAdminOrgMember)
+	}
+	if m, _ := store.GetMembership(context.Background(), h.db, "hanzo/alice", "admin"); m != nil {
+		t.Fatal("an admin-org membership was created for an account of another org")
 	}
 }
 

@@ -30,6 +30,7 @@ package memberships
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -40,12 +41,12 @@ import (
 	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/principal"
-	"github.com/hanzoai/iam/internal/users"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
 
-// Path addresses the relation: GET lists by ?user= or ?org=, POST ensures one.
+// Path addresses the relation: GET lists by ?user= or ?org=, POST ensures one,
+// PUT sets the org-wide role one holds.
 //
 // PathDelete revokes one, and it is verb-shaped because the collection has no
 // spelling for a revoke yet — a DELETE there would have to carry the (user, org)
@@ -84,6 +85,7 @@ func Route(app *zip.Group, db orm.DB) {
 		zip.WithTags("memberships"))
 	app.Raw(http.MethodPost, Path, ensure(db))
 	app.Raw(http.MethodPost, PathDelete, remove(db))
+	app.Raw(http.MethodPut, Path, update(db))
 }
 
 // lookup is the list request: exactly one of the identity whose organizations are
@@ -134,10 +136,11 @@ func list(db orm.DB) zip.TypedHandler[lookup, httpx.Answer] {
 
 // ensure lets a person or an application act in an organization. It is the grant
 // behind "add someone to the team", and it is safe to repeat — granting a
-// membership that already exists changes nothing. Granting membership IS the org's authority to give, so it takes the
-// same gate a write to that org's own registry row takes: a SuperAdmin, an admin
-// of the org itself, or an org-admin-capable confidential client. One rule, one
-// place (internal/authz).
+// membership that already exists changes nothing. Granting membership IS the
+// org's authority to give, so it takes the same gate a write to that org's own
+// registry row takes: a SuperAdmin, an admin of the org itself, or an
+// org-admin-capable confidential client. The owner role is given only by an
+// owner or a SuperAdmin.
 func ensure(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
@@ -155,7 +158,7 @@ func ensure(db orm.DB) zip.Handler {
 		default:
 			return httpx.Err(c, "role must be owner, admin, or member")
 		}
-		if !mayGrant(ctx, in.Org) {
+		if !mayGive(ctx, in.Org, "", in.Role) {
 			return httpx.Err(c, unauthorized)
 		}
 		if err := account(ctx, in.User); err != nil {
@@ -165,18 +168,65 @@ func ensure(db orm.DB) zip.Handler {
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
+		if added {
+			record(ctx, db, in.Org, in.User, "", in.Role)
+		}
 		return httpx.Ok(c, added)
+	}
+}
+
+// update moves a person between an organization's roles: owner, admin and
+// member. An owner or a SuperAdmin moves anyone into or out of the owner role;
+// an admin moves people between admin and member. The last owner cannot be
+// moved out of it — make someone else an owner first — so handing an org over
+// is two updates: the new owner in, then the old one out.
+func update(db orm.DB) zip.Handler {
+	return func(c *zip.Ctx) error {
+		ctx := c.Context()
+		var in request
+		if err := c.Bind(&in); err != nil {
+			return httpx.Err(c, err.Error())
+		}
+		if in.User == "" || in.Org == "" {
+			return httpx.Err(c, "user and org are required")
+		}
+		switch in.Role {
+		case store.RoleOwner, store.RoleAdmin, store.RoleMember:
+		default:
+			return httpx.Err(c, "role must be owner, admin, or member")
+		}
+		held, err := store.MembershipIn(ctx, db, in.User, in.Org, "", "")
+		if err != nil {
+			return httpx.Err(c, err.Error())
+		}
+		from := ""
+		if held != nil {
+			from = held.Role
+		}
+		if !mayGive(ctx, in.Org, from, in.Role) {
+			return httpx.Err(c, unauthorized)
+		}
+		if err := account(ctx, in.User); err != nil {
+			return httpx.Err(c, err.Error())
+		}
+		was, err := store.SetRole(ctx, db, in.User, in.Org, in.Role)
+		if err != nil {
+			return httpx.Err(c, err.Error())
+		}
+		if was != in.Role {
+			record(ctx, db, in.Org, in.User, was, in.Role)
+		}
+		return httpx.Ok(c, was != in.Role)
 	}
 }
 
 // remove takes away a person's or an application's right to act in an
 // organization. Their account survives; what ends is their access to that
 // organization. Revoking a membership that is already gone reports that nothing
-// was removed rather than failing, so a retry is safe. It is the mirror of ensure and takes the SAME gate:
-// revoking membership is the org's authority to give or take, so a SuperAdmin, an
-// admin of the org itself, or an org-admin-capable confidential client. Idempotent
-// through the store — deleting an absent membership reports removed=false, never an
-// error — so a retried revoke is safe.
+// was removed rather than failing, so a retry is safe. It is the mirror of ensure
+// and takes the SAME gate: a SuperAdmin, an admin of the org itself, or an
+// org-admin-capable confidential client — and for an owner, only an owner or a
+// SuperAdmin. The last owner is never removed.
 func remove(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
@@ -187,7 +237,15 @@ func remove(db orm.DB) zip.Handler {
 		if in.User == "" || in.Org == "" {
 			return httpx.Err(c, "user and org are required")
 		}
-		if !mayGrant(ctx, in.Org) {
+		held, err := store.GetMembership(ctx, db, in.User, in.Org)
+		if err != nil {
+			return httpx.Err(c, err.Error())
+		}
+		from := ""
+		if held != nil {
+			from = held.Role
+		}
+		if !mayGive(ctx, in.Org, from, "") {
 			return httpx.Err(c, unauthorized)
 		}
 		if err := account(ctx, in.User); err != nil {
@@ -210,6 +268,9 @@ func remove(db orm.DB) zip.Handler {
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
+		if removed {
+			record(ctx, db, in.Org, in.User, from, "")
+		}
 		return httpx.Ok(c, removed)
 	}
 }
@@ -221,10 +282,26 @@ func remove(db orm.DB) zip.Handler {
 // left to the store.
 func account(ctx context.Context, user string) error {
 	owner, _, ok := strings.Cut(user, "/")
-	if !ok {
+	if !ok || owner != policy.AdminOrg || authz.IsSuper(ctx) {
 		return nil
 	}
-	return users.Authorize(ctx, owner)
+	return errAdminAccount
+}
+
+// errAdminAccount refuses a membership write naming a SuperAdmin's account to
+// anyone but a SuperAdmin.
+var errAdminAccount = errors.New("only a SuperAdmin may change an account in the admin organization")
+
+// record files a change to user's role in org on the audit trail, as the caller.
+func record(ctx context.Context, db orm.DB, org, user, from, to string) {
+	actor := ""
+	if p, ok := principal.From(ctx); ok {
+		actor = p.Org + "/" + p.User
+		if p.App != nil {
+			actor = p.App.Owner + "/" + p.App.Name
+		}
+	}
+	store.Record(ctx, db, store.RoleChange(org, actor, user, from, to))
 }
 
 // homeOrgIsNotRevocable answers a revoke whose (user, org) pair names the org the
@@ -250,6 +327,20 @@ func mayGrant(ctx context.Context, org string) bool {
 		return false
 	}
 	return authz.Can(ctx, "POST", "organizations", store.MembershipOwner, org)
+}
+
+// mayGive reports whether the ctx principal may move a person in org from one
+// role to another ("" for none): the owner role, given or taken, is an owner's
+// or a SuperAdmin's to move (authz.Owns); every other move is the org admin's
+// (mayGrant).
+func mayGive(ctx context.Context, org, from, to string) bool {
+	if !mayGrant(ctx, org) {
+		return false
+	}
+	if from == store.RoleOwner || to == store.RoleOwner {
+		return authz.Owns(ctx, org)
+	}
+	return true
 }
 
 // scoped reports whether the caller may read the membership rows of org — i.e.

@@ -36,6 +36,14 @@ const (
 	RoleMember = "member"
 )
 
+// ErrAdminOrgMember refuses a membership of the admin org for an account that
+// lives in another org. The admin org's people are its own accounts, the
+// SuperAdmins; a brand account is never one of them.
+var ErrAdminOrgMember = errors.New("only an account of the admin organization is a member of it")
+
+// ErrLastOwner refuses a change that would leave an org with no owner.
+var ErrLastOwner = errors.New("an organization keeps at least one owner; make someone else an owner first")
+
 // membershipName builds the (user, org) natural-key Name. It is deterministic,
 // which is what makes EnsureMembership idempotent on the pair. The value is never
 // parsed back — the User and Org columns are queried directly — so the "/" inside
@@ -73,6 +81,9 @@ func EnsureMembershipIn(ctx context.Context, db orm.DB, user, org, workspace, pr
 	}
 	if project != "" && workspace == "" {
 		return false, fmt.Errorf("membership: a project scope needs a workspace")
+	}
+	if org == policy.AdminOrg && !IsHomeOrg(user, org) {
+		return false, ErrAdminOrgMember
 	}
 	existing, err := MembershipIn(ctx, db, user, org, workspace, project)
 	if err != nil || existing != nil {
@@ -128,17 +139,22 @@ func DeleteMembership(ctx context.Context, db orm.DB, user, org string) (bool, e
 	if user == "" || org == "" {
 		return false, nil
 	}
-	m, err := GetMembership(ctx, db, user, org)
-	if err != nil || m == nil {
-		return false, err
-	}
-	if err := m.DeleteCtx(ctx); err != nil {
-		return false, err
-	}
-	if err := forgetMemberKeys(ctx, db, user, org); err != nil {
-		return true, err
-	}
-	return true, nil
+	removed := false
+	err := db.RunInTransactionWith(ctx, &orm.TxOptions{MaxAttempts: 5}, func(tx orm.DB) error {
+		m, err := GetMembership(ctx, tx, user, org)
+		if err != nil || m == nil {
+			return err
+		}
+		if err := keepOwner(ctx, tx, m); err != nil {
+			return err
+		}
+		if err := m.DeleteCtx(ctx); err != nil {
+			return err
+		}
+		removed = true
+		return forgetMemberKeys(ctx, tx, user, org)
+	})
+	return removed, err
 }
 
 // ForgetUser removes every membership a user holds — the companion to deleting
@@ -160,24 +176,33 @@ func ForgetUser(ctx context.Context, db orm.DB, user string) (int, error) {
 	if user == "" {
 		return 0, nil
 	}
-	rows, err := MembershipsByUser(ctx, db, user)
-	if err != nil {
-		return 0, err
-	}
 	removed := 0
-	for _, m := range rows {
-		if m == nil {
-			continue
+	err := db.RunInTransactionWith(ctx, &orm.TxOptions{MaxAttempts: 5}, func(tx orm.DB) error {
+		removed = 0
+		rows, err := MembershipsByUser(ctx, tx, user)
+		if err != nil {
+			return err
 		}
-		if err := m.DeleteCtx(ctx); err != nil {
-			return removed, err
+		for _, m := range rows {
+			if err := keepOwner(ctx, tx, m); err != nil {
+				return err
+			}
 		}
-		if err := forgetMemberKeys(ctx, db, user, m.Org); err != nil {
-			return removed, err
+		for _, m := range rows {
+			if m == nil {
+				continue
+			}
+			if err := m.DeleteCtx(ctx); err != nil {
+				return err
+			}
+			if err := forgetMemberKeys(ctx, tx, user, m.Org); err != nil {
+				return err
+			}
+			removed++
 		}
-		removed++
-	}
-	return removed, nil
+		return nil
+	})
+	return removed, err
 }
 
 // MembershipsByUser returns every org a user may explicitly act in. A caller
@@ -330,13 +355,10 @@ func BackfillMemberships(ctx context.Context, db orm.DB) (int, error) {
 }
 
 // MemberOrgRefs resolves the token `orgs` claim for a user — the ONE way a user's
-// tenancy set is built for a mint. It is the HOME org first
-// (OrgRef{Org: user.Owner, Role: HomeRole(user)}), then every explicit
-// MembershipsByUser row, deduped by org: the home org is always present even when
-// no explicit row exists, and it is never emitted twice — the HOME entry wins, so
-// an explicit membership carrying the home org (a redundant backfill row) can
-// neither duplicate it nor override its role. Semantics mirror the beego
-// token_jwt.go MemberOrgRefs (home ∪ explicit).
+// tenancy set is built for a mint. It is the HOME org first, then every other org
+// the rows name, once each, with the role OrgRoles gives it. The home org is
+// always present and never emitted twice; its role is the higher of HomeRole and
+// its org-wide row's, as IAM's own decision reads both (authz AdminOf).
 //
 // Nil-safe at the boundary: a nil/unresolved user (a mint whose subject has no user
 // row — a machine token) carries no membership, so the claim is omitted. A read
@@ -368,19 +390,56 @@ func MemberOrgRefs(ctx context.Context, db orm.DB, user *schema.User) []schema.O
 		return nil
 	}
 	refs := []schema.OrgRef{{Org: user.Owner, Role: HomeRole(user)}}
-	seen := map[string]bool{user.Owner: true}
 	rows, err := MembershipsByUser(ctx, db, user.Owner+"/"+user.Name)
 	if err != nil {
 		return refs
 	}
+	roles := OrgRoles(rows)
+	if rank(roles[user.Owner]) > rank(refs[0].Role) {
+		refs[0].Role = roles[user.Owner]
+	}
 	for _, m := range rows {
-		if m == nil || m.Org == "" || seen[m.Org] {
+		if m == nil || m.Org == "" || m.Org == user.Owner {
 			continue
 		}
-		seen[m.Org] = true
-		refs = append(refs, m.AsOrgRef())
+		if r, ok := roles[m.Org]; ok {
+			refs = append(refs, schema.OrgRef{Org: m.Org, Role: r})
+			delete(roles, m.Org)
+		}
 	}
 	return refs
+}
+
+// rank orders the org roles: owner > admin > member > none.
+func rank(role string) int {
+	switch role {
+	case RoleOwner:
+		return 3
+	case RoleAdmin:
+		return 2
+	case RoleMember:
+		return 1
+	}
+	return 0
+}
+
+// OrgRoles is the role each row's org is held with: the role of the org-wide row,
+// or member where only a workspace or project row names the org. A narrower grant
+// admits its holder to the org and says nothing about administering it, so a
+// space's owner is not the org's.
+func OrgRoles(rows []*schema.Membership) map[string]string {
+	out := map[string]string{}
+	for _, m := range rows {
+		if m == nil || m.Org == "" {
+			continue
+		}
+		if m.Workspace == "" && m.Project == "" {
+			out[m.Org] = m.Role
+		} else if _, ok := out[m.Org]; !ok {
+			out[m.Org] = RoleMember
+		}
+	}
+	return out
 }
 
 // IsHomeOrg reports whether org is the home org of the user named by the

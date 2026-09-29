@@ -84,6 +84,17 @@ const (
 	ActionInviteSignupRefused = "invitation-signup-refused"
 	// A code IAM sent a signed-in account to prove its address for joining.
 	ActionInviteCodeSent = "invitation-code-sent"
+
+	// An org's roles: a person given, moved between or relieved of owner, admin
+	// or member (Object: user, from, to), and the org itself deleted. Filed
+	// under the org; User is who acted, empty when IAM did.
+	ActionOrgRole   = "organization-role"
+	ActionOrgDelete = "organization-delete"
+	// Findings IAM files once at boot: an org with no owner and no founder to
+	// make one (Object: the founder recorded, if any), and an admin-org
+	// membership held by an account of another org (Object: the account).
+	ActionOrgOwnerless     = "organization-ownerless"
+	ActionAdminOrgStranger = "admin-organization-stranger"
 )
 
 // PlatformWritten reports whether action names a record the platform writes
@@ -97,7 +108,7 @@ func PlatformWritten(action string) bool {
 		ActionRevokeUserKeys, ActionTokenExchange, ActionAs,
 		ActionAssumeOrg, ActionReleaseOrg, ActionListOrgs, ActionSuperAdmin, ActionSuperAdminToken, ActionWorkloadToken,
 		ActionInviteSend, ActionInviteAccept, ActionInviteRefused, ActionInviteSignupRefused,
-		ActionInviteCodeSent:
+		ActionInviteCodeSent, ActionOrgRole, ActionOrgDelete, ActionOrgOwnerless, ActionAdminOrgStranger:
 		return true
 	}
 	return false

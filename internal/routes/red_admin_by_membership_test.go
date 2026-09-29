@@ -7,6 +7,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/hanzoai/iam/internal/testdb"
 	"github.com/hanzoai/iam/pkg/store"
 )
 
@@ -26,7 +27,7 @@ func TestRed_AdminByMembershipCannotResetTheSuperAdmin(t *testing.T) {
 		{"mallory/mallory", "hanzo", store.RoleAdmin},
 		{"mallory/mallory", "admin", store.RoleAdmin},
 	} {
-		if _, err := store.EnsureMembership(ctx, h.db, m[0], m[1], m[2]); err != nil {
+		if err := testdb.Member(ctx, h.db, m[0], m[1], m[2]); err != nil {
 			t.Fatal(err)
 		}
 	}

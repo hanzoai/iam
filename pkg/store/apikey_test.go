@@ -11,6 +11,7 @@ import (
 
 	"github.com/hanzoai/orm"
 
+	"github.com/hanzoai/iam/internal/testdb"
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
@@ -696,7 +697,7 @@ func TestHolderByAccessKey_MemberKeyNeverCrossesAReservedOrg(t *testing.T) {
 	seedKeyUser(t, db, "admin", "z", "z@hanzo.ai", "")
 	seedKeyUser(t, db, "hanzo", "a", "a@hanzo.ai", "")
 	for _, m := range [][2]string{{"admin/z", "client"}, {"hanzo/a", "admin"}} {
-		if _, err := EnsureMembership(ctx, db, m[0], m[1], RoleOwner); err != nil {
+		if err := testdb.Member(ctx, db, m[0], m[1], RoleOwner); err != nil {
 			t.Fatal(err)
 		}
 	}

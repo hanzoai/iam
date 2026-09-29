@@ -19,6 +19,7 @@ import (
 
 	"github.com/hanzoai/orm"
 
+	"github.com/hanzoai/iam/internal/testdb"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -37,7 +38,7 @@ func operatorFixtures(t *testing.T, h *harness) {
 	seedUser(t, h.db, "admin", "z", false)
 	seedUser(t, h.db, "hanzo", "z", true)
 	for _, m := range [][2]string{{"admin/z", "hanzo"}, {"hanzo/z", "admin"}} {
-		if _, err := store.EnsureMembership(ctx, h.db, m[0], m[1], store.RoleMember); err != nil {
+		if err := testdb.Member(ctx, h.db, m[0], m[1], store.RoleMember); err != nil {
 			t.Fatalf("seed membership %s in %s: %v", m[0], m[1], err)
 		}
 	}

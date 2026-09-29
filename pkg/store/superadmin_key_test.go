@@ -31,7 +31,7 @@ func operatorKeys(t *testing.T) orm.DB {
 		t.Fatal(err)
 	}
 	for _, m := range [][2]string{{"hanzo/z", policy.AdminOrg}, {"hanzo/z", "orgb"}, {"hanzo/alice", "orgb"}} {
-		if _, err := EnsureMembership(ctx, db, m[0], m[1], RoleMember); err != nil {
+		if err := testdb.Member(ctx, db, m[0], m[1], RoleMember); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -11,6 +11,7 @@ import (
 	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 
+	"github.com/hanzoai/iam/internal/testdb"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -28,7 +29,7 @@ func operatorDB(t *testing.T) orm.DB {
 			t.Fatalf("seed %s/%s: %v", id[0], id[1], err)
 		}
 	}
-	if _, err := store.EnsureMembership(context.Background(), db, "hanzo/z", policy.AdminOrg, store.RoleMember); err != nil {
+	if err := testdb.Member(context.Background(), db, "hanzo/z", policy.AdminOrg, store.RoleMember); err != nil {
 		t.Fatalf("grant: %v", err)
 	}
 	return db

@@ -17,6 +17,7 @@ import (
 
 	"github.com/hanzoai/orm"
 
+	"github.com/hanzoai/iam/internal/testdb"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -44,7 +45,7 @@ var superAdminGates = []gate{
 	{"read the admin org's registry row", "GET", "/v1/iam/organizations/admin/admin", "", ok},
 	{"edit the admin org's registry row", "POST", "/v1/iam/organizations/avatar", `{"owner":"admin","name":"admin","emoji":"🦊"}`, ok},
 	{"read another tenant's registry row", "GET", "/v1/iam/organizations/admin/orgb", "", ok},
-	{"grant a membership of the admin org", "POST", "/v1/iam/memberships", `{"user":"hanzo/alice","org":"admin"}`, ok},
+	{"grant a membership of a reserved org", "POST", "/v1/iam/memberships", `{"user":"hanzo/alice","org":"built-in"}`, ok},
 	{"read another tenant's keys", "GET", "/v1/iam/keys?owner=orgb", "", ok},
 }
 
@@ -64,7 +65,7 @@ func gateFixtures(t *testing.T, h *harness) {
 	}
 	seedUser(t, h.db, "admin", "ops", false)
 	seedUser(t, h.db, "hanzo", "op", true)
-	if _, err := store.EnsureMembership(ctx, h.db, "hanzo/op", "admin", store.RoleAdmin); err != nil {
+	if err := testdb.Member(ctx, h.db, "hanzo/op", "admin", store.RoleAdmin); err != nil {
 		t.Fatalf("grant: %v", err)
 	}
 	for _, typ := range []string{schema.ServiceAccount, schema.Program} {

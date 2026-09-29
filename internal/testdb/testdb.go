@@ -11,6 +11,8 @@ import (
 	"errors"
 
 	"github.com/hanzoai/orm"
+
+	"github.com/hanzoai/iam/pkg/schema"
 )
 
 // ErrUnreadable is what a degraded query answers.
@@ -41,4 +43,16 @@ func (q failing) First(interface{}) (orm.Key, bool, error) { return nil, false, 
 func (q failing) Count(context.Context) (int, error)       { return 0, ErrUnreadable }
 func (q failing) GetAll(context.Context, interface{}) ([]orm.Key, error) {
 	return nil, ErrUnreadable
+}
+
+// Member writes the org-wide membership row (user, org, role) as the store keys
+// one, refusing nothing. It is how a suite seeds a row the store no longer
+// admits — an admin-org membership of another org's account — to prove the rows
+// already written grant nothing.
+func Member(ctx context.Context, db orm.DB, user, org, role string) error {
+	m := orm.New[schema.Membership](db)
+	m.Owner, m.Name = "admin", user+"|"+org
+	m.User, m.Org, m.Role = user, org, role
+	m.SetId(m.Owner + "/" + m.Name)
+	return m.CreateCtx(ctx)
 }

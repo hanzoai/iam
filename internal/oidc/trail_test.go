@@ -15,6 +15,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/testdb"
 	"github.com/hanzoai/iam/internal/testhttp"
 	"github.com/hanzoai/iam/pkg/pkce"
 	"github.com/hanzoai/iam/pkg/schema"
@@ -129,7 +130,7 @@ func TestTrail_TenantTokensLeaveNoRow(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
 	seedUserInOrg(t, db, "hanzo", "alice", "alice@hanzo.ai", "pw")
-	if _, err := store.EnsureMembership(tctx(), db, "hanzo/alice", policy.AdminOrg, store.RoleAdmin); err != nil {
+	if err := testdb.Member(tctx(), db, "hanzo/alice", policy.AdminOrg, store.RoleAdmin); err != nil {
 		t.Fatalf("grant the admin-org membership: %v", err)
 	}
 	resp, tok := postToken(t, app, url.Values{

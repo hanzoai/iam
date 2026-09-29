@@ -136,7 +136,7 @@ func addToken(db orm.DB) zip.TypedHandler[schema.Token, tokenResult] {
 		// The row's subject is an authority the (Owner, Name) key does not carry: a
 		// caller may record a token only for a user it may act for, never one whose
 		// subject is admin/root.
-		if err := authz.AuthorizeUser(ctx, "POST", in.User); err != nil {
+		if err := authz.AuthorizeUser(ctx, db, "POST", in.User); err != nil {
 			return nil, err
 		}
 		// orm.New binds the store and applies defaults; copy the decoded domain
@@ -171,7 +171,7 @@ func updateToken(db orm.DB) zip.TypedHandler[schema.Token, tokenMutation] {
 		if in.Owner == "" || in.Name == "" {
 			return nil, zip.ErrBadRequest("owner and name are required")
 		}
-		if err := authz.AuthorizeUser(ctx, "PUT", in.User); err != nil {
+		if err := authz.AuthorizeUser(ctx, db, "PUT", in.User); err != nil {
 			return nil, err
 		}
 		t, err := orm.Get[schema.Token](db, tokenId(in.Owner, in.Name))
@@ -183,7 +183,7 @@ func updateToken(db orm.DB) zip.TypedHandler[schema.Token, tokenMutation] {
 		}
 		// The stored row names whose token this is. Overwriting it is a write to that
 		// subject, whoever the body now names.
-		if err := authz.AuthorizeUser(ctx, "PUT", t.User); err != nil {
+		if err := authz.AuthorizeUser(ctx, db, "PUT", t.User); err != nil {
 			return nil, err
 		}
 		// Overlay the decoded domain fields onto the loaded row, keeping the
@@ -223,7 +223,7 @@ func deleteToken(db orm.DB) zip.TypedHandler[tokenKey, tokenMutation] {
 		}
 		// Revoking a token is a write to the subject the stored row names, asked the
 		// way recording one is.
-		if err := authz.AuthorizeUser(ctx, "DELETE", t.User); err != nil {
+		if err := authz.AuthorizeUser(ctx, db, "DELETE", t.User); err != nil {
 			return nil, err
 		}
 		if err := t.DeleteCtx(ctx); err != nil {

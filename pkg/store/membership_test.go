@@ -95,8 +95,9 @@ func TestMembershipsByUserAndByOrg(t *testing.T) {
 }
 
 // MemberOrgRefs is the ONE way a user's token `orgs` claim is built: the HOME org
-// first (its role from HomeRole, never an explicit row), then every explicit
-// membership, deduped by org — home wins and is never emitted twice.
+// first, then every other org its rows name, once each. A home-org row lifts the
+// home role to its own when higher, so an owner row makes the home ref owner; a
+// workspace or project row admits its org as a member, whatever role it carries.
 func TestMemberOrgRefs_HomeFirstAndDedup(t *testing.T) {
 	db := memDB(t)
 	ctx := context.Background()
@@ -110,7 +111,7 @@ func TestMemberOrgRefs_HomeFirstAndDedup(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, m := range []struct{ org, role string }{
-		{"hanzo", RoleOwner}, // redundant home row — must NOT override home role or duplicate
+		{"hanzo", RoleOwner}, // the home row makes her its owner, and is emitted once
 		{"team-x", RoleAdmin},
 		{"team-y", RoleMember},
 	} {
@@ -118,14 +119,17 @@ func TestMemberOrgRefs_HomeFirstAndDedup(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// A space's owner row admits team-z and administers nothing there.
+	if _, err := EnsureMembershipIn(ctx, db, "hanzo/alice", "team-z", "ws1", "", RoleOwner); err != nil {
+		t.Fatal(err)
+	}
 
 	refs := MemberOrgRefs(ctx, db, alice)
-	// Home first, home role from HomeRole (member) — NOT the explicit owner row —
-	// then the team orgs in Org order, with hanzo never repeated.
 	want := []schema.OrgRef{
-		{Org: "hanzo", Role: RoleMember},
+		{Org: "hanzo", Role: RoleOwner},
 		{Org: "team-x", Role: RoleAdmin},
 		{Org: "team-y", Role: RoleMember},
+		{Org: "team-z", Role: RoleMember},
 	}
 	if len(refs) != len(want) {
 		t.Fatalf("orgs = %+v, want %+v (home-first, deduped)", refs, want)

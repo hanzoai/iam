@@ -104,6 +104,15 @@ func Can(ctx context.Context, method, entity, owner, name string) bool {
 	return p.CanEntity(policy.VerbOf(method), policy.Entity{Kind: entity, Owner: owner, Name: name}, Env)
 }
 
+// Owns reports whether the ctx principal owns org: a SuperAdmin, or a person
+// holding the owner role there (policy.Principal.OwnerOf). It gates deleting an
+// org and every change to its owner role. Fails closed when no principal is
+// present.
+func Owns(ctx context.Context, org string) bool {
+	p, ok := principal.From(ctx)
+	return ok && p.OwnerOf(org)
+}
+
 // IsSuper reports whether the ctx principal is a SuperAdmin — used by a raw
 // handler to gate a privileged field (e.g. provision-don't-promote: only a super
 // may set isAdmin). Fails closed when no principal is present.
@@ -235,14 +244,14 @@ func AuthorizeRef(ctx context.Context, method, kind, home, ref string) error {
 // can never drift.
 //
 // A token or a passkey filed under a SuperAdmin is a credential that speaks as
-// the platform's operator, so it also asks users.Authorize: only a SuperAdmin
-// files one for an account in the admin org.
-func AuthorizeUser(ctx context.Context, method, user string) error {
+// the platform's operator, and one filed under an org's owner speaks as that
+// owner, so it also asks users.Authorize.
+func AuthorizeUser(ctx context.Context, db orm.DB, method, user string) error {
 	if err := AuthorizeRef(ctx, method, "users", "", user); err != nil || user == "" {
 		return err
 	}
-	owner, _, _ := strings.Cut(user, "/")
-	return users.Authorize(ctx, owner)
+	owner, name, _ := strings.Cut(user, "/")
+	return users.Authorize(ctx, db, owner, name)
 }
 
 // AuthorizeGrant gates the rows a grant NAMES in its subject lists — the users,
@@ -698,8 +707,13 @@ func Authorize(ctx context.Context, op zip.Op, in any) (zip.Decision, error) {
 	if v == policy.Read && pathAuthorized(op.Path) {
 		return zip.Decision{Effect: zip.Allow}, nil
 	}
-	if !p.CanEntity(v, policy.Entity{Kind: entityOf(op.Path), Owner: owner, Name: name}, Env) {
+	kind := entityOf(op.Path)
+	if !p.CanEntity(v, policy.Entity{Kind: kind, Owner: owner, Name: name}, Env) {
 		return zip.Decision{Effect: zip.Deny, Clause: "entity", Reason: "forbidden"}, nil
+	}
+	// Deleting an org is its owner's act, never its admin's.
+	if kind == "organizations" && op.Method == http.MethodDelete && !p.OwnerOf(name) {
+		return zip.Decision{Effect: zip.Deny, Clause: "owner", Reason: "only an owner of the organization deletes it"}, nil
 	}
 	return zip.Decision{Effect: zip.Allow}, nil
 }
@@ -832,20 +846,21 @@ func resolve(c *zip.Ctx, db orm.DB) (*principal.Principal, error) {
 	return &principal.Principal{Org: owner}, nil
 }
 
-// membershipRoles reads the org->role set a person may act in. A store error is
-// not fatal: it yields an EMPTY set, which is the same authority the policy gave
-// before memberships existed (home org only), so a store blip narrows a decision
-// and never widens one. The read is one indexed query on the user key.
+// membershipRoles reads the org->role set a person may act in, as store.OrgRoles
+// states it: a workspace or project row admits its org as a member and never as
+// its admin or owner. A store error is not fatal: it yields an EMPTY set, which
+// is the same authority the policy gave before memberships existed (home org
+// only), so a store blip narrows a decision and never widens one. The read is one
+// indexed query on the user key.
 func membershipRoles(ctx context.Context, db orm.DB, user string) map[string]policy.Role {
 	rows, err := store.MembershipsByUser(ctx, db, user)
 	if err != nil || len(rows) == 0 {
 		return nil
 	}
-	out := make(map[string]policy.Role, len(rows))
-	for _, m := range rows {
-		if m != nil && m.Org != "" {
-			out[m.Org] = policy.Role(m.Role)
-		}
+	roles := store.OrgRoles(rows)
+	out := make(map[string]policy.Role, len(roles))
+	for org, role := range roles {
+		out[org] = policy.Role(role)
 	}
 	return out
 }

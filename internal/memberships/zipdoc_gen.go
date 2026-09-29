@@ -16,9 +16,12 @@ func init() {
 		},
 	})
 	zip.Describe("github.com/hanzoai/iam/internal/memberships POST /v1/iam/delete-membership", zip.Doc{
-		Description: "Takes away a person's or an application's right to act in an\norganization. Their account survives; what ends is their access to that\norganization. Revoking a membership that is already gone reports that nothing\nwas removed rather than failing, so a retry is safe. It is the mirror of ensure and takes the SAME gate:\nrevoking membership is the org's authority to give or take, so a SuperAdmin, an\nadmin of the org itself, or an org-admin-capable confidential client. Idempotent\nthrough the store — deleting an absent membership reports removed=false, never an\nerror — so a retried revoke is safe.",
+		Description: "Takes away a person's or an application's right to act in an\norganization. Their account survives; what ends is their access to that\norganization. Revoking a membership that is already gone reports that nothing\nwas removed rather than failing, so a retry is safe. It is the mirror of ensure\nand takes the SAME gate: a SuperAdmin, an admin of the org itself, or an\norg-admin-capable confidential client — and for an owner, only an owner or a\nSuperAdmin. The last owner is never removed.",
 	})
 	zip.Describe("github.com/hanzoai/iam/internal/memberships POST /v1/iam/memberships", zip.Doc{
-		Description: "Lets a person or an application act in an organization. It is the grant\nbehind \"add someone to the team\", and it is safe to repeat — granting a\nmembership that already exists changes nothing. Granting membership IS the org's authority to give, so it takes the\nsame gate a write to that org's own registry row takes: a SuperAdmin, an admin\nof the org itself, or an org-admin-capable confidential client. One rule, one\nplace (internal/authz).",
+		Description: "Lets a person or an application act in an organization. It is the grant\nbehind \"add someone to the team\", and it is safe to repeat — granting a\nmembership that already exists changes nothing. Granting membership IS the\norg's authority to give, so it takes the same gate a write to that org's own\nregistry row takes: a SuperAdmin, an admin of the org itself, or an\norg-admin-capable confidential client. The owner role is given only by an\nowner or a SuperAdmin.",
+	})
+	zip.Describe("github.com/hanzoai/iam/internal/memberships PUT /v1/iam/memberships", zip.Doc{
+		Description: "Moves a person between an organization's roles: owner, admin and\nmember. An owner or a SuperAdmin moves anyone into or out of the owner role;\nan admin moves people between admin and member. The last owner cannot be\nmoved out of it — make someone else an owner first — so handing an org over\nis two updates: the new owner in, then the old one out.",
 	})
 }

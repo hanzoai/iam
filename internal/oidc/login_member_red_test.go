@@ -14,6 +14,7 @@ import (
 	"github.com/hanzoai/orm"
 
 	"github.com/hanzoai/iam/internal/cred"
+	"github.com/hanzoai/iam/internal/testdb"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -52,7 +53,7 @@ func TestLogin_AnAdminMembershipIsAnOrdinaryMember(t *testing.T) {
 	db, login := memberApp(t)
 	seedUserInOrg(t, db, "hanzo", "op", "op@hanzo.example", "pw-op")
 	for _, org := range []string{"admin", "client"} {
-		if _, err := store.EnsureMembership(tctx(), db, "hanzo/op", org, store.RoleOwner); err != nil {
+		if err := testdb.Member(tctx(), db, "hanzo/op", org, store.RoleOwner); err != nil {
 			t.Fatal(err)
 		}
 	}

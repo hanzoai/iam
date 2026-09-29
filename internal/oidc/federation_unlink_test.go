@@ -12,6 +12,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/testdb"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -255,7 +256,7 @@ func TestUnlink_AnAdminMembershipIsNotTheRecoveryPath(t *testing.T) {
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
 	seedUser(t, db, "op", "op@hanzo.ai", "pw") // home org hanzo, NOT the reserved org
-	if _, err := store.EnsureMembership(tctx(), db, "hanzo/op", policy.AdminOrg, store.RoleAdmin); err != nil {
+	if err := testdb.Member(tctx(), db, "hanzo/op", policy.AdminOrg, store.RoleAdmin); err != nil {
 		t.Fatalf("grant the reserved-org membership: %v", err)
 	}
 	linkGitHub(t, db, "alice", "gh-alice", true)

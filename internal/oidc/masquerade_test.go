@@ -32,6 +32,7 @@ import (
 
 	"github.com/hanzoai/iam/internal/keyring"
 	"github.com/hanzoai/iam/internal/routes"
+	"github.com/hanzoai/iam/internal/testdb"
 	"github.com/hanzoai/iam/internal/testhttp"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
@@ -202,7 +203,7 @@ func TestAssume_operatorKeepsTheirOwnIdentity(t *testing.T) {
 // holder is refused, and the refusal is recorded like any other.
 func TestAssume_adminMembershipRefused(t *testing.T) {
 	r := newRig(t)
-	if _, err := store.EnsureMembership(context.Background(), r.db, "hanzo/boss", policy.AdminOrg, store.RoleAdmin); err != nil {
+	if err := testdb.Member(context.Background(), r.db, "hanzo/boss", policy.AdminOrg, store.RoleAdmin); err != nil {
 		t.Fatal(err)
 	}
 	if status, body := r.post(t, assume, "hanzo/boss", `{"org":"acme"}`); status != 403 {

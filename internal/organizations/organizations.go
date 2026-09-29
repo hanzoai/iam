@@ -16,7 +16,9 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 const orgBase = "/v1/iam/organizations"
@@ -135,6 +137,10 @@ func (h *OrganizationAPI) Create(ctx context.Context, in *CreateOrganizationInpu
 	if org.Owner != policy.AdminOrg {
 		return nil, zip.ErrBadRequest("an organization is filed under the " + policy.AdminOrg + " owner")
 	}
+	founder, err := h.founder(ctx, &org)
+	if err != nil {
+		return nil, err
+	}
 	switch _, err := h.find(org.Owner, org.Name); {
 	case err == nil:
 		return nil, zip.ErrConflict("organization already exists")
@@ -158,7 +164,34 @@ func (h *OrganizationAPI) Create(ctx context.Context, in *CreateOrganizationInpu
 	if err := entity.CreateCtx(ctx); err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
+	if founder != "" {
+		if _, err := store.SetRole(ctx, h.DB, founder, entity.Name, store.RoleOwner); err != nil {
+			_ = entity.DeleteCtx(ctx)
+			return nil, zip.ErrInternal(err.Error())
+		}
+		store.Record(ctx, h.DB, store.RoleChange(entity.Name, actor(ctx), founder, "", store.RoleOwner))
+	}
 	return entity.Mask(), nil
+}
+
+// founder resolves the Founder a create names — the storage key or subject of
+// the person creating the org, who becomes its first owner — to that person's
+// "<owner>/<name>", and records it as the storage key onboarding records. A
+// Founder naming no live person is refused, so an org created with one is born
+// owned.
+func (h *OrganizationAPI) founder(ctx context.Context, org *schema.Organization) (string, error) {
+	if org.Founder == "" {
+		return "", nil
+	}
+	u, err := store.Founder(ctx, h.DB, org.Founder)
+	if err != nil {
+		return "", zip.ErrInternal(err.Error())
+	}
+	if u == nil || u.IsDeleted || u.Machine() {
+		return "", zip.ErrBadRequest("founder names no person")
+	}
+	org.Founder = u.Model.Id()
+	return u.Owner + "/" + u.Name, nil
 }
 
 // Get returns one organization: its display, its defaults and the sign-in rules
@@ -285,8 +318,10 @@ func (h *OrganizationAPI) SetProfile(ctx context.Context, in *SetProfileInput) (
 // Delete removes an organization and everything named inside it. There is no
 // undo, and every session issued under it stops working.
 //
-// The built-in admin organization cannot be deleted — losing it would leave the
-// account with no way back in.
+// Only an owner of the organization, or a SuperAdmin, deletes it
+// (authz.Authorize); an admin runs it and does not. The built-in admin
+// organization cannot be deleted — losing it would leave the account with no way
+// back in.
 func (h *OrganizationAPI) Delete(ctx context.Context, in *DeleteOrganizationInput) (*DeleteOrganizationOutput, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -304,7 +339,24 @@ func (h *OrganizationAPI) Delete(ctx context.Context, in *DeleteOrganizationInpu
 	if err := existing.DeleteCtx(ctx); err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
+	store.Record(ctx, h.DB, &schema.AuditLog{
+		Owner: in.Name, Organization: in.Name, User: actor(ctx),
+		Action: schema.ActionOrgDelete, StatusCode: 200,
+	})
 	return &DeleteOrganizationOutput{Affected: true}, nil
+}
+
+// actor names the caller for the audit trail: "<org>/<user>", or the
+// application's "<owner>/<name>".
+func actor(ctx context.Context) string {
+	p, ok := principal.From(ctx)
+	switch {
+	case !ok:
+		return ""
+	case p.App != nil:
+		return p.App.Owner + "/" + p.App.Name
+	}
+	return p.Org + "/" + p.User
 }
 
 // find resolves an organization by its (owner, name) natural key. The error is

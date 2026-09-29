@@ -14,6 +14,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/testdb"
 	"github.com/hanzoai/iam/pkg/pkce"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
@@ -326,7 +327,7 @@ func TestDevice_ApprovalTenantBoundary(t *testing.T) {
 			seedApp(t, db, appOpts{clientID: "hanzo-app", grants: deviceGrants, orgChoice: tc.orgChoice}) // org "hanzo"
 			seedUserInOrg(t, db, tc.org, "eve", "eve@"+tc.org+".example", "pw")
 			if tc.operator {
-				if _, err := store.EnsureMembership(tctx(), db, tc.org+"/eve", policy.AdminOrg, store.RoleAdmin); err != nil {
+				if err := testdb.Member(tctx(), db, tc.org+"/eve", policy.AdminOrg, store.RoleAdmin); err != nil {
 					t.Fatalf("grant the reserved-org membership: %v", err)
 				}
 			}
@@ -416,7 +417,7 @@ func TestDevice_StoredSuperAdminApprovalMintsNothing(t *testing.T) {
 func TestDevice_TokenNamesNoReservedOrg(t *testing.T) {
 	app, db := newServer(t)
 	seedDeviceApp(t, db, "hanzo-app")
-	if _, err := store.EnsureMembership(tctx(), db, "hanzo/alice", policy.AdminOrg, store.RoleAdmin); err != nil {
+	if err := testdb.Member(tctx(), db, "hanzo/alice", policy.AdminOrg, store.RoleAdmin); err != nil {
 		t.Fatalf("grant the admin-org membership: %v", err)
 	}
 

@@ -163,7 +163,22 @@ func Seed(ctx context.Context, db orm.DB, initDataPath string) (*seed.Summary, e
 	if err := RequireSigning(ctx, db); err != nil {
 		return sum, err
 	}
-	return sum, nil
+	return sum, Roles(ctx, db, sum)
+}
+
+// Roles runs the boot's org-role converge onto sum: every org whose founder is
+// on record and that has no owner gets that founder as owner, and the orgs left
+// without one and the admin-org memberships of other orgs' accounts are listed,
+// each once on the audit trail.
+func Roles(ctx context.Context, db orm.DB, sum *seed.Summary) error {
+	var err error
+	if sum.Owned, sum.Ownerless, err = store.BackfillOwners(ctx, db); err != nil {
+		return fmt.Errorf("owners: %w", err)
+	}
+	if sum.Strangers, err = store.AdminOrgStrangers(ctx, db); err != nil {
+		return fmt.Errorf("admin org: %w", err)
+	}
+	return nil
 }
 
 // RequireSigning reports whether this process holds the keys it must sign with,

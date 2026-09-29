@@ -15,6 +15,7 @@ import (
 
 	policy "github.com/hanzoai/authz"
 
+	"github.com/hanzoai/iam/internal/testdb"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -22,7 +23,7 @@ import (
 // grant puts user IN org with role, the way an existing SuperAdmin does.
 func grant(t *testing.T, h *harness, user, org, role string) {
 	t.Helper()
-	if _, err := store.EnsureMembership(context.Background(), h.db, user, org, role); err != nil {
+	if err := testdb.Member(context.Background(), h.db, user, org, role); err != nil {
 		t.Fatalf("grant %s in %s: %v", user, org, err)
 	}
 }

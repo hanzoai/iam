@@ -192,6 +192,14 @@ func serve(ctx context.Context, storeBackend, dbPath, sqlAddr, zapAddr, httpAddr
 		return fmt.Errorf("serve: %w", err)
 	}
 
+	// Org roles, as the embedded host runs them (server.Seed).
+	var roles seed.Summary
+	if err := server.Roles(ctx, db, &roles); err != nil {
+		fmt.Fprintf(os.Stderr, "iam: org-role converge incomplete: %v\n", err)
+	}
+	fmt.Fprintf(os.Stderr, "iam: org roles — owned %v, ownerless %v, admin-org strangers %v\n",
+		roles.Owned, roles.Ownerless, roles.Strangers)
+
 	// MCP projects every typed CRUD handler onto one generic /mcp tool-call
 	// endpoint. The authz Guard gates it like any other route (fail-closed), but
 	// an identity service has no need to expose its admin CRUD as an agent tool

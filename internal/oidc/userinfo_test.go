@@ -13,6 +13,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/testdb"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -251,7 +252,7 @@ func TestUserinfo_OperatorAnchoredInABrandOrg(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
 	seedRichUser(t, db) // alice, home org "hanzo"
-	if _, err := store.EnsureMembership(context.Background(), db, "hanzo/alice", "admin", "admin"); err != nil {
+	if err := testdb.Member(context.Background(), db, "hanzo/alice", "admin", "admin"); err != nil {
 		t.Fatalf("grant admin-org membership: %v", err)
 	}
 

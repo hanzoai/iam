@@ -52,6 +52,11 @@ type Summary struct {
 	Skipped    map[string]int // kind -> already-existed, unchanged
 	Reconciled map[string]int // kind -> already-existed, declared policy re-applied
 	Refused    []string       // "owner/name: reason" for each declaration not written
+
+	// The boot's findings about org roles (store.BackfillOwners,
+	// store.AdminOrgStrangers): orgs given their founder as owner, orgs left with
+	// no owner, and admin-org memberships held by accounts of other orgs.
+	Owned, Ownerless, Strangers []string
 }
 
 var envRef = regexp.MustCompile(`\$\{([A-Z0-9_]+)\}`)

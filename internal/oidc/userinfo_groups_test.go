@@ -13,6 +13,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/hanzoai/iam/internal/testdb"
 	"github.com/hanzoai/iam/pkg/store"
 )
 
@@ -63,7 +64,7 @@ func TestUserinfo_GroupsFollowTheGrant(t *testing.T) {
 		t.Fatalf("groups = %v before any grant, want the home organization alone", info["groups"])
 	}
 
-	if _, err := store.EnsureMembership(context.Background(), db, "hanzo/alice", "admin", store.RoleMember); err != nil {
+	if err := testdb.Member(context.Background(), db, "hanzo/alice", "admin", store.RoleMember); err != nil {
 		t.Fatalf("grant membership: %v", err)
 	}
 	_, info = userinfo(t, app, accessTokenFor(t, app, "openid profile"))

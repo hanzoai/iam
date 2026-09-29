@@ -8,7 +8,7 @@ import (
 
 func init() {
 	zip.Describe("github.com/hanzoai/iam/internal/organizations DELETE /v1/iam/organizations/:owner/:name", zip.Doc{
-		Description: "Removes an organization and everything named inside it. There is no\nundo, and every session issued under it stops working.\n\nThe built-in admin organization cannot be deleted — losing it would leave the\naccount with no way back in.",
+		Description: "Removes an organization and everything named inside it. There is no\nundo, and every session issued under it stops working.\n\nOnly an owner of the organization, or a SuperAdmin, deletes it\n(authz.Authorize); an admin runs it and does not. The built-in admin\norganization cannot be deleted — losing it would leave the account with no way\nback in.",
 	})
 	zip.Describe("github.com/hanzoai/iam/internal/organizations GET /v1/iam/organizations", zip.Doc{
 		Description: "Returns the organizations you can act in, the ones you belong to first\nand the rest after, newest first, narrowed by an optional query against the\nname or the display name.\n\nPlatform operators see every organization; everyone else sees their own. Pass\nthe cursor from the previous page to continue; an empty cursor in the answer\nmeans there is nothing more.\n\nTHE SCOPE IS THE HANDLER'S OWN, so it holds at every endpoint. The Guard refuses\na bearerless request before this runs, but the MCP server carries a typed op to\nits handler with no middleware in front of it — a handler that read no\nprincipal would answer such a caller with the whole registry. Reading the\nprincipal here is what makes the answer the same one over both.",
