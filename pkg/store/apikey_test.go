@@ -633,7 +633,7 @@ func TestHolderByAccessKey_MemberKeyEndsWithTheMembership(t *testing.T) {
 	if _, err := HolderByAccessKey(ctx, db, "sk-live-GONE"); err != nil {
 		t.Fatalf("the key did not resolve while the membership stood: %v", err)
 	}
-	if _, err := DeleteMembership(ctx, db, "agency/josh", "client"); err != nil {
+	if _, err := DeleteMembership(ctx, db, "agency/josh", "client", RoleMember); err != nil {
 		t.Fatal(err)
 	}
 	h, err := HolderByAccessKey(ctx, db, "sk-live-GONE")

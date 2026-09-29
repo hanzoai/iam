@@ -145,8 +145,13 @@ func (h *OrganizationAPI) Create(ctx context.Context, in *CreateOrganizationInpu
 	case err == nil:
 		return nil, zip.ErrConflict("organization already exists")
 	case errors.Is(err, orm.ErrNotFound):
-		// free to create
+		// free to create, unless a deleted org of this name left people behind
 	default:
+		return nil, zip.ErrInternal(err.Error())
+	}
+	if err := store.Leftovers(ctx, h.DB, org.Name); errors.Is(err, store.ErrLeftovers) {
+		return nil, zip.ErrConflict(err.Error())
+	} else if err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
 
@@ -165,7 +170,7 @@ func (h *OrganizationAPI) Create(ctx context.Context, in *CreateOrganizationInpu
 		return nil, zip.ErrInternal(err.Error())
 	}
 	if founder != "" {
-		if _, err := store.SetRole(ctx, h.DB, founder, entity.Name, store.RoleOwner); err != nil {
+		if _, err := store.SetRole(ctx, h.DB, founder, entity.Name, store.RoleOwner, ""); err != nil {
 			_ = entity.DeleteCtx(ctx)
 			return nil, zip.ErrInternal(err.Error())
 		}
@@ -227,12 +232,14 @@ func (h *OrganizationAPI) Update(ctx context.Context, in *UpdateOrganizationInpu
 	}
 
 	model := existing.Model // orm key + pre-update snapshot for the diff hooks
-	created := existing.CreatedTime
+	created, founder := existing.CreatedTime, existing.Founder
 	*existing = desired
 	existing.Model = model
 	if existing.CreatedTime == "" {
 		existing.CreatedTime = created
 	}
+	// Who founded an org is written once, at its creation.
+	existing.Founder = founder
 	if err := existing.UpdateCtx(ctx); err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
@@ -336,7 +343,15 @@ func (h *OrganizationAPI) Delete(ctx context.Context, in *DeleteOrganizationInpu
 	if err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
-	if err := existing.DeleteCtx(ctx); err != nil {
+	// The org's memberships, invitations and keys go with it, so nothing of it
+	// speaks for a later org of the same name.
+	if err := h.DB.RunInTransactionWith(ctx, &orm.TxOptions{MaxAttempts: 5}, func(tx orm.DB) error {
+		if err := store.ForgetOrg(ctx, tx, in.Name); err != nil {
+			return err
+		}
+		existing.SetDB(tx)
+		return existing.DeleteCtx(ctx)
+	}); err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
 	store.Record(ctx, h.DB, &schema.AuditLog{

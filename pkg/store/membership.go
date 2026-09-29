@@ -85,6 +85,11 @@ func EnsureMembershipIn(ctx context.Context, db orm.DB, user, org, workspace, pr
 	if org == policy.AdminOrg && !IsHomeOrg(user, org) {
 		return false, ErrAdminOrgMember
 	}
+	if workspace == "" && project == "" {
+		if err := ownable(ctx, db, user, role); err != nil {
+			return false, err
+		}
+	}
 	existing, err := MembershipIn(ctx, db, user, org, workspace, project)
 	if err != nil || existing != nil {
 		return false, err
@@ -132,10 +137,11 @@ func GetMembership(_ context.Context, db orm.DB, user, org string) (*schema.Memb
 
 // DeleteMembership revokes a user's right to act in an org — the inverse of
 // EnsureMembership, keyed by the SAME (user, org) natural key, so a grant and its
-// revoke address exactly one row. Idempotent: revoking an absent membership reports
+// revoke address exactly one row. held is the role the caller decided on; a row
+// holding another is left alone (ErrMoved). Idempotent: revoking an absent membership reports
 // (false, nil), never an error, so a retried or racing revoke is safe. Reports
 // whether a row was removed.
-func DeleteMembership(ctx context.Context, db orm.DB, user, org string) (bool, error) {
+func DeleteMembership(ctx context.Context, db orm.DB, user, org, held string) (bool, error) {
 	if user == "" || org == "" {
 		return false, nil
 	}
@@ -144,6 +150,9 @@ func DeleteMembership(ctx context.Context, db orm.DB, user, org string) (bool, e
 		m, err := GetMembership(ctx, tx, user, org)
 		if err != nil || m == nil {
 			return err
+		}
+		if Role(m.Role) != Role(held) {
+			return ErrMoved
 		}
 		if err := keepOwner(ctx, tx, m); err != nil {
 			return err
@@ -412,7 +421,7 @@ func MemberOrgRefs(ctx context.Context, db orm.DB, user *schema.User) []schema.O
 
 // rank orders the org roles: owner > admin > member > none.
 func rank(role string) int {
-	switch role {
+	switch Role(role) {
 	case RoleOwner:
 		return 3
 	case RoleAdmin:
@@ -434,7 +443,7 @@ func OrgRoles(rows []*schema.Membership) map[string]string {
 			continue
 		}
 		if m.Workspace == "" && m.Project == "" {
-			out[m.Org] = m.Role
+			out[m.Org] = Role(m.Role)
 		} else if _, ok := out[m.Org]; !ok {
 			out[m.Org] = RoleMember
 		}

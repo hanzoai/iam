@@ -338,6 +338,21 @@ func TestAs_adminTarget_refused(t *testing.T) {
 	}
 }
 
+// An OWNER of the key's own org, by its home row and not the isAdmin bit, may
+// not be acted for either.
+func TestAs_ownerTarget_refused(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-app", secret: "app-secret"})
+	seedActUser(t, db, "acme", "founder", "ext-founder")
+	seedMembership(t, db, "acme/founder", "acme", "owner")
+	seedActKey(t, db, "acme", "appserver", "sk-live-acmeowner", "hanzo-app", true)
+
+	resp, body := do(t, app, asReq("sk-live-acmeowner", "?id=acme/founder"))
+	if resp.StatusCode != 403 {
+		t.Fatalf("owner target status = %d, want 403; body=%s", resp.StatusCode, body)
+	}
+}
+
 // A key OWNED BY a reserved org is not an operator key and gets no reach through
 // the as() arm, even with the grant set.
 func TestAs_reservedOrgKey_refused(t *testing.T) {

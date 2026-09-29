@@ -151,6 +151,7 @@ func ensure(db orm.DB) zip.Handler {
 		if in.User == "" || in.Org == "" {
 			return httpx.Err(c, "user and org are required")
 		}
+		in.Role = store.Role(in.Role)
 		switch in.Role {
 		case store.RoleOwner, store.RoleAdmin, store.RoleMember:
 		case "":
@@ -190,6 +191,7 @@ func update(db orm.DB) zip.Handler {
 		if in.User == "" || in.Org == "" {
 			return httpx.Err(c, "user and org are required")
 		}
+		in.Role = store.Role(in.Role)
 		switch in.Role {
 		case store.RoleOwner, store.RoleAdmin, store.RoleMember:
 		default:
@@ -201,7 +203,7 @@ func update(db orm.DB) zip.Handler {
 		}
 		from := ""
 		if held != nil {
-			from = held.Role
+			from = store.Role(held.Role)
 		}
 		if !mayGive(ctx, in.Org, from, in.Role) {
 			return httpx.Err(c, unauthorized)
@@ -209,7 +211,7 @@ func update(db orm.DB) zip.Handler {
 		if err := account(ctx, in.User); err != nil {
 			return httpx.Err(c, err.Error())
 		}
-		was, err := store.SetRole(ctx, db, in.User, in.Org, in.Role)
+		was, err := store.SetRole(ctx, db, in.User, in.Org, in.Role, from)
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
@@ -243,7 +245,7 @@ func remove(db orm.DB) zip.Handler {
 		}
 		from := ""
 		if held != nil {
-			from = held.Role
+			from = store.Role(held.Role)
 		}
 		if !mayGive(ctx, in.Org, from, "") {
 			return httpx.Err(c, unauthorized)
@@ -264,7 +266,7 @@ func remove(db orm.DB) zip.Handler {
 		if store.IsHomeOrg(in.User, in.Org) {
 			return httpx.Err(c, homeOrgIsNotRevocable)
 		}
-		removed, err := store.DeleteMembership(ctx, db, in.User, in.Org)
+		removed, err := store.DeleteMembership(ctx, db, in.User, in.Org, from)
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}

@@ -60,7 +60,7 @@ func TestAuthorizeKeepsAnOwnersAccountFromOtherPeople(t *testing.T) {
 	seedMember(t, api, "ann", nil)
 	seedMember(t, api, "bob", nil)
 	ctx := context.Background()
-	if _, err := store.SetRole(ctx, db, "hanzo/ann", "acme", store.RoleOwner); err != nil {
+	if _, err := store.SetRole(ctx, db, "hanzo/ann", "acme", store.RoleOwner, ""); err != nil {
 		t.Fatal(err)
 	}
 

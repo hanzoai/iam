@@ -332,10 +332,23 @@ of its `isAdmin` bit and its home row, so an owner row makes it owner.
   an owner's row. An application with `IAM_ORG_ADMIN_APPS` is an admin and owns
   nothing.
 - **The last owner stays.** `store.DeleteMembership`, `SetRole` and `ForgetUser`
-  refuse, in the transaction that would do it, to leave an org ownerless
-  (`ErrLastOwner`; an account delete answers 409). Handing over is two `PUT`s.
-- **An owner's account is written by the owner or a SuperAdmin** (`users.Authorize`):
-  no other person resets its password, factors, tokens or passkeys, or deletes it.
+  refuse, in the transaction that would do it, to leave an org without a live
+  person owning it (`ErrLastOwner`; an account delete answers 409). Handing over
+  is two `PUT`s.
+- **Only a live person owns.** The owner role is refused to a machine, a deleted
+  or a forbidden account (`ErrMachineOwner`).
+- **A change applies to the role it was decided on.** `SetRole` and
+  `DeleteMembership` take the role the caller read; a row that moved since answers
+  `ErrMoved`, so a racing demotion cannot turn an admin's decision into an owner's.
+- **An owner's account is written by the owner or a SuperAdmin** (`users.Authorize`),
+  and never with no caller: no other person resets its password, factors, tokens,
+  passkeys or keys (`keys.holdable`), or deletes it. An admin or owner of the key's
+  org is never an as() subject.
+- **A deleted org leaves nothing that speaks.** `store.ForgetOrg` removes its
+  memberships, member keys, invitations and keys in the delete's transaction; a new
+  org under a name whose accounts or memberships remain is refused
+  (`ErrLeftovers`). An account that moves home keeps its other memberships under
+  its new id (`store.Rekey`).
 - **Every org is born owned.** `POST /v1/iam/organizations` with `founder` (the
   creator's key or subject) makes them the first owner, and self-service
   onboarding writes the owner row itself. At boot `store.BackfillOwners` gives an

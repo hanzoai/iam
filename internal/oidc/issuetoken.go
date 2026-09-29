@@ -424,7 +424,7 @@ func mintAsToken(ctx context.Context, db orm.DB, c *zip.Ctx, key *schema.Key) er
 	if status != 0 {
 		return mintErr(c, status, msg)
 	}
-	// An ADMIN of the key's own org never becomes an as() subject either. A token
+	// An ADMIN or OWNER of the key's own org never becomes an as() subject either. A token
 	// minted for an admin is indistinguishable from that admin at her keyboard —
 	// the principal is built from the user row and nothing downstream reads the act
 	// claim — so it mints durable keys, answers the holds a person was supposed to
@@ -434,8 +434,10 @@ func mintAsToken(ctx context.Context, db orm.DB, c *zip.Ctx, key *schema.Key) er
 	// This costs the honest case nothing. An unattended agent should be its own
 	// ordinary subject, filed under the tenant like any other member; acting AS the
 	// person who governs the tenant is the one thing it must never do.
-	if user.IsAdmin {
-		return mintErr(c, 403, "the target may not be acted for")
+	for _, r := range store.MemberOrgRefs(ctx, db, user) {
+		if r.Org == key.Owner && (r.Role == store.RoleAdmin || r.Role == store.RoleOwner) {
+			return mintErr(c, 403, "the target may not be acted for")
+		}
 	}
 
 	// Sign under the target user's OWN application — the same app a token the user

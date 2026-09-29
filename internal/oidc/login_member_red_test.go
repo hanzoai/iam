@@ -221,7 +221,7 @@ func TestLogin_ReservedHomesAreNotReached(t *testing.T) {
 // of the org.
 func TestLogin_ABareRosterRowNamesNobody(t *testing.T) {
 	db, login := memberApp(t)
-	if _, err := store.EnsureMembership(tctx(), db, "stray", "client", store.RoleOwner); err != nil {
+	if _, err := store.EnsureMembership(tctx(), db, "stray", "client", store.RoleMember); err != nil {
 		t.Fatal(err)
 	}
 	if m := login("client", "stray", "pw-stray"); minted(m) || m["msg"] != "the username or password is incorrect" {

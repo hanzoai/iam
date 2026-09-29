@@ -622,9 +622,10 @@ func (a *API) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 // org.
 //
 // An account holding an org's owner role is written by no other person but a
-// SuperAdmin: an admin who could reset an owner's password or factors could sign
-// in as the owner. An application is left to its capability allowlist, which is
-// how the platform writes a person's own row for them.
+// SuperAdmin, and never with no caller at all: an admin who could reset an
+// owner's password or factors could sign in as the owner. An application is left
+// to its capability allowlist, which is how the platform writes a person's own
+// row for them.
 func Authorize(ctx context.Context, db orm.DB, owner, name string) error {
 	p, ok := principal.From(ctx)
 	if ok && p.Sudo && p.App == nil {
@@ -633,7 +634,7 @@ func Authorize(ctx context.Context, db orm.DB, owner, name string) error {
 	if owner == policy.AdminOrg {
 		return zip.ErrForbidden("only a SuperAdmin may change an account in the admin organization")
 	}
-	if !ok || p.App != nil || (p.Org == owner && strings.EqualFold(p.User, name)) {
+	if ok && (p.App != nil || (p.Org == owner && strings.EqualFold(p.User, name))) {
 		return nil
 	}
 	u, err := store.GetUserByName(ctx, db, owner, name)

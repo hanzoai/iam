@@ -69,6 +69,39 @@ func TestKeys_RejectCrossTenantUserOnWrite(t *testing.T) {
 	}
 }
 
+// A key speaks as its holder, so an org's admin may not write one held by the
+// org's owner; the owner and a SuperAdmin may.
+func TestKeys_AnOwnersKeyIsTheOwnersToWrite(t *testing.T) {
+	db := memDB(t)
+	u := orm.New[schema.User](db)
+	u.Owner, u.Name = "acme", "ann"
+	u.SetId("uuid-ann")
+	if err := u.CreateCtx(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SetRole(context.Background(), db, "acme/ann", "acme", store.RoleOwner, ""); err != nil {
+		t.Fatal(err)
+	}
+	as := func(p *principal.Principal) context.Context { return principal.Bind(context.Background(), p) }
+	admin := as(&principal.Principal{Org: "acme", User: "bo", Admin: true, Orgs: map[string]policy.Role{"acme": policy.Admin}})
+	owner := as(&principal.Principal{Org: "acme", User: "ann", Orgs: map[string]policy.Role{"acme": policy.Owner}})
+	super := as(&principal.Principal{Org: policy.AdminOrg, User: "z", Sudo: true})
+
+	c := create(db)
+	if _, err := c(admin, &schema.Key{Owner: "acme", Name: "k1", User: "acme/ann"}); err == nil {
+		t.Fatal("an admin wrote a key held by the org's owner")
+	}
+	if _, err := c(admin, &schema.Key{Owner: "acme", Name: "k2", User: "ann"}); err == nil {
+		t.Fatal("an admin wrote a key held by the org's owner, named bare")
+	}
+	if _, err := c(owner, &schema.Key{Owner: "acme", Name: "k3", User: "acme/ann"}); err != nil {
+		t.Fatalf("the owner's own key: %v", err)
+	}
+	if _, err := c(super, &schema.Key{Owner: "acme", Name: "k4", User: "acme/ann"}); err != nil {
+		t.Fatalf("a SuperAdmin's write: %v", err)
+	}
+}
+
 // A publishable key (Scope=publish) mints a pk- publishable half ONLY — never a
 // confidential sk- secret — so it can carry no full-access material. A default key
 // still mints BOTH halves (its sk- is the reader-authenticating credential).

@@ -33,12 +33,18 @@ func Record(ctx context.Context, db orm.DB, log *schema.AuditLog) {
 // counts these rows to decide what it allows next, and so must not act when the
 // row that would have counted it is missing.
 func Append(ctx context.Context, db orm.DB, log *schema.AuditLog) error {
-	if log == nil || log.Owner == "" {
-		return errors.New("audit: a record names its owner")
-	}
 	name, err := auditName()
 	if err != nil {
 		return err
+	}
+	return AppendNamed(ctx, db, name, log)
+}
+
+// AppendNamed is Append under a name the caller derives, for a record written at
+// most once: a second write of the same name finds the first by key.
+func AppendNamed(ctx context.Context, db orm.DB, name string, log *schema.AuditLog) error {
+	if log == nil || log.Owner == "" {
+		return errors.New("audit: a record names its owner")
 	}
 	row := orm.New[schema.AuditLog](db)
 	model := row.Model // keep the orm binding across the overlay

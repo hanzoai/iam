@@ -809,7 +809,7 @@ func resolve(c *zip.Ctx, db orm.DB) (*principal.Principal, error) {
 		// Sudo is THE predicate, asked of the row: a person whose own org is the
 		// reserved one. A membership of the admin org does not make one.
 		return &principal.Principal{
-			Org: u.Owner, User: u.Name, Admin: u.IsAdmin, Sudo: u.SuperAdmin(),
+			Org: u.Owner, User: u.Name, Admin: u.IsAdmin, Sudo: u.SuperAdmin(), Machine: u.Machine(),
 			Orgs: membershipRoles(ctx, db, u.Owner+"/"+u.Name),
 		}, nil
 	}

@@ -35,6 +35,7 @@ func memDB(t *testing.T) orm.DB {
 func TestEnsureMembership_IdempotentAndNoDowngrade(t *testing.T) {
 	db := memDB(t)
 	ctx := context.Background()
+	seedPerson(t, db, "hanzo", "alice", "uuid-alice")
 
 	added, err := EnsureMembership(ctx, db, "hanzo/alice", "hanzo", RoleOwner)
 	if err != nil || !added {

@@ -77,7 +77,7 @@ func TestRevoke_TeamOrgIsGoneOnACredentialAlreadyHeld(t *testing.T) {
 		t.Fatalf("precondition: orgs = %v, want team-x present", before)
 	}
 
-	removed, err := store.DeleteMembership(ctx, db, "hanzo/alice", "team-x")
+	removed, err := store.DeleteMembership(ctx, db, "hanzo/alice", "team-x", store.RoleAdmin)
 	if err != nil || !removed {
 		t.Fatalf("revoke: removed=%v err=%v", removed, err)
 	}
@@ -115,7 +115,7 @@ func TestRevoke_LeavesEveryOtherMemberAlone(t *testing.T) {
 	// credential and bob is the one revoked.
 	aliceHeld := grantViaPKCE(t, app, "pub", "openid offline_access")["refresh_token"].(string)
 
-	removed, err := store.DeleteMembership(ctx, db, "hanzo/bob", "team-x")
+	removed, err := store.DeleteMembership(ctx, db, "hanzo/bob", "team-x", store.RoleMember)
 	if err != nil || !removed {
 		t.Fatalf("revoke bob: removed=%v err=%v", removed, err)
 	}
@@ -154,7 +154,7 @@ func TestRevoke_HomeOrgIsGrantedByTheAccountNotTheRow(t *testing.T) {
 
 	held := grantViaPKCE(t, app, "pub", "openid offline_access")["refresh_token"].(string)
 
-	removed, err := store.DeleteMembership(ctx, db, "hanzo/alice", "hanzo")
+	removed, err := store.DeleteMembership(ctx, db, "hanzo/alice", "hanzo", store.RoleMember)
 	if err != nil || !removed {
 		t.Fatalf("row delete: removed=%v err=%v", removed, err)
 	}

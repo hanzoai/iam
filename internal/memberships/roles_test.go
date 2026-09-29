@@ -42,7 +42,7 @@ func acme(t *testing.T, h *harness) {
 	seedUser(t, h.db, "acme", "cy", true)
 	seedUser(t, h.db, "acme", "dee", false)
 	seedUser(t, h.db, "hanzo", "eve", false)
-	if _, err := store.SetRole(ctx, h.db, "acme/ann", "acme", store.RoleOwner); err != nil {
+	if _, err := store.SetRole(ctx, h.db, "acme/ann", "acme", store.RoleOwner, ""); err != nil {
 		t.Fatal(err)
 	}
 }

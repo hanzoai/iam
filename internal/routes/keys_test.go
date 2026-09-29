@@ -584,7 +584,7 @@ func TestPrincipalDoor_MemberKeyNamesTheOrgItActsIn(t *testing.T) {
 		t.Fatalf("isAdmin=%v billing=%q, want a plain member of client paying from client's pool", e.Data.IsAdmin, e.Data.BillingAccount)
 	}
 
-	if _, err := store.DeleteMembership(ctx, h.db, "hanzo/keyuser", "client"); err != nil {
+	if _, err := store.DeleteMembership(ctx, h.db, "hanzo/keyuser", "client", store.RoleMember); err != nil {
 		t.Fatal(err)
 	}
 	status, body = h.getBasic(t, principalDoor+"sk-live-MEMBERDOOR", resolverApp, svcSecret)

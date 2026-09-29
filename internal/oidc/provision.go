@@ -148,6 +148,11 @@ func provision(ctx context.Context, db orm.DB, cl claim) (provisioned, error) {
 		}
 		orgCreated := org == nil
 		if orgCreated {
+			if err := store.Leftovers(ctx, tx, cl.slug); errors.Is(err, store.ErrLeftovers) {
+				return &fault{409, err.Error()}
+			} else if err != nil {
+				return &fault{500, "server_error"}
+			}
 			o := orm.New[schema.Organization](tx)
 			o.Owner = "admin"
 			o.Name = cl.slug
@@ -258,13 +263,12 @@ func provision(ctx context.Context, db orm.DB, cl claim) (provisioned, error) {
 		if _, err := store.EnsureMembership(ctx, tx, cl.slug+"/"+cl.name, cl.slug, store.RoleOwner); err != nil {
 			return &fault{500, "server_error"}
 		}
-		// The move RE-KEYS the caller (user ids are "<owner>/<name>"), which strands
-		// the membership row filed under the OLD id: it names an identity that no
-		// longer exists, so the previous org's roster keeps a ghost member forever.
-		// Drop it in the same converge that re-keyed the user — one identity, one set
-		// of memberships. Idempotent (a missing row reports false, never an error).
+		// The move RE-KEYS the caller (user ids are "<owner>/<name>"), so every row
+		// filed under the OLD id moves to the new one in the same converge: one
+		// identity, one set of memberships, and nothing left under a name the old
+		// org can give someone else. The row for the org left behind is dropped.
 		if wasOwner != cl.slug {
-			if _, err := store.DeleteMembership(ctx, tx, wasOwner+"/"+cl.name, wasOwner); err != nil {
+			if err := store.Rekey(ctx, tx, wasOwner+"/"+cl.name, cl.slug+"/"+cl.name); err != nil {
 				return &fault{500, "server_error"}
 			}
 		}
