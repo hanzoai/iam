@@ -388,6 +388,8 @@ func (t *Tenancy) Move(a, home string, at int64) error {
 		return refused("program %s moves once it acts in one org", a)
 	case !x.program && x.owner != DirAdmin && t.Home(a) == "":
 		return refused("person %s moves once it holds its org of one", a)
+	case t.SuperAdmin(a) && t.superadmins() == 1:
+		return refused("the last SuperAdmin does not leave admin")
 	case x.owner == DirAdmin && (home == "" || Reserved(home) || t.exists(home)):
 		return refused("%s leaves admin founding an org of one, not %q", a, home)
 	case x.owner != DirAdmin && home != "":

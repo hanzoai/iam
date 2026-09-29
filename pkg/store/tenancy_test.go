@@ -377,6 +377,7 @@ func TestAdminNamespaceInvariants_refusals(t *testing.T) {
 		return tn.Accept("root", "n4", next())
 	}())
 	refuse("dismissing the last SuperAdmin", tn.Dismiss("root", "root", next()))
+	refuse("moving the last SuperAdmin out of admin", tn.Move("root", "h-root", next()))
 	refuse("an assume by a person", tn.Assume("alice", "f", "acme", next()))
 	must(tn.Assume("root", "f", "acme", next()))
 	if len(tn.Orgs("root")) != 0 || tn.Member("root", "acme") {
