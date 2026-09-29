@@ -15,6 +15,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/testhttp"
 	"github.com/hanzoai/iam/pkg/pkce"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
@@ -158,6 +159,11 @@ func (d down) Put(ctx context.Context, key orm.Key, src interface{}) (orm.Key, e
 	return d.DB.Put(ctx, key, src)
 }
 
+// RunInTransaction keeps the audit log down inside a transaction too.
+func (d down) RunInTransaction(ctx context.Context, fn func(tx orm.DB) error) error {
+	return d.DB.RunInTransaction(ctx, func(tx orm.DB) error { return fn(down{tx}) })
+}
+
 // A SuperAdmin token whose row cannot be written is not issued; a tenant's
 // token on the same store is.
 func TestTrail_UnrecordedTokenIsNotIssued(t *testing.T) {
@@ -238,5 +244,83 @@ func TestTrail_SignerWithoutTrail(t *testing.T) {
 	s.trail = func(Claims) error { return errors.New("the audit log is unavailable") }
 	if tok, err := s.Sign(app, super, "openid", "", time.Hour, now); err == nil || tok != "" {
 		t.Fatalf("a SuperAdmin token was released when its record failed: %q %v", tok, err)
+	}
+}
+
+// A refresh whose SuperAdmin record cannot be written issues nothing and consumes
+// nothing: once the audit log is back, the same refresh token renews.
+func TestTrail_UnrecordedRefreshKeepsTheSession(t *testing.T) {
+	up, db := newServer(t)
+	superSession(t, up, db)
+	code, verifier := consoleCode(t, up)
+	resp, tok := exchangeCode(t, up, url.Values{
+		"code": {code}, "client_id": {"console"}, "client_secret": {"s3cret"},
+		"redirect_uri": {testRedirect}, "code_verifier": {verifier},
+	})
+	if resp.StatusCode != 200 {
+		t.Fatalf("exchange: %d %v", resp.StatusCode, tok)
+	}
+	refresh := url.Values{
+		"grant_type": {"refresh_token"}, "refresh_token": {tok["refresh_token"].(string)},
+		"client_id": {"console"}, "client_secret": {"s3cret"},
+	}
+	before := len(trailRows(t, db))
+
+	downApp := zip.New(zip.Config{AppName: "iam-test", DisableStartupMessage: true})
+	Route(downApp.Group(""), down{db})
+	resp, body := do(t, downApp, formReq("POST", PathToken, refresh))
+	if m := decode(t, body); resp.StatusCode != 500 || m["access_token"] != nil {
+		t.Fatalf("an unrecorded refresh: %d %v, want 500 and no token", resp.StatusCode, m)
+	}
+	if n := len(trailRows(t, db)); n != before {
+		t.Fatalf("trail rows %d → %d across a refused refresh", before, n)
+	}
+
+	resp, body = do(t, up, formReq("POST", PathToken, refresh))
+	if m := decode(t, body); resp.StatusCode != 200 || m["access_token"] == nil {
+		t.Fatalf("the same refresh once the log is back: %d %v, want 200", resp.StatusCode, m)
+	}
+}
+
+// Two rotations racing on one refresh token mint once: the presented row is read
+// again inside the rotation's transaction, so the others find it consumed.
+func TestRefresh_RacingRotationsMintOnce(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, refreshHours: 24})
+	seedUserInOrg(t, db, "hanzo", "alice", "alice@hanzo.ai", "pw")
+	code, _, body := loginForCode(t, app, map[string]string{
+		"organization": "hanzo", "application": "conf", "clientId": "conf",
+		"username": "alice", "password": "pw", "redirectUri": testRedirect,
+	})
+	if code == "" {
+		t.Fatalf("sign-in: %s", body)
+	}
+	_, tok := exchangeCode(t, app, url.Values{
+		"code": {code}, "client_id": {"conf"}, "client_secret": {"s3cret"}, "redirect_uri": {testRedirect},
+	})
+	form := url.Values{
+		"grant_type": {"refresh_token"}, "refresh_token": {tok["refresh_token"].(string)},
+		"client_id": {"conf"}, "client_secret": {"s3cret"},
+	}
+	const n = 4
+	codes := make(chan int, n)
+	for range n {
+		go func() {
+			resp, err := testhttp.Do(app, formReq("POST", PathToken, form))
+			if err != nil {
+				codes <- 0
+				return
+			}
+			codes <- resp.StatusCode
+		}()
+	}
+	minted := 0
+	for range n {
+		if <-codes == 200 {
+			minted++
+		}
+	}
+	if minted != 1 {
+		t.Fatalf("%d of %d racing rotations minted, want 1", minted, n)
 	}
 }

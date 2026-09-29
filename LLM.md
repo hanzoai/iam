@@ -317,9 +317,12 @@ nothing.
   `RequestUri` where it was asked, `Object` `{sub, client, audience, scope,
   kind, jti, expires, assumed}`, `CreatedTime` when. One row per token, so a
   code exchange writes two (access and id token). A failed write returns
-  `server_error` and no token; a refresh that fails this way has already
-  consumed the presented token, so the family ends and the person signs in
-  again. A bare `NewSignerFromCert` has no trail and refuses such claims.
+  `server_error` and no token. A refresh rotates in ONE transaction — re-read
+  the presented row, consume it, mint (the record included), persist the
+  successor — so a failed record consumes nothing and the same refresh token
+  works once the log is back. The re-read also makes racing rotations mint once:
+  before it, four concurrent refreshes of one token minted four successors. A
+  bare `NewSignerFromCert` has no trail and refuses such claims.
 
 ## A mark is how a SUBJECT appears, and a subject is a person OR an org
 
