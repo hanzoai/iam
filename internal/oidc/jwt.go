@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	policy "github.com/hanzoai/authz"
 
 	"github.com/hanzoai/iam/pkg/schema"
 )
@@ -210,6 +211,9 @@ type Signer struct {
 	kid    string // JWKS key id — the Cert name
 	alg    string // JOSE alg — "RS256" | "ES256" | … | "MLDSA65"
 	issuer string
+	// trail records a token that carries SuperAdmin authority (trail.go). A
+	// Signer without one refuses to sign such a token.
+	trail func(Claims) error
 }
 
 // NewSignerFromCert builds a Signer from a Cert, selecting the algorithm from
@@ -396,12 +400,41 @@ func (s *Signer) SignID(app *schema.Application, id Identity, scope, nonce strin
 
 // signClaims is the single choke point that turns a claim set into a signed
 // compact JWS under this signer's fixed (method, key, kid).
+//
+// A token that carries SuperAdmin authority is released only once its record is
+// written: a signer with no trail, or a record that fails, returns no token.
 func (s *Signer) signClaims(claims Claims) (string, error) {
+	sudo := claims.sudo()
+	if sudo && s.trail == nil {
+		return "", errNoTrail
+	}
 	tok := jwt.NewWithClaims(s.method, claims)
 	if s.kid != "" {
 		tok.Header["kid"] = s.kid
 	}
-	return tok.SignedString(s.key)
+	signed, err := tok.SignedString(s.key)
+	if err != nil {
+		return "", err
+	}
+	if sudo {
+		if err := s.trail(claims); err != nil {
+			return "", err
+		}
+	}
+	return signed, nil
+}
+
+// errNoTrail refuses a SuperAdmin token from a signer that cannot record it.
+var errNoTrail = errors.New("jwt: a SuperAdmin token is signed only where its record is written")
+
+// sudo reports whether a resource server reading these claims grants SuperAdmin
+// authority: authz.Claims.Sudo, asked of the same membership set and class.
+func (c Claims) sudo() bool {
+	p := policy.Claims{Type: c.Type}
+	for _, o := range c.Orgs {
+		p.Orgs = append(p.Orgs, policy.Membership{Org: o.Org, Role: policy.Role(o.Role)})
+	}
+	return p.Sudo()
 }
 
 // PublicKey returns the signer's RSA public key, or nil for a non-RSA signer

@@ -306,6 +306,20 @@ nothing.
   sign-in method. The action is
   `PlatformWritten`: the audit-log CRUD cannot create, alter or delete it.
   assume/release/list-organizations keep their own rows.
+- **Every SuperAdmin token is recorded before it is released, or not issued.**
+  The Signer is where every access and id token is signed, so the rule lives
+  there: a claim set `authz.Claims.Sudo` reads as platform authority (`orgs[0]`
+  is `admin`, not a program — admin-org service accounts included) is signed
+  only by a Signer carrying a trail (`signerFor` gives every mint one, from the
+  request's `origin`), and the token comes back only once
+  `schema.ActionSuperAdminToken` (`superadmin-token`) is written: `User`
+  `admin/<name>`, `Organization` the client's org, `ClientIp`/`Method`/
+  `RequestUri` where it was asked, `Object` `{sub, client, audience, scope,
+  kind, jti, expires, assumed}`, `CreatedTime` when. One row per token, so a
+  code exchange writes two (access and id token). A failed write returns
+  `server_error` and no token; a refresh that fails this way has already
+  consumed the presented token, so the family ends and the person signs in
+  again. A bare `NewSignerFromCert` has no trail and refuses such claims.
 
 ## A mark is how a SUBJECT appears, and a subject is a person OR an org
 

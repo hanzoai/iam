@@ -110,7 +110,7 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 
 	// 5) Mint for the subject, scoped to the requested audience, azp = the acting
 	//    client (records who exchanged). Signed under the trusted cert + issuer.
-	signer, err := signerFor(ctx, db, clientApp, tokenIssuer(c))
+	signer, err := signerFor(ctx, db, clientApp, tokenIssuer(c), originOf(c))
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}

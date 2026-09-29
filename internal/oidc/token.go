@@ -278,7 +278,7 @@ func clientCredentialsGrant(c *zip.Ctx, db orm.DB) error {
 		return tokenError(c, 400, "unauthorized_client", "the application does not permit the client_credentials grant")
 	}
 
-	resp, err := machineToken(ctx, db, app, tokenIssuer(c), param(c, "scope"), resourceOf(c), "cc", now)
+	resp, err := machineToken(ctx, db, c, app, param(c, "scope"), resourceOf(c), "cc", now)
 	if err != nil {
 		return mintError(c, err)
 	}
@@ -299,9 +299,9 @@ func clientCredentialsGrant(c *zip.Ctx, db orm.DB) error {
 // mark names the grant in the token row, which is the only place the proof
 // survives: `cc` for a secret, `wl` for a cluster assertion. Reading it is how an
 // operator finds the services still holding a secret.
-func machineToken(ctx context.Context, db orm.DB, app *schema.Application, issuer, scope, resource, mark string, now time.Time) (tokenResponse, error) {
+func machineToken(ctx context.Context, db orm.DB, c *zip.Ctx, app *schema.Application, scope, resource, mark string, now time.Time) (tokenResponse, error) {
 	ttl := appTTL(app)
-	signer, err := signerFor(ctx, db, app, issuer)
+	signer, err := signerFor(ctx, db, app, tokenIssuer(c), originOf(c))
 	if err != nil {
 		return tokenResponse{}, err
 	}
@@ -551,7 +551,7 @@ func passwordGrant(c *zip.Ctx, db orm.DB) error {
 // never drift between them.
 func issueTokens(ctx context.Context, db orm.DB, c *zip.Ctx, app *schema.Application, row *schema.Token, family string, now time.Time) (tokenResponse, error) {
 	ttl := appTTL(app)
-	signer, err := signerFor(ctx, db, app, tokenIssuer(c))
+	signer, err := signerFor(ctx, db, app, tokenIssuer(c), originOf(c))
 	if err != nil {
 		return tokenResponse{}, err
 	}
@@ -694,7 +694,10 @@ var ErrNoSigningCert = errors.New("token: application has no trusted signing cer
 // signing-cert owners and builds a Signer with the given canonical issuer. Using
 // the same trusted resolution as the JWKS and verification keeps the three
 // consistent: a token is signed by a key iam will also publish and verify.
-func signerFor(ctx context.Context, db orm.DB, app *schema.Application, issuer string) (*Signer, error) {
+//
+// at is where the mint was asked from; the signer records a SuperAdmin token
+// against it before releasing one (trail).
+func signerFor(ctx context.Context, db orm.DB, app *schema.Application, issuer string, at origin) (*Signer, error) {
 	cert, err := store.GetSigningCert(ctx, db, app.Cert)
 	if err != nil {
 		return nil, err
@@ -702,7 +705,12 @@ func signerFor(ctx context.Context, db orm.DB, app *schema.Application, issuer s
 	if cert == nil {
 		return nil, ErrNoSigningCert
 	}
-	return NewSignerFromCert(cert, app, issuer)
+	s, err := NewSignerFromCert(cert, app, issuer)
+	if err != nil {
+		return nil, err
+	}
+	s.trail = trail(ctx, db, at)
+	return s, nil
 }
 
 // mintError answers a token-minting failure: the opaque `server_error` for
@@ -726,7 +734,7 @@ func mintError(c *zip.Ctx, err error) error {
 // signAccessToken signs a bare access token for a token row under the given
 // issuer — the direct sign path the end-to-end test drives.
 func signAccessToken(ctx context.Context, db orm.DB, app *schema.Application, tok *schema.Token, issuer string, ttl time.Duration, now time.Time) (string, error) {
-	signer, err := signerFor(ctx, db, app, issuer)
+	signer, err := signerFor(ctx, db, app, issuer, origin{})
 	if err != nil {
 		return "", err
 	}

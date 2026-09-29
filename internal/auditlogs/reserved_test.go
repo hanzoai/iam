@@ -176,6 +176,7 @@ func TestTheReservedSetIsExact(t *testing.T) {
 	for _, exact := range []string{
 		schema.ActionConsentTraining, schema.ActionIssueUserToken,
 		schema.ActionMintUserKeys, schema.ActionRevokeUserKeys, schema.ActionTokenExchange,
+		schema.ActionSuperAdminToken,
 	} {
 		if !schema.PlatformWritten(exact) {
 			t.Fatalf("PlatformWritten(%q) = false — a platform action is not reserved", exact)

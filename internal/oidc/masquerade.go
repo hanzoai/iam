@@ -148,7 +148,11 @@ func rescope(ctx context.Context, db orm.DB, in *assumeBody, org string) (*httpx
 	if app == nil {
 		return httpx.Bad(400, "the access token names no application", ""), nil
 	}
-	signer, err := signerFor(ctx, db, app, claims.Issuer)
+	uri := PathAssume
+	if org == "" {
+		uri = PathRelease
+	}
+	signer, err := signerFor(ctx, db, app, claims.Issuer, origin{ip: in.Forwarded, method: "POST", path: uri})
 	if err != nil {
 		return httpx.Bad(500, "server_error", ""), nil
 	}
