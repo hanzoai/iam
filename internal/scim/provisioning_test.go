@@ -226,3 +226,27 @@ func TestRed_enterpriseExtension_cannotNameTheTenant(t *testing.T) {
 		t.Fatal("user did not land in the caller's own org")
 	}
 }
+
+// An org's admin provisions its people through SCIM and never moves where they
+// sign in or recover: an address, a phone and an external id are the person's, a
+// SuperAdmin's, or a provisioning application's to change.
+func TestSCIM_orgAdminCannotMoveAPersonsAddress(t *testing.T) {
+	h := newHarness(t)
+	boss := h.token(t, "hanzo/boss")
+	super := h.token(t, "admin/root")
+
+	create := `{"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"carol","emails":[{"value":"carol@old.example","primary":true}]}`
+	if status, body := h.do(t, "POST", scimUsers, boss, create); status != 201 {
+		t.Fatalf("create status = %d; body=%s", status, body)
+	}
+	moved := `{"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"carol","emails":[{"value":"carol@new.example","primary":true}]}`
+	if status, body := h.do(t, "PUT", scimUsers+"/hanzo/carol", boss, moved); status != 403 {
+		t.Fatalf("org admin moved a person's address: %d %s", status, body)
+	}
+	if status, body := h.do(t, "PUT", scimUsers+"/hanzo/carol", super, moved); status != 200 {
+		t.Fatalf("a SuperAdmin's address change: %d %s", status, body)
+	}
+	if u, _ := store.GetUserByName(context.Background(), h.db, "hanzo", "carol"); u == nil || u.Email != "carol@new.example" {
+		t.Fatalf("carol = %+v, want the SuperAdmin's address", u)
+	}
+}

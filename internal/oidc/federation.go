@@ -767,21 +767,13 @@ type connectorBinding struct {
 // (the tag is 'github') — passing the exact json name is the one correct way, and
 // this registry is its single source of truth. Only the connectors iam can
 // federate are listed; anything else fails closed.
-var connectorRegistry = map[string]connectorBinding{
-	"google":          {"google", func(u *schema.User) *string { return &u.Google }},
-	"github":          {"github", func(u *schema.User) *string { return &u.GitHub }},
-	"gitlab":          {"gitlab", func(u *schema.User) *string { return &u.Gitlab }},
-	"gitee":           {"gitee", func(u *schema.User) *string { return &u.Gitee }},
-	"bitbucket":       {"bitbucket", func(u *schema.User) *string { return &u.Bitbucket }},
-	"facebook":        {"facebook", func(u *schema.User) *string { return &u.Facebook }},
-	"apple":           {"apple", func(u *schema.User) *string { return &u.Apple }},
-	"linkedin":        {"linkedin", func(u *schema.User) *string { return &u.LinkedIn }},
-	"discord":         {"discord", func(u *schema.User) *string { return &u.Discord }},
-	"slack":           {"slack", func(u *schema.User) *string { return &u.Slack }},
-	"okta":            {"okta", func(u *schema.User) *string { return &u.Okta }},
-	"azuread":         {"azuread", func(u *schema.User) *string { return &u.AzureAD }},
-	"microsoftonline": {"microsoftonline", func(u *schema.User) *string { return &u.MicrosoftOnline }},
-}
+var connectorRegistry = func() map[string]connectorBinding {
+	out := make(map[string]connectorBinding, len(schema.Connectors))
+	for field, ref := range schema.Connectors {
+		out[field] = connectorBinding{field, ref}
+	}
+	return out
+}()
 
 // connectorFor resolves the connector binding for a provider type (case-folded),
 // or (zero, false) when the type has no local identity column.

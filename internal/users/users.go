@@ -462,7 +462,7 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 	u := &in.User
 	u.Owner, u.Name = owner, name
 	u.Email = store.NormalizeEmail(u.Email)
-	if in.Password != "" || u.Email != store.NormalizeEmail(existing.Email) || u.Phone != existing.Phone {
+	if in.Password != "" || u.Email != store.NormalizeEmail(existing.Email) || u.Phone != existing.Phone || u.ExternalId != existing.ExternalId {
 		if err := Credential(ctx, a.db, existing.Owner, existing.Name); err != nil {
 			return nil, err
 		}
@@ -520,6 +520,7 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 	// scope. Each of these has its own seam — password reset below, key rotation at
 	// mint/revoke, multi-factor enrolment in internal/mfa.
 	u.CarrySecretsFrom(existing)
+	u.CarryLinksFrom(existing)
 	// AccessKey and PasswordType are READABLE, so they are not Mask's to carry — but
 	// they are the halves that make the carried secrets interpretable (a digest with
 	// no type cannot be verified; a secret with no key cannot be used), so a partial
@@ -660,11 +661,12 @@ func Authorize(ctx context.Context, db orm.DB, owner, name string) error {
 }
 
 // Credential authorizes a write of what signs a person in or recovers their
-// account — password, email, phone, second factors, passkeys, and the tokens and
-// keys that speak as them. The person writes their own, and a SuperAdmin or an
-// application's capability allowlist anyone's; no other person does, an org's
-// admin included, so nothing an admin files for a member signs in as them once
-// they own the org. A machine account's credentials are its org admin's to run.
+// account — password, email, phone, external id, second factors, passkeys, and the
+// tokens and keys that speak as them. The person writes their own, and a
+// SuperAdmin or an application the Guard admitted by its capability allowlist
+// anyone's; no other person does, an org's admin included, so nothing an admin
+// files for a member signs in as them once they own the org, or in another org
+// they belong to. A machine account's credentials are its org admin's to run.
 func Credential(ctx context.Context, db orm.DB, owner, name string) error {
 	p, ok := principal.From(ctx)
 	if ok && p.Sudo && p.App == nil {

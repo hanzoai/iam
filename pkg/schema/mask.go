@@ -70,6 +70,38 @@ func (u *User) CarrySecretsFrom(prior *User) {
 	u.MfaRememberDigest = prior.MfaRememberDigest
 }
 
+// Connectors maps each provider IAM federates to the account column holding the
+// provider's subject, named by its json name. Federation reads and writes these
+// columns through the link and sign-in seams and nothing else writes them.
+var Connectors = map[string]func(*User) *string{
+	"google":          func(u *User) *string { return &u.Google },
+	"github":          func(u *User) *string { return &u.GitHub },
+	"gitlab":          func(u *User) *string { return &u.Gitlab },
+	"gitee":           func(u *User) *string { return &u.Gitee },
+	"bitbucket":       func(u *User) *string { return &u.Bitbucket },
+	"facebook":        func(u *User) *string { return &u.Facebook },
+	"apple":           func(u *User) *string { return &u.Apple },
+	"linkedin":        func(u *User) *string { return &u.LinkedIn },
+	"discord":         func(u *User) *string { return &u.Discord },
+	"slack":           func(u *User) *string { return &u.Slack },
+	"okta":            func(u *User) *string { return &u.Okta },
+	"azuread":         func(u *User) *string { return &u.AzureAD },
+	"microsoftonline": func(u *User) *string { return &u.MicrosoftOnline },
+}
+
+// CarryLinksFrom keeps prior's federated subjects and legacy passkey rows on a
+// full-row write: a body does not link a sign-in to an account. They are written
+// by the federation link and sign-in seams and the WebAuthn ceremony.
+func (u *User) CarryLinksFrom(prior *User) {
+	if u == nil || prior == nil {
+		return
+	}
+	for _, ref := range Connectors {
+		*ref(u) = *ref(prior)
+	}
+	u.WebauthnCredentials = prior.WebauthnCredentials
+}
+
 // Mask returns a copy of k with the CONFIDENTIAL half blanked and the
 // PUBLISHABLE half intact — the split that is the whole point of the key model.
 // AccessSecret (sk-) authenticates its holder as a principal, so a listing must
