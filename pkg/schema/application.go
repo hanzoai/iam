@@ -282,15 +282,12 @@ func (a *Application) GetId() string {
 // A set, not a comparison, because the failure was a comparison that looked
 // complete. Adding a mode now means adding it here, where the reading of it is.
 //
-// An application of a reserved org serves that org alone, whatever it declares:
-// a shared admin-org application would sign anybody in through the platform's
-// own client, with the admin org as the token's owner.
+// An application of a reserved org serves that org alone.
 func (a *Application) ServesAnyOrg() bool {
 	return a.others() && !policy.IsReservedOrg(a.Organization)
 }
 
-// others reports whether the application declares that it serves orgs other
-// than its own: shared, or offering an org choice.
+// others reports whether the application is shared or offers an org choice.
 func (a *Application) others() bool {
 	if a.IsShared {
 		return true
@@ -302,13 +299,10 @@ func (a *Application) others() bool {
 	return true
 }
 
-// ErrUnconfined refuses an application of a reserved org that declares it
-// serves other orgs.
+// ErrUnconfined refuses a reserved org's application that serves other orgs.
 var ErrUnconfined = errors.New("an application of a reserved organization serves that organization alone: it cannot be shared or offer an org choice")
 
-// BeforeCreate refuses to store an unconfined application of a reserved org.
-// The rule sits on the row, so the applications API, the operator upsert and
-// the seed all meet it.
+// BeforeCreate refuses to store a reserved org's application that serves other orgs.
 func (a *Application) BeforeCreate() error {
 	if a.others() && policy.IsReservedOrg(a.Organization) {
 		return ErrUnconfined
@@ -316,8 +310,7 @@ func (a *Application) BeforeCreate() error {
 	return nil
 }
 
-// BeforeUpdate refuses the same on every update, a stored row included: such
-// a row is written again only once it serves its own org alone.
+// BeforeUpdate applies BeforeCreate's rule to every update.
 func (a *Application) BeforeUpdate(*Application) error {
 	return a.BeforeCreate()
 }
@@ -392,24 +385,12 @@ func (a *Application) Proves(secret string) bool {
 	return a.ClientSecret == "" || subtle.ConstantTimeCompare([]byte(secret), []byte(a.ClientSecret)) == 1
 }
 
-// Attended reports whether every grant through this application needs a person
-// present: a credential proved in the sign-in that asks for it, never a session
-// that already exists.
-//
-// It holds for every application of a reserved org. A session answering one
-// hands a platform token to whoever started the flow, with their own PKCE
-// challenge, and a browser surface redeems such a code with the verifier alone.
-// It holds too for an application that keeps no sign-in session
-// (EnableSigninSession off): single sign-on is what that switch declares.
+// Attended reports whether a grant needs a credential proved in the sign-in, never a session.
 func (a *Application) Attended() bool {
 	return policy.IsReservedOrg(a.Organization) || !a.EnableSigninSession
 }
 
-// Relaxes reports whether a grant through this application, while it holds a
-// secret, may be redeemed on its PKCE verifier alone: a tenant's browser surface
-// beside a backend that holds the secret (oidc authorizationCodeGrant). Never an
-// application of a reserved org, which is proved by its secret whenever it holds
-// one; a platform browser client is declared public instead.
+// Relaxes reports whether a code or refresh may be redeemed by PKCE alone while a secret is held.
 func (a *Application) Relaxes() bool {
 	return !policy.IsReservedOrg(a.Organization)
 }

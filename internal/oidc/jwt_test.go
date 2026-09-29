@@ -238,14 +238,7 @@ func TestBillingAccountForOnlyAdminsSpendThePool(t *testing.T) {
 	}
 }
 
-// A federated app reads a groups claim as STRINGS, so the membership set appears
-// under that name as flat org names — `orgs` carries a role per org and
-// stringifies to `map[Org:admin Role:admin]`, which matches nothing.
-//
-// A reserved org is named there only for a SuperAdmin. A brand org's operator
-// holding an admin-org membership is named by their tenancy alone, because a
-// consumer mapping groups→admin would otherwise grant platform authority on a
-// membership that confers none.
+// groups names a reserved org for a SuperAdmin only.
 func TestSign_GroupsNameAReservedOrgForASuperAdminOnly(t *testing.T) {
 	s := NewRSASigner(testKey(t), "cert-hanzo", "https://iam.hanzo.ai")
 	s.trail = func(Claims) error { return nil }

@@ -221,9 +221,7 @@ func TestSharing_OnlyASuperAdminChangesIt(t *testing.T) {
 	}
 }
 
-// An application of a reserved org serves that org alone: not even a SuperAdmin
-// shares it or gives it an org choice, on create or on update, and the refusal
-// is the caller's 400.
+// No one, a SuperAdmin included, shares a reserved org's application or gives it an org choice.
 func TestSharing_AReservedOrgAppIsNeverShared(t *testing.T) {
 	h := newOrgHarness(t)
 	root := h.token(t, "admin/root")
@@ -252,7 +250,7 @@ func TestSharing_AReservedOrgAppIsNeverShared(t *testing.T) {
 	if err != nil || app.IsShared || app.OrgChoiceMode != "None" {
 		t.Fatalf("stored row shared=%v choice=%q (%v), want the confined row unchanged", app.IsShared, app.OrgChoiceMode, err)
 	}
-	// A shared app of a brand org is a SuperAdmin's to make, as before.
+	// A shared app of a brand org is a SuperAdmin's to make.
 	if st := h.do(t, "POST", "/v1/iam/applications", root, `{"owner":"admin","name":"hanzo-app","organization":"hanzo","clientId":"hanzo-app","isShared":true}`); st != 200 {
 		t.Fatalf("a shared brand app: status=%d, want 200", st)
 	}

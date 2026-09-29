@@ -325,9 +325,7 @@ func deviceCodeGrant(c *zip.Ctx, db orm.DB) error {
 	if row.User == "" {
 		return tokenError(c, 400, "authorization_pending", "the device authorization is pending approval")
 	}
-	// The approval is judged again at redemption, under the rule as it stands:
-	// an approval stored under an older rule, or by an account since moved,
-	// mints nothing. The code is spent either way.
+	// The stored approver is judged again; a refusal spends the code.
 	owner, name := splitSub(row.User)
 	approver, err := store.GetUserByName(ctx, db, owner, name)
 	if err != nil {
@@ -400,20 +398,7 @@ func approveDevice(c *zip.Ctx, db orm.DB, user *schema.User, userCode string) er
 	return httpx.Ok(c, row.User)
 }
 
-// mayApprove reports whether user may look at and approve the pending device
-// authorization row, which the application app issued.
-//
-// It is the tenant rule the application's authorization code is minted under
-// (MintFor): a user of the org the code was issued in — the DEVICE row's org,
-// captured at issuance — or, through an app that serves any org, a user of any
-// org that is not reserved. So a self-service account in an org of its own
-// approves `hanzo auth login` exactly as it signs in to the console, and a user
-// in org A never approves a sign-in to an app confined to org B.
-//
-// A reserved org approves nothing, and nothing is approved into one. Approving
-// needs only a session and a code anybody can start, so a SuperAdmin approval
-// would be one phished click from a platform token; a SuperAdmin signs a CLI in
-// through admin-cli's PKCE flow instead.
+// mayApprove is MintFor's tenant rule for a device code; no reserved org approves or is approved into.
 func mayApprove(user *schema.User, row *schema.Token, app *schema.Application) bool {
 	if policy.IsReservedOrg(user.Owner) || policy.IsReservedOrg(row.Organization) {
 		return false
@@ -421,8 +406,7 @@ func mayApprove(user *schema.User, row *schema.Token, app *schema.Application) b
 	return user.Owner == row.Organization || app.ServesAnyOrg()
 }
 
-// unreserved is a membership set without its reserved orgs: the tenancy a
-// device grant's token names.
+// unreserved drops the reserved orgs from a membership set.
 func unreserved(orgs []schema.OrgRef) []schema.OrgRef {
 	out := make([]schema.OrgRef, 0, len(orgs))
 	for _, o := range orgs {

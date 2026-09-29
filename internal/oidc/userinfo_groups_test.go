@@ -49,10 +49,7 @@ func TestUserinfo_GroupsAreExactlyTheMembershipSet(t *testing.T) {
 	}
 }
 
-// An organization reaches the claim by being GRANTED and by nothing else, and a
-// reserved organization never reaches it for a brand org's person: a relying party
-// that maps a group named admin onto platform authority would otherwise grant it
-// by a membership that opens nothing.
+// groups follows the grant and never names a reserved org for a brand person.
 func TestUserinfo_GroupsFollowTheGrant(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})

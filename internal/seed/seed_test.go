@@ -632,9 +632,7 @@ func TestApply_DeclaredAdminApplicationsAreThePlatforms(t *testing.T) {
 	}
 }
 
-// init_data may not declare an application of a reserved org shared or offering
-// an org choice: the first boot refuses to create it and a later declaration
-// refuses to reconcile it, and either stops the boot naming the rule.
+// init_data declaring a shared or org-choice reserved-org application stops the boot.
 func TestSeed_AReservedOrgAppIsNeverShared(t *testing.T) {
 	ctx := context.Background()
 	for _, declared := range []string{`"isShared":true`, `"orgChoiceMode":"create"`} {

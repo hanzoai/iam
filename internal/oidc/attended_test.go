@@ -17,16 +17,11 @@ import (
 	"github.com/hanzoai/iam/pkg/store"
 )
 
-// A public client of the admin org (admin-cli) is granted only on a credential
-// proved in the sign-in that asks for it. Its code is redeemed with the PKCE
-// verifier alone at a loopback address, so a SuperAdmin's session answering for
-// it would hand a platform token to whoever started the flow.
+// An application of a reserved org is granted only on a credential proved in the sign-in.
 
 const cliRedirect = "http://127.0.0.1:8765/callback"
 
-// superSession seeds the admin org's confidential console, its public CLI and
-// the SuperAdmin admin/root, signs root in at the console, and returns the
-// session cookie.
+// superSession seeds the admin org's console and CLI and admin/root, and returns root's session cookie.
 func superSession(t *testing.T, app *zip.App, db orm.DB) string {
 	t.Helper()
 	console := seedApp(t, db, appOpts{clientID: "console", secret: "s3cret", redirectURIs: []string{testRedirect}})
@@ -66,8 +61,7 @@ func cliAuthorize(verifier, prompt string) url.Values {
 	return q
 }
 
-// The authorize endpoint sends a signed-in SuperAdmin to the page, and answers
-// prompt=none with interaction_required on the CLI's own callback.
+// Authorize sends a signed-in SuperAdmin to the page, and answers prompt=none with interaction_required.
 func TestAttended_AuthorizeNeverAnswersFromASession(t *testing.T) {
 	app, db := newServer(t)
 	cookie := superSession(t, app, db)
@@ -89,8 +83,7 @@ func TestAttended_AuthorizeNeverAnswersFromASession(t *testing.T) {
 	}
 }
 
-// The login endpoint's single-sign-on branch refuses too, with the reason the
-// page routes to its credential form.
+// The login endpoint's session branch refuses with login_required.
 func TestAttended_LoginNeverAnswersFromASession(t *testing.T) {
 	app, db := newServer(t)
 	cookie := superSession(t, app, db)
@@ -142,8 +135,7 @@ func TestAttended_CredentialSignsIn(t *testing.T) {
 	}
 }
 
-// The admin org's confidential console needs the person present too: a session
-// answers it neither silently nor at the login endpoint.
+// A session answers the admin org's confidential console neither at authorize nor at login.
 func TestAttended_ConsoleNeverAnswersFromASession(t *testing.T) {
 	app, db := newServer(t)
 	cookie := superSession(t, app, db)
@@ -166,11 +158,7 @@ func TestAttended_ConsoleNeverAnswersFromASession(t *testing.T) {
 	}
 }
 
-// An application of a reserved org that holds a secret is proved by it at every
-// redemption, a code minted on a typed credential included; a public one (admin-cli)
-// redeems on its verifier. Live, admin-console holds a secret while both
-// admin.hanzo.ai builds redeem without one, so it is declared public before this
-// rule ships.
+// A reserved org's application holding a secret needs it at every redemption; a public one redeems by PKCE.
 func TestAttended_AReservedOrgSecretBindsEveryRedemption(t *testing.T) {
 	app, db := newServer(t)
 	superSession(t, app, db)
@@ -188,7 +176,7 @@ func TestAttended_AReservedOrgSecretBindsEveryRedemption(t *testing.T) {
 		t.Fatalf("the console with its secret: %d %v", resp.StatusCode, tok)
 	}
 
-	// A family stored as a public grant before the rule renews only with the secret.
+	// A public-grant family renews only with the secret.
 	refresh := "legacy-console-refresh"
 	row := &schema.Token{
 		Owner: "admin", Name: "legacy-console", Application: "console", Organization: "admin",
