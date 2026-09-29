@@ -585,7 +585,10 @@ mints nothing (`access_denied`, code spent). An app of a reserved org answers
 `schema.Token.Device`, carried across rotation, and every token of the family
 drops reserved orgs from `orgs`/`groups` (`unreserved`), so a brand user's
 admin-org membership never rides a device token either. A SuperAdmin signs a
-CLI in through `admin-cli`'s PKCE flow.
+CLI in through `admin-cli`'s PKCE flow. `issueTokens` asks MintFor's
+reserved-org confinement again at every code, refresh, device and password
+mint, so a SuperAdmin family a device approval minted before this rule renews
+nothing (`invalid_grant`); its live access tokens run out on their own.
 
 **A session never answers for a public client of a reserved org.**
 `schema.Application.Attended` — no stored secret and a reserved `organization`,

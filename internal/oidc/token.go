@@ -550,6 +550,12 @@ func passwordGrant(c *zip.Ctx, db orm.DB) error {
 // both the code grant and refresh rotation mint through, so the token shape can
 // never drift between them.
 func issueTokens(ctx context.Context, db orm.DB, c *zip.Ctx, app *schema.Application, row *schema.Token, family string, now time.Time) (tokenResponse, error) {
+	// MintFor's reserved-org confinement, asked again at every mint of the
+	// family: a grant established around it — a device approval stored before
+	// the device rule among them — renews nothing.
+	if owner, _ := splitSub(row.User); policy.IsReservedOrg(owner) && owner != app.Organization {
+		return tokenResponse{}, errConfined
+	}
 	ttl := appTTL(app)
 	signer, err := signerFor(ctx, db, app, tokenIssuer(c), originOf(c))
 	if err != nil {
@@ -728,8 +734,15 @@ func mintError(c *zip.Ctx, err error) error {
 	if errors.Is(err, ErrNoSubject) {
 		return tokenError(c, 400, "invalid_grant", "the grant's subject no longer names a user")
 	}
+	if errors.Is(err, errConfined) {
+		return tokenError(c, 400, "invalid_grant", "the grant's subject may not use this application")
+	}
 	return tokenError(c, 500, "server_error", "")
 }
+
+// errConfined is a grant naming a reserved org's principal through an
+// application of another org.
+var errConfined = errors.New("oidc: a reserved org's principal is granted only through its own org's application")
 
 // signAccessToken signs a bare access token for a token row under the given
 // issuer — the direct sign path the end-to-end test drives.
