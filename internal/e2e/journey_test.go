@@ -329,6 +329,7 @@ func (e *env) getRaw(t *testing.T, path, bearer string) string {
 func (e *env) mint(t *testing.T, sub string) string {
 	t.Helper()
 	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		"tokenType": "access-token", "iss": "https://hanzo.id", "aud": "hanzo-test",
 		"sub": sub, "iat": time.Now().Add(-time.Minute).Unix(), "exp": time.Now().Add(time.Hour).Unix(),
 	})
 	tok.Header["kid"] = kid

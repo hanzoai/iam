@@ -26,12 +26,31 @@ import (
 var acceptedAlgs = []string{"RS256", "RS512", "ES256", "ES384", "ES512", algMLDSA65}
 
 // VerifyToken is the exported bearer-verification primitive the authz layer
-// reuses to gate the CRUD surface: it is verifyToken, so a bearer presented to a
-// protected route is trusted under the exact same closed algorithm allowlist,
-// trusted signing-cert kid resolution, and time validation as every OIDC route.
-// One verification path, one trust model — no second, weaker check.
+// reuses to gate the CRUD surface: it is verifyBearer, so a bearer presented to a
+// protected route is held to the same signature, algorithm, key and time checks
+// as every OIDC route, and is an access token this IAM issued.
 func VerifyToken(ctx context.Context, db orm.DB, tokenStr string) (*Claims, error) {
-	return verifyToken(ctx, db, tokenStr)
+	return verifyBearer(ctx, db, tokenStr)
+}
+
+// errNotBearer refuses a signed token that is not an access token: an id_token
+// proves a sign-in to the client it was issued to and carries no authority to
+// act, and a token naming no audience or an issuer this IAM does not serve was
+// not minted as a credential here.
+var errNotBearer = errors.New("verify: not an access token")
+
+// verifyBearer is the verification of a credential presented to act: verifyToken,
+// then the token must be an access token (tokenType "access-token"), name an
+// audience, and carry an issuer this IAM mints under.
+func verifyBearer(ctx context.Context, db orm.DB, tokenStr string) (*Claims, error) {
+	claims, err := verifyToken(ctx, db, tokenStr)
+	if err != nil {
+		return nil, err
+	}
+	if claims.TokenType != "access-token" || len(claims.Audience) == 0 || !issues(claims.Issuer) {
+		return nil, errNotBearer
+	}
+	return claims, nil
 }
 
 // verifyToken parses tokenStr, verifies its signature against the Cert named by

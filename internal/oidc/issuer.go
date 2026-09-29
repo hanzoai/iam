@@ -292,6 +292,32 @@ func resolveIssuer(host string) string {
 	return envIssuerResolver().issuerFor(host)
 }
 
+// issues reports whether iss is an issuer this IAM mints under: the pinned
+// default or a brand's pinned issuer, or — only under the dev host-relative
+// opt-in, where the issuer follows the request host — any issuer.
+func issues(iss string) bool {
+	r := activeResolver.Load()
+	if r == nil {
+		r = envIssuerResolver()
+	}
+	if r == nil {
+		return normalizeIssuer(iss) == devFallbackIssuer
+	}
+	iss = normalizeIssuer(iss)
+	if r.def != "" && iss == r.def {
+		return true
+	}
+	for _, v := range r.byHost {
+		if iss == normalizeIssuer(v) {
+			return true
+		}
+	}
+	if r.def == "" && len(r.byHost) == 0 {
+		return r.devHostRelative || iss == devFallbackIssuer
+	}
+	return false
+}
+
 // Issuer is the canonical OIDC issuer for a request host, for a caller outside
 // this package. It exists so a sibling that must name the issuer — the on-chain
 // anchor, which records WHERE an identity is asserted — reads the one per-brand

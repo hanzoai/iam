@@ -104,6 +104,7 @@ func (r *rig) post(t *testing.T, path, sub, body string) (int, string) {
 func (r *rig) bearer(t *testing.T, sub string) string {
 	t.Helper()
 	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		"tokenType": "access-token", "iss": "https://hanzo.id",
 		"sub": sub,
 		"azp": clientID,
 		"aud": clientID,
@@ -442,4 +443,22 @@ func pemOf(t *testing.T, k *rsa.PrivateKey) string {
 	return string(pem.EncodeToMemory(&pem.Block{
 		Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(k),
 	}))
+}
+
+// An assume re-scopes an access token and nothing else: an id_token names the
+// operator as signed in to a client, and is refused.
+func TestAssume_refusesAnIDToken(t *testing.T) {
+	r := newRig(t)
+	idToken := r.access(t, "admin/z", clientID, "id-token")
+	req := httptest.NewRequest("POST", assume, strings.NewReader(`{"org":"acme"}`))
+	req.Host = "hanzo.id"
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+idToken)
+	resp, err := testhttp.Do(r.app, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 401 {
+		t.Fatalf("assume with an id_token = %d, want 401", resp.StatusCode)
+	}
 }

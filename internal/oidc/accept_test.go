@@ -199,7 +199,7 @@ func TestAccept_onlyThePlatformsAccessTokens(t *testing.T) {
 	for name, bearer := range map[string]string{
 		"a tenant's application": r.access(t, "hanzo/ada", "acme-app", "access-token"),
 		"an ID token":            r.access(t, "hanzo/ada", clientID, "id-token"),
-		"a token with no client": r.bearer(t, "hanzo/ada"),
+		"a token with no client": r.access(t, "hanzo/ada", "", "access-token"),
 	} {
 		if status, e := r.accept(t, bearer, `{"owner":"acme","code":"LINKCODE22"}`); status != 403 {
 			t.Fatalf("%s: status=%d answer=%+v, want 403", name, status, e)
