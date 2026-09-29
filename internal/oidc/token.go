@@ -559,6 +559,9 @@ func issueTokens(ctx context.Context, db orm.DB, c *zip.Ctx, app *schema.Applica
 	if err != nil {
 		return tokenResponse{}, err
 	}
+	if row.Device {
+		id.Orgs = unreserved(id.Orgs)
+	}
 
 	access, err := signer.Sign(app, id, row.Scope, "", ttl, now)
 	if err != nil {

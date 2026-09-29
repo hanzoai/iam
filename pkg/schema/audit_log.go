@@ -61,8 +61,7 @@ const (
 	// A request a SuperAdmin made with platform authority — every one the Guard
 	// admits for them, read or write, whatever its route and answer — and the
 	// platform acts IAM performs for one outside the Guard: unlinking another
-	// person's sign-in method, approving a device sign-in for another
-	// organization's application. Filed under the actor's own org, the admin org,
+	// person's sign-in method. Filed under the actor's own org, the admin org,
 	// so the whole trail of platform authority is one query; Organization names
 	// the org acted on when there is one.
 	ActionSuperAdmin = "superadmin"

@@ -336,10 +336,9 @@ func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
 	ctx := c.Context()
 
 	// type=device: approve a pending RFC 8628 device authorization against the
-	// identity now fully proven (device.go). Device approval has its OWN tenant model —
-	// a SuperAdmin may deliberately approve a device across tenants (device.go), a
-	// blessed capability — so the reserved-org confinement MintFor enforces (which
-	// binds a SuperAdmin to its own-org app) does NOT apply to it; it precedes it.
+	// identity now fully proven (device.go). The approval is judged by the code's
+	// own application under mayApprove — MintFor's tenant rule, with every reserved
+	// org refused — not by the portal app this form names.
 	if f.Type == "device" {
 		return approveDevice(c, db, user, f.UserCode)
 	}
