@@ -296,7 +296,14 @@ func onlyCredential(ctx context.Context, db orm.DB, app *schema.Application, u *
 			return false, nil
 		}
 	}
-	if u.PasswordHash != "" || len(u.WebauthnCredentials) > 0 {
+	if u.PasswordHash != "" {
+		return false, nil
+	}
+	keys, err := passkeys(ctx, db, u)
+	if err != nil {
+		return false, err
+	}
+	if len(keys) > 0 {
 		return false, nil
 	}
 	if sendsCodes(app) &&

@@ -335,6 +335,16 @@ func (d writeFaultDB) Put(ctx context.Context, key orm.Key, src interface{}) (or
 	return d.DB.Put(ctx, key, src)
 }
 
+// A transaction faults the same writes, so a handler that writes under a row lock
+// meets the fault too.
+func (d writeFaultDB) RunInTransaction(ctx context.Context, fn func(tx orm.DB) error) error {
+	return d.DB.RunInTransaction(ctx, func(tx orm.DB) error { return fn(writeFaultDB{DB: tx, kind: d.kind}) })
+}
+
+func (d writeFaultDB) RunInTransactionWith(ctx context.Context, o *orm.TxOptions, fn func(tx orm.DB) error) error {
+	return d.DB.RunInTransactionWith(ctx, o, func(tx orm.DB) error { return fn(writeFaultDB{DB: tx, kind: d.kind}) })
+}
+
 // statusOn builds the real router over db and returns the status of one request —
 // the same wiring newHarness uses, aimed at a faulting backend.
 func statusOn(t *testing.T, db orm.DB, method, path, bearer, body string) int {

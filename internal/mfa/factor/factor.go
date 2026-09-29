@@ -384,17 +384,28 @@ func Copy(dst, src *schema.User) {
 // recovery code, remember a device. The scoping is what makes it safe: the row is
 // loaded fresh and Copy overlays exactly the multi-factor columns, so an isAdmin,
 // a balance, or a password digest arriving on an MFA request reaches nothing.
+//
+// The row is read under its lock in the transaction that writes it, so two
+// sign-ins cannot both spend one recovery code and a profile write in flight is
+// not reverted.
 func Save(ctx context.Context, db orm.DB, u *schema.User) error {
 	if u == nil {
 		return errNoUser
 	}
-	stored, err := store.GetUserByName(ctx, db, u.Owner, u.Name)
+	keyed, err := store.GetUserByName(ctx, db, u.Owner, u.Name)
 	if err != nil {
 		return err
 	}
-	if stored == nil {
+	if keyed == nil {
 		return errNoUser
 	}
-	Copy(stored, u)
-	return stored.UpdateCtx(ctx)
+	key := keyed.Key().Encode()
+	return db.RunInTransaction(ctx, func(tx orm.DB) error {
+		stored, err := orm.GetForUpdate[schema.User](tx, key)
+		if err != nil {
+			return err
+		}
+		Copy(stored, u)
+		return stored.UpdateCtx(ctx)
+	})
 }
