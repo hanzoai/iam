@@ -7,6 +7,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
@@ -92,8 +93,10 @@ func routeFrontDoor(r *zip.Group, db orm.DB) {
 }
 
 // getAppLogin returns everything a login screen needs to draw itself for one
-// application: its branding, and each sign-in method it offers with the provider
-// details that method needs.
+// application: its branding, its client id and org, and each sign-in method it
+// offers with the provider details that method needs. The application is named by
+// its client id, or by a publishable key that names it — which is how an app
+// configured by its pk- alone learns the client id it signs in as.
 //
 // The client secret is masked. Read before anyone has signed in, so it carries
 // only what is safe for a browser to see.
@@ -102,12 +105,23 @@ func getAppLogin(db orm.DB) zip.TypedHandler[screen, httpx.Answer] {
 		if in.ResponseType != "" && in.ResponseType != "code" {
 			return httpx.Bad(400, "response_type is required (must be code)", ""), nil
 		}
-		if in.ClientId == "" {
-			return httpx.Bad(400, "clientId is required", ""), nil
+		if (in.ClientId == "") == (in.PublishableKey == "") {
+			return httpx.Bad(400, "exactly one of clientId or publishableKey is required", ""), nil
 		}
-		app, err := store.GetApplicationByClientId(ctx, db, in.ClientId)
+		client, org := in.ClientId, ""
+		if in.PublishableKey != "" {
+			k, err := store.PublishableKeyByAccessKey(ctx, db, in.PublishableKey, time.Now())
+			if err != nil || k.Application == "" {
+				return httpx.Bad(400, "the publishable key names no application", ""), nil
+			}
+			client, org = k.Application, k.Owner
+		}
+		app, err := store.GetApplicationByClientId(ctx, db, client)
 		if err != nil {
 			return httpx.Bad(400, err.Error(), ""), nil
+		}
+		if app != nil && org != "" && app.Organization != org {
+			app = nil
 		}
 		if app == nil {
 			return httpx.Bad(400, "the application does not exist", ""), nil
@@ -191,6 +205,8 @@ type screen struct {
 	// ClientId is the application's OAuth client id — the one field that selects
 	// which login screen this is.
 	ClientId string `json:"clientId"`
+	// PublishableKey selects the application a pk- names, in place of ClientId.
+	PublishableKey string `json:"publishableKey"`
 	// ResponseType is the OAuth response type the screen will ask for. Only "code"
 	// is served; anything else is refused here rather than at the authorize leg,
 	// where the person has already typed a password.

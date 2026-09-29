@@ -51,6 +51,9 @@ import (
 //	email                the lookup key for a user read.
 //	clientId,            the OAuth request parameters (RFC 6749 4.1.1), which
 //	responseType         arrive in the authorize URL by definition.
+//	publishableKey       the pk- an app is configured by, which addresses the
+//	                     application it names as clientId does; shipped in
+//	                     client code by construction.
 //	limit, offset,       pagination and search.
 //	cursor, p, pageSize, q
 //	deleted              orm's soft-delete marker, declared in another module
@@ -64,7 +67,7 @@ var safe = map[string]bool{
 	"organization": true, "user": true, "application": true, "org": true,
 	"email": true,
 	"limit": true, "offset": true, "cursor": true, "p": true, "pageSize": true, "q": true,
-	"clientId": true, "responseType": true,
+	"clientId": true, "responseType": true, "publishableKey": true,
 	"deleted": true,
 }
 

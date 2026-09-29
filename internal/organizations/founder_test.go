@@ -36,6 +36,9 @@ func TestCreate_TheFounderOwnsTheOrg(t *testing.T) {
 	if owners, err := store.Owners(ctx, db, "acme"); err != nil || len(owners) != 1 || owners[0] != "hanzo/ann" {
 		t.Fatalf("owners = %v (err=%v), want [hanzo/ann]", owners, err)
 	}
+	if k, err := orm.Get[schema.Key](db, "acme/acme-app"); err != nil || k.Application != "acme-app" {
+		t.Fatalf("the new org's publishable key = %+v (err=%v), want one naming acme-app", k, err)
+	}
 
 	bad := createIn("admin", "ghost")
 	bad.Founder = "uuid-nobody"

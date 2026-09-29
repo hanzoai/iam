@@ -57,6 +57,9 @@ type Summary struct {
 	// store.AdminOrgStrangers): orgs given their founder as owner, orgs left with
 	// no owner, and admin-org memberships held by accounts of other orgs.
 	Owned, Ownerless, Strangers []string
+	// Orgs given their application and publishable key (keys.Presets), and those
+	// refused one.
+	Preset, Unpreset []string
 }
 
 var envRef = regexp.MustCompile(`\$\{([A-Z0-9_]+)\}`)

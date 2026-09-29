@@ -293,6 +293,11 @@ func provision(ctx context.Context, db orm.DB, cl claim) (provisioned, error) {
 				return &fault{500, "server_error"}
 			}
 		}
+		// The org's own application and the publishable key naming it, so its apps
+		// sign people in from the start.
+		if _, err := keys.Preset(ctx, tx, cl.slug, cl.display); err != nil {
+			return &fault{500, "server_error"}
+		}
 		out.org = cl.slug
 		out.keyCreated = keyCreated
 		return nil

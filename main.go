@@ -197,8 +197,8 @@ func serve(ctx context.Context, storeBackend, dbPath, sqlAddr, zapAddr, httpAddr
 	if err := server.Roles(ctx, db, &roles); err != nil {
 		fmt.Fprintf(os.Stderr, "iam: org-role converge incomplete: %v\n", err)
 	}
-	fmt.Fprintf(os.Stderr, "iam: org roles — owned %v, ownerless %v, admin-org strangers %v\n",
-		roles.Owned, roles.Ownerless, roles.Strangers)
+	fmt.Fprintf(os.Stderr, "iam: orgs — owned %v, ownerless %v, admin-org strangers %v, preset %v, unpreset %v\n",
+		roles.Owned, roles.Ownerless, roles.Strangers, roles.Preset, roles.Unpreset)
 
 	// MCP projects every typed CRUD handler onto one generic /mcp tool-call
 	// endpoint. The authz Guard gates it like any other route (fail-closed), but

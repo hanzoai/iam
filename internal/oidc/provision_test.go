@@ -116,6 +116,9 @@ func TestProvision_PersonalHappyPath(t *testing.T) {
 	if out.org != "dave" || !out.orgCreated || !out.keyCreated {
 		t.Fatalf("unexpected result: %+v", out)
 	}
+	if k, err := orm.Get[schema.Key](db, "dave/dave-app"); err != nil || k.Application != "dave-app" {
+		t.Fatalf("the founded org's publishable key = %+v (err=%v), want one naming dave-app", k, err)
+	}
 	if out.accessKey == "" || out.accessSecret == "" {
 		t.Fatalf("first mint must reveal pk+sk, got %+v", out)
 	}

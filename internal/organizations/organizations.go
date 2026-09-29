@@ -16,6 +16,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/keys"
 	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
@@ -166,6 +167,13 @@ func (h *OrganizationAPI) Create(ctx context.Context, in *CreateOrganizationInpu
 		entity.SetId(org.Owner + "/" + org.Name)
 		if err := entity.CreateCtx(ctx); err != nil {
 			return zip.ErrInternal(err.Error())
+		}
+		// The org's own application and the publishable key naming it, so its apps
+		// sign people in from the start.
+		if !policy.IsReservedOrg(entity.Name) {
+			if _, err := keys.Preset(ctx, tx, entity.Name, entity.DisplayName); err != nil {
+				return zip.ErrInternal(err.Error())
+			}
 		}
 		if founder == "" {
 			return nil

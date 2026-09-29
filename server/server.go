@@ -26,6 +26,7 @@ import (
 	"github.com/hanzoai/iam/feature"
 	"github.com/hanzoai/iam/internal/featurestore"
 	"github.com/hanzoai/iam/internal/keyring"
+	"github.com/hanzoai/iam/internal/keys"
 	"github.com/hanzoai/iam/internal/oidc"
 	"github.com/hanzoai/iam/internal/otp"
 	"github.com/hanzoai/iam/internal/routes"
@@ -166,10 +167,11 @@ func Seed(ctx context.Context, db orm.DB, initDataPath string) (*seed.Summary, e
 	return sum, Roles(ctx, db, sum)
 }
 
-// Roles runs the boot's org-role converge onto sum: every org whose founder is
-// on record and that has no owner gets that founder as owner, and the orgs left
-// without one and the admin-org memberships of other orgs' accounts are listed,
-// each once on the audit trail.
+// Roles runs the boot's org converge onto sum: every org whose founder is on
+// record and that has no owner gets that founder as owner, the orgs left without
+// one and the admin-org memberships of other orgs' accounts are listed, each once
+// on the audit trail, and every tenant org gets its application and publishable
+// key.
 func Roles(ctx context.Context, db orm.DB, sum *seed.Summary) error {
 	var err error
 	if sum.Owned, sum.Ownerless, err = store.BackfillOwners(ctx, db); err != nil {
@@ -177,6 +179,9 @@ func Roles(ctx context.Context, db orm.DB, sum *seed.Summary) error {
 	}
 	if sum.Strangers, err = store.AdminOrgStrangers(ctx, db); err != nil {
 		return fmt.Errorf("admin org: %w", err)
+	}
+	if sum.Preset, sum.Unpreset, err = keys.Presets(ctx, db); err != nil {
+		return fmt.Errorf("presets: %w", err)
 	}
 	return nil
 }

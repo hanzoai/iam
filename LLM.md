@@ -318,6 +318,21 @@ nothing.
   failed write returns `server_error`. Refresh rotates in one transaction, so a
   failed write consumes nothing and racing rotations mint once.
 
+## A publishable key signs an app in
+
+An app is configured by its `pk-` alone. `GET /v1/iam/auth/application?publishableKey=`
+answers the application the key names (`Key.Application`, which must serve the
+key's own org): its `clientId` and `organization`, secret masked. The app then runs
+PKCE against that client id; no secret exists to hold.
+
+Every tenant org owns one such pair (`keys.Preset`): application `<org>-app`
+(public, `authorization_code` + `refresh_token`, `http://127.0.0.1/auth/callback`
+on any port until the org registers its hosts, the org's own people only, no
+signup, signed by the platform cert) and key `<org>/<org>-app` (scope `publish`).
+Organization create and self-service onboarding make it with the org; boot makes
+it for every org that lacks it (`keys.Presets`). An org's own application of that
+name is kept as it is.
+
 ## Org roles — owner > admin > member, each in one org
 
 An org-wide membership row carries the role; a workspace or project row admits
