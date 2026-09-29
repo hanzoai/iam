@@ -13,7 +13,9 @@ import (
 // signed signs claims under the trusted cert, the way IAM signs every token.
 func (h *harness) signed(t *testing.T, claims jwt.MapClaims) string {
 	t.Helper()
-	claims["iat"] = time.Now().Add(-time.Minute).Unix()
+	if _, ok := claims["iat"]; !ok {
+		claims["iat"] = time.Now().Unix()
+	}
 	claims["exp"] = time.Now().Add(time.Hour).Unix()
 	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	tok.Header["kid"] = signingKid

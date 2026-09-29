@@ -108,7 +108,7 @@ func rescope(ctx context.Context, db orm.DB, in *assumeBody, org string) (*httpx
 	if err != nil {
 		return httpx.Bad(401, "the access token is not valid", CodeLoginRequired), nil
 	}
-	user, err := store.GetUserBySubject(ctx, db, claims.Subject)
+	user, err := Holder(ctx, db, claims)
 	if err != nil {
 		return httpx.Bad(500, "server_error", ""), nil
 	}
@@ -158,8 +158,19 @@ func rescope(ctx context.Context, db orm.DB, in *assumeBody, org string) (*httpx
 	if org != "" {
 		id.Orgs = append(id.Orgs, schema.OrgRef{Org: org, Role: store.RoleAdmin})
 	}
-	ttl := appTTL(app)
+	// A re-scoped token never outlives the one presented, so assume and release in
+	// turn renew nothing.
 	now := nowFunc()
+	ttl := appTTL(app)
+	if claims.ExpiresAt == nil {
+		return httpx.Bad(401, "the access token is not valid", CodeLoginRequired), nil
+	}
+	if left := claims.ExpiresAt.Time.Sub(now); left < ttl {
+		ttl = left
+	}
+	if ttl <= 0 {
+		return httpx.Bad(401, "the access token is not valid", CodeLoginRequired), nil
+	}
 	access, err := signer.SignUserToken(id, user.Owner, audienceOf(claims, app), app.ClientId, claims.Scope, ttl, now)
 	if err != nil {
 		return httpx.Bad(500, "server_error", ""), nil
@@ -177,6 +188,17 @@ func rescope(ctx context.Context, db orm.DB, in *assumeBody, org string) (*httpx
 	row.Name = "asm-" + hashToken(access)[:32]
 	if err := store.PersistToken(ctx, db, row); err != nil {
 		return httpx.Bad(500, "server_error", ""), nil
+	}
+
+	// Stepping back out ends the token that was inside the tenant.
+	if org == "" {
+		if presented, err := store.GetTokenByAccessTokenHash(ctx, db, hashToken(bearer)); err != nil {
+			return httpx.Bad(500, "server_error", ""), nil
+		} else if presented != nil {
+			if err := store.DeleteToken(ctx, db, presented); err != nil {
+				return httpx.Bad(500, "server_error", ""), nil
+			}
+		}
 	}
 
 	record(ctx, db, actionFor(org), actor, org, in.Forwarded, 200)

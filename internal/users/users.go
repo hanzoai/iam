@@ -457,6 +457,11 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 	if err := Authorize(ctx, existing.Owner); err != nil {
 		return nil, err
 	}
+	// A SuperAdmin is suspended or removed only by revokeSuperAdmin, which keeps
+	// the last one and records the act.
+	if existing.SuperAdmin() && ((in.User.IsForbidden && !existing.IsForbidden) || (in.User.IsDeleted && !existing.IsDeleted)) {
+		return nil, zip.ErrForbidden("a SuperAdmin is dismissed with DELETE /v1/iam/superadmins/" + existing.Name + ", not suspended here")
+	}
 
 	u := &in.User
 	u.Owner, u.Name = owner, name
@@ -583,6 +588,11 @@ func (a *API) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 	}
 	if err := Authorize(ctx, existing.Owner); err != nil {
 		return nil, err
+	}
+	// A SuperAdmin is removed only by revokeSuperAdmin, which keeps the last one
+	// and records the act.
+	if existing.SuperAdmin() {
+		return nil, zip.ErrForbidden("a SuperAdmin is dismissed with DELETE /v1/iam/superadmins/" + existing.Name)
 	}
 	// Take the account off every roster BEFORE removing it. The membership rows
 	// are what an org's member list is built from, so an account deleted while

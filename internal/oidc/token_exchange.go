@@ -78,7 +78,7 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 	}
 	// Resolve the acted-for user from the subject_token's `sub` — which is now the
 	// stable UUID for a v2-minted token (store.GetUserBySubject decodes Id-or-name).
-	user, err := store.GetUserBySubject(ctx, db, claims.Subject)
+	user, err := Holder(ctx, db, claims)
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}

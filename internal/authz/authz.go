@@ -784,7 +784,7 @@ func resolve(c *zip.Ctx, db orm.DB) (*principal.Principal, error) {
 	// Super from the LOADED record — never from the `owner` claim (the app's org), so
 	// a token whose owner claim names admin but whose subject is a tenant user gets
 	// the tenant's authority, not the claim's (the org-confusion defense).
-	u, err := store.GetUserBySubject(ctx, db, claims.Subject)
+	u, err := oidc.Holder(ctx, db, claims)
 	if err != nil {
 		return nil, err // fail closed: cannot establish the principal
 	}

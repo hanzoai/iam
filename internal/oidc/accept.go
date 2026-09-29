@@ -202,7 +202,7 @@ func acceptCaller(ctx context.Context, db orm.DB, in *acceptBody) (*schema.User,
 		if err != nil {
 			return nil, "", nil, zip.ErrInternal(err.Error())
 		}
-		u, err := store.GetUserBySubject(ctx, db, claims.Subject)
+		u, err := Holder(ctx, db, claims)
 		if err != nil {
 			return nil, "", nil, zip.ErrInternal(err.Error())
 		}

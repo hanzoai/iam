@@ -147,7 +147,7 @@ func callerFrom(ctx context.Context, db orm.DB, sessionCookie, bearer string) (o
 	// The `sub` is a stable UUID for a v2 token; resolve it to the real (owner,name)
 	// so the account/whoami envelope reports the identity, not the opaque subject. A
 	// subject with no user row (a machine token) is not an account caller.
-	u, err := store.GetUserBySubject(ctx, db, claims.Subject)
+	u, err := Holder(ctx, db, claims)
 	if err != nil || u == nil {
 		return "", "", false
 	}

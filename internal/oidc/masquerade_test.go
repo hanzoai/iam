@@ -13,7 +13,9 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"io"
@@ -460,5 +462,58 @@ func TestAssume_refusesAnIDToken(t *testing.T) {
 	}
 	if resp.StatusCode != 401 {
 		t.Fatalf("assume with an id_token = %d, want 401", resp.StatusCode)
+	}
+}
+
+// A re-scoped token never outlives the one presented, and releasing ends the
+// token that was inside the tenant.
+func TestAssume_neverRenewsAndReleaseEndsTheAssumedToken(t *testing.T) {
+	r := newRig(t)
+	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		"sub": "admin/z", "azp": clientID, "aud": clientID, "iss": "https://hanzo.id", "tokenType": "access-token",
+		"iat": time.Now().Add(-time.Minute).Unix(), "exp": time.Now().Add(10 * time.Minute).Unix(),
+	})
+	tok.Header["kid"] = kid
+	short, err := tok.SignedString(r.key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	post := func(path, bearer, body string) (int, string) {
+		req := httptest.NewRequest("POST", path, strings.NewReader(body))
+		req.Host = "hanzo.id"
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+bearer)
+		resp, err := testhttp.Do(r.app, req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(b)
+	}
+	status, body := post(assume, short, `{"org":"acme"}`)
+	if status != 200 {
+		t.Fatalf("assume = %d", status)
+	}
+	_, claims := answered(t, body)
+	if exp, _ := claims["exp"].(float64); int64(exp) > time.Now().Add(10*time.Minute).Unix()+1 {
+		t.Fatalf("the assumed token outlives the one presented by %ds", int64(exp)-time.Now().Add(10*time.Minute).Unix())
+	}
+	var env struct {
+		Data struct {
+			AccessToken string `json:"accessToken"`
+		} `json:"data"`
+	}
+	_ = json.Unmarshal([]byte(body), &env)
+	inside := env.Data.AccessToken
+	sum := sha256.Sum256([]byte(inside))
+	h := hex.EncodeToString(sum[:])
+	if row, _ := store.GetTokenByAccessTokenHash(context.Background(), r.db, h); row == nil {
+		t.Fatal("the assumed token has no row")
+	}
+	if status, _ := post(release, inside, `{}`); status != 200 {
+		t.Fatalf("release = %d", status)
+	}
+	if row, _ := store.GetTokenByAccessTokenHash(context.Background(), r.db, h); row != nil {
+		t.Fatal("release left the assumed token live")
 	}
 }
