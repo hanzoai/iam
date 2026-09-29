@@ -324,3 +324,51 @@ func TestRefresh_RacingRotationsMintOnce(t *testing.T) {
 		t.Fatalf("%d of %d racing rotations minted, want 1", minted, n)
 	}
 }
+
+// A service account in the admin org signing in at the admin console is a
+// machine on its token: authz reads no platform authority, groups name no
+// reserved org, and no SuperAdmin row is written.
+func TestTrail_AdminOrgServiceAccountIsNoSuperAdmin(t *testing.T) {
+	app, db := newServer(t)
+	superSession(t, app, db)
+	seedUserInOrg(t, db, "admin", "bot", "bot@hanzo.ai", "pw")
+	u, err := store.GetUserByName(tctx(), db, "admin", "bot")
+	if err != nil || u == nil {
+		t.Fatalf("load the service account: %v", err)
+	}
+	u.Type = schema.ServiceAccount
+	if err := u.UpdateCtx(tctx()); err != nil {
+		t.Fatalf("mark the service account: %v", err)
+	}
+	verifier := "verifier-service-account-012345678901234567890123456"
+	q := url.Values{
+		"clientId": {"console"}, "redirectUri": {testRedirect}, "scope": {"openid"},
+		"code_challenge": {pkce.Challenge(verifier)}, "code_challenge_method": {"S256"},
+	}
+	_, body := do(t, app, jsonReq("POST", PathLogin+"?"+q.Encode(), map[string]any{
+		"type": "code", "clientId": "console", "organization": "admin", "username": "bot", "password": "pw",
+	}))
+	code, _ := decode(t, body)["data"].(string)
+	if code == "" {
+		t.Fatalf("sign-in: %s", body)
+	}
+	resp, tok := exchangeCode(t, app, url.Values{
+		"code": {code}, "client_id": {"console"}, "client_secret": {"s3cret"},
+		"redirect_uri": {testRedirect}, "code_verifier": {verifier},
+	})
+	if resp.StatusCode != 200 {
+		t.Fatalf("exchange: %d %v", resp.StatusCode, tok)
+	}
+	for _, kind := range []string{"access_token", "id_token"} {
+		cl, err := verifyToken(tctx(), db, tok[kind].(string))
+		if err != nil {
+			t.Fatalf("%s: %v", kind, err)
+		}
+		if cl.Type != schema.Program || cl.sudo() || len(cl.Groups) != 0 {
+			t.Fatalf("%s type=%q sudo=%v groups=%v, want a program with no platform authority", kind, cl.Type, cl.sudo(), cl.Groups)
+		}
+	}
+	if n := len(trailRows(t, db)); n != 0 {
+		t.Fatalf("a service account's token left %d SuperAdmin rows", n)
+	}
+}

@@ -283,7 +283,9 @@ nothing.
   with an admin membership is an ordinary hanzo account; `admin/z` is the
   operator.
 - **A machine in `admin` is never SuperAdmin** — `User.Type` service-account or
-  application. `admin/provisioner` is declared `type: service` in universe's
+  application — and its token says so: `identityOf` stamps `type:
+  "application"` (`kindOf`) on any user row that is a machine, so
+  `authz.Claims.Sudo` refuses it and its `groups` name no reserved org. `admin/provisioner` is declared `type: service` in universe's
   provision document but the upsert writes it with no machine class, so it is a
   person here and keeps platform authority. Stamping a class on it would end its
   converge.
