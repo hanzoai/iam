@@ -37,3 +37,4 @@ web/build/
 CLAUDE.md
 AGENTS.md
 GEMINI.md
+.invariants.log

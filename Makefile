@@ -5,7 +5,7 @@
 # detector, which is where this repo's store and session defects actually show
 # up. -count=1 defeats the cache; -race is the point.
 
-.PHONY: test build fmt vet generate
+.PHONY: test invariants build fmt vet generate
 
 # Prose reaches the document ONLY through this step. Go drops comments at compile
 # time, so an operation's description cannot be read off the running binary: the
@@ -27,6 +27,15 @@ test: ## Run the full suite — the gate. Everything must be green to ship.
 	# One invocation is faster and names all of them.
 	@go run github.com/zap-proto/zip/cmd/zipdoc -check ./... || { echo "run: make generate"; exit 1; }
 	go test ./... -race -count=1
+
+# ADMIN_NAMESPACE_INVARIANTS (HIP-0527 §8 R7), run as a named suite: every test
+# named TestAdminNamespace…, and one line per ledger row saying where it stands.
+# A reporting row fails only when its violations differ from the ledger in
+# internal/invariants; an enforcing row fails on any.
+invariants: ## Run ADMIN_NAMESPACE_INVARIANTS and print each row's standing.
+	@go test ./... -race -count=1 -run '^TestAdminNamespace' -v > .invariants.log; status=$$?; \
+		grep -hE 'ADMIN_NAMESPACE_INVARIANTS|^--- FAIL|^FAIL' .invariants.log | sed 's/^ *//' | sort -u; \
+		rm -f .invariants.log; exit $$status
 
 build: ## Build every package.
 	go build ./...

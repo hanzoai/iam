@@ -28,3 +28,8 @@ test:
       set -e
       go build ./...
       make test
+  # ADMIN_NAMESPACE_INVARIANTS (HIP-0527 §8 R7): the named suite, required for
+  # merge. It prints every ledger row's standing; a row fails when what it
+  # measures differs from internal/invariants' ledger.
+  - name: admin-namespace-invariants
+    run: make invariants

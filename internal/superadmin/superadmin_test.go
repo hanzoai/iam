@@ -22,6 +22,7 @@ import (
 	ormdb "github.com/hanzoai/orm/db"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/invariants"
 	"github.com/hanzoai/iam/internal/keyring"
 	"github.com/hanzoai/iam/internal/routes"
 	"github.com/hanzoai/iam/internal/superadmin"
@@ -146,7 +147,7 @@ func (r *rig) facts(t *testing.T, action string) []*schema.AuditLog {
 // An appointment creates admin/<name> for a person with a proven address: a
 // SuperAdmin holding no credential, no org role and no admin flag, with the fact
 // on the platform trail, and leaves the person's own account as it was.
-func TestGrant_createsANewAccountHoldingNothing(t *testing.T) {
+func TestAdminNamespace_grantCreatesANewAccountHoldingNothing(t *testing.T) {
 	r := boot(t)
 	before := *r.row(t, "acme", "carol")
 	code, body := r.do(t, "POST", superadmin.Path, r.token(t, "admin/root"), `{"target":{"owner":"acme","name":"carol"}}`)
@@ -165,12 +166,20 @@ func TestGrant_createsANewAccountHoldingNothing(t *testing.T) {
 	case u.Id == "" || u.Id == before.Id || body["id"] != u.Id:
 		t.Errorf("the appointed account's subject = %q (person %q, answer %v)", u.Id, before.Id, body["id"])
 	}
-	if u.IsAdmin || u.PasswordHash != "" || u.AccessKey != "" || u.AccessSecret != "" || u.TotpSecret != "" {
-		t.Error("the appointed account holds an admin flag or a credential")
+	// The one path whose account lives under admin: it holds no flag, no
+	// credential and no membership. (orgs still names the admin directory for
+	// every SuperAdmin; that is row I2.)
+	var authority []string
+	if u.IsAdmin {
+		authority = append(authority, "admin-flag")
+	}
+	if u.PasswordHash != "" || u.AccessKey != "" || u.AccessSecret != "" || u.TotpSecret != "" {
+		authority = append(authority, "credential")
 	}
 	if rows, _ := store.MembershipsByUser(context.Background(), r.db, "admin/carol"); len(rows) > 0 {
-		t.Error("the appointed account holds a membership")
+		authority = append(authority, "membership")
 	}
+	invariants.Report(t, "I19 superadmin", authority)
 	after := r.row(t, "acme", "carol")
 	if after.Owner != before.Owner || after.IsAdmin != before.IsAdmin || after.Id != before.Id || after.PasswordHash != before.PasswordHash {
 		t.Error("an appointment changed the person's own account")
