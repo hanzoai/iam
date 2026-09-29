@@ -14,6 +14,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
@@ -139,7 +140,7 @@ func (h *OrganizationAPI) List(ctx context.Context, in *ListOrganizationsInput) 
 		store.Record(ctx, h.DB, &schema.AuditLog{
 			Owner:      p.Org,
 			User:       p.Org + "/" + p.User,
-			ClientIp:   in.Forwarded,
+			ClientIp:   httpx.Visitor(in.Forwarded),
 			Action:     schema.ActionListOrgs,
 			Object:     in.Query,
 			Method:     "GET",
