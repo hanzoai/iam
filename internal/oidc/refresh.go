@@ -62,11 +62,12 @@ func refreshTokenGrant(c *zip.Ctx, db orm.DB) error {
 	// expiry, for exactly the clients refresh_token exists for.
 	//
 	// It never widens: a grant that WAS client-authenticated still must
-	// authenticate, and a presented secret is always verified.
+	// authenticate, a presented secret is always verified, and an application of
+	// a reserved org is never relaxed (Application.Relaxes).
 	if clientID != "" && subtle.ConstantTimeCompare([]byte(clientID), []byte(app.ClientId)) != 1 {
 		return tokenError(c, 400, "invalid_grant", "client mismatch")
 	}
-	if app.ClientSecret != "" && (clientSecret != "" || !tok.PublicGrant) && !app.Proves(clientSecret) {
+	if app.ClientSecret != "" && (clientSecret != "" || !tok.PublicGrant || !app.Relaxes()) && !app.Proves(clientSecret) {
 		return tokenErrorClient(c, "client authentication failed")
 	}
 

@@ -394,12 +394,24 @@ func (a *Application) Proves(secret string) bool {
 
 // Attended reports whether every grant through this application needs a person
 // present: a credential proved in the sign-in that asks for it, never a session
-// that already exists. It holds for a public client of a reserved org, such as
-// admin-cli. Its code is redeemed with the PKCE verifier alone, at a loopback
-// address any local process can listen on, so a code answered from a
-// SuperAdmin's session would be a platform token for whoever started the flow.
+// that already exists.
+//
+// It holds for every application of a reserved org. A session answering one
+// hands a platform token to whoever started the flow, with their own PKCE
+// challenge, and a browser surface redeems such a code with the verifier alone.
+// It holds too for an application that keeps no sign-in session
+// (EnableSigninSession off): single sign-on is what that switch declares.
 func (a *Application) Attended() bool {
-	return a.ClientSecret == "" && policy.IsReservedOrg(a.Organization)
+	return policy.IsReservedOrg(a.Organization) || !a.EnableSigninSession
+}
+
+// Relaxes reports whether a grant through this application, while it holds a
+// secret, may be redeemed on its PKCE verifier alone: a tenant's browser surface
+// beside a backend that holds the secret (oidc authorizationCodeGrant). Never an
+// application of a reserved org, which is proved by its secret whenever it holds
+// one; a platform browser client is declared public instead.
+func (a *Application) Relaxes() bool {
+	return !policy.IsReservedOrg(a.Organization)
 }
 
 // IsPasswordEnabled reports whether password sign-in is available: the explicit

@@ -590,18 +590,35 @@ reserved-org confinement again at every code, refresh, device and password
 mint, so a SuperAdmin family a device approval minted before this rule renews
 nothing (`invalid_grant`); its live access tokens run out on their own.
 
-**A session never answers for a public client of a reserved org.**
-`schema.Application.Attended` — no stored secret and a reserved `organization`,
-i.e. `admin-cli` — needs the person present: `MintFor` refuses a grant whose
-`Mint.Session` is set (silent SSO at authorize, and the credential-less
-`POST /v1/iam/login` branch). Authorize answers `prompt=none` with
-`interaction_required` and otherwise sends the browser to the page, whose
-credential form is the interaction; the login branch answers `login_required`.
-A click cannot be the consent: any page that can send the cookie can send the
-click. A confidential admin-org app (`admin-console`) keeps SSO, and so does
-every tenant app. The hosted page re-enters authorize after MFA enrollment
-(`id` `completeAfterAuth`), so enrolling a factor at `admin-cli` asks for the
-password once more.
+**A session never answers for an application of a reserved org, or for one
+that keeps no sign-in session.** `schema.Application.Attended` — a reserved
+`organization` (secret or not: `admin-cli`, `admin-console`,
+`hanzo-admin-guard`) or `enableSigninSession` off — needs the person present:
+`MintFor` refuses a grant whose `Mint.Session` is set (silent SSO at authorize,
+and the credential-less `POST /v1/iam/login` branch). Authorize answers
+`prompt=none` with `interaction_required` and otherwise sends the browser to
+the page, whose credential form is the interaction; the login branch answers
+`login_required`. A click cannot be the consent: any page that can send the
+cookie can send the click. Live 2026-09-29, `hanzo-cli`, `hanzo-git` and
+`hanzo-cd` carry `enableSigninSession: false`, so each asks for a credential
+even when hanzo.id holds a session. The hosted page re-enters authorize after
+MFA enrollment (`id` `completeAfterAuth`), so enrolling a factor at an attended
+app asks for the password once more.
+
+**An application of a reserved org that holds a secret is proved by it at every
+redemption.** `Application.Relaxes` is false for a reserved org, so neither the
+code grant's PKCE relaxation nor a refresh family's `PublicGrant` stands in for
+the secret there; a platform browser client is declared public instead. Tenant
+apps keep the relaxation (hanzo-cloud, hanzo-chat and the other @hanzo/iam SPAs
+redeem without the secret their backends hold). Measured 2026-09-29, read-only
+(`POST /v1/iam/oauth/device` answers `invalid_client` before the grant check for
+an app holding a secret): `admin-console` and `hanzo-admin-guard` hold one, and
+both admin.hanzo.ai builds (`hanzo/console`, `hanzo/admin`) redeem
+`admin-console` codes in the browser without it. `admin-console` must be
+declared public (provision `public: true`, its live redirects stated) before
+this ships, or admin.hanzo.ai sign-in answers `invalid_client`. cloud's
+`ADMIN_CONSOLE_CLIENT_SECRET` path keeps working: a public app proves any
+presented secret (`Application.Proves`).
 
 **One client id.** `hanzo-cli` is the id BOTH CLIs authenticate as — Rust
 `hanzoai/cli` (`src/iam/oauth.rs` `CLIENT_ID`) and the Go control CLI

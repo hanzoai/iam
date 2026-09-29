@@ -208,8 +208,9 @@ func authorizationCodeGrant(c *zip.Ctx, db orm.DB) error {
 	// the fix (it breaks client_credentials, which requires a registered secret).
 	//
 	// A code with NO PKCE challenge still requires the secret, so this is not a
-	// downgrade path: an attacker cannot skip client auth by omitting PKCE.
-	clientAuthed := app.ClientSecret != "" && (clientSecret != "" || tok.CodeChallenge == "")
+	// downgrade path: an attacker cannot skip client auth by omitting PKCE. An
+	// application of a reserved org is never relaxed (Application.Relaxes).
+	clientAuthed := app.ClientSecret != "" && (clientSecret != "" || tok.CodeChallenge == "" || !app.Relaxes())
 	if clientAuthed && !app.Proves(clientSecret) {
 		return tokenErrorClient(c, "client authentication failed")
 	}
