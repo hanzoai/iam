@@ -810,3 +810,38 @@ func TestDevice_ApproveWithoutSessionIsRefused(t *testing.T) {
 		t.Fatalf("an unapproved device must not mint: %v", m)
 	}
 }
+
+// A refresh family a SuperAdmin device approval minted before the rule renews
+// nothing: every mint of a grant asks MintFor's reserved-org confinement again.
+// The same family for a tenant renews, which is what proves the fixture.
+func TestDevice_StoredSuperAdminFamilyRenewsNothing(t *testing.T) {
+	app, db := newServer(t)
+	seedDeviceApp(t, db, "hanzo-app")
+	seedUserInOrg(t, db, policy.AdminOrg, "root", "root@hanzo.ai", "pw")
+	for _, tc := range []struct {
+		user string
+		want int
+	}{{"admin/root", 400}, {"hanzo/alice", 200}} {
+		refresh := "legacy-refresh-" + tc.user
+		row := &schema.Token{
+			Owner: "admin", Name: "dc-" + randHex(8), Application: "hanzo-app",
+			Organization: "hanzo", User: tc.user, Scope: "openid", TokenType: "Bearer",
+			RefreshTokenHash: hashToken(refresh), RefreshExpireIn: time.Now().Add(time.Hour).Unix(),
+			PublicGrant: true,
+		}
+		row.RefreshFamily = row.Owner + "/" + row.Name
+		if err := store.PersistToken(tctx(), db, row); err != nil {
+			t.Fatalf("store the family: %v", err)
+		}
+		resp, body := do(t, app, formReq("POST", PathToken, url.Values{
+			"grant_type": {"refresh_token"}, "client_id": {"hanzo-app"}, "refresh_token": {refresh},
+		}))
+		m := decode(t, body)
+		if resp.StatusCode != tc.want {
+			t.Fatalf("%s refresh: %d %v, want %d", tc.user, resp.StatusCode, m, tc.want)
+		}
+		if tc.want == 400 && (m["error"] != "invalid_grant" || m["access_token"] != nil) {
+			t.Fatalf("%s refresh answered %v", tc.user, m)
+		}
+	}
+}
