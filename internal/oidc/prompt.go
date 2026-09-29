@@ -198,8 +198,7 @@ func silentGrant(c *zip.Ctx, db orm.DB, app *schema.Application, q authorizeRequ
 		Session:             true,
 	})
 	if errors.Is(err, errAttended) {
-		// The application wants the person present: the page asks for a
-		// credential, and a prompt=none client is told it needs one.
+		// An attended application needs a credential.
 		return "", errInteractionRequired
 	}
 	if err != nil {

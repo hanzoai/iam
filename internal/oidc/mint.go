@@ -33,13 +33,11 @@ type Mint struct {
 	CodeChallengeMethod string
 	Resource            string
 
-	// Session says the person was proved by a session they already hold, not by
-	// a credential presented in this sign-in.
+	// Session says a session, not a credential in this sign-in, proved the person.
 	Session bool
 }
 
-// errAttended refuses a session-answered grant through an application that
-// needs a person present (schema.Application.Attended).
+// errAttended refuses a session-answered grant to an attended application.
 var errAttended = errors.New("this application needs you to sign in again")
 
 // MintFor resolves what a successful authentication returns to the SDK: the
@@ -59,9 +57,7 @@ var errAttended = errors.New("this application needs you to sign in again")
 //     challenge — no downgrade.
 //   - Reserved-org confinement: a built-in/SuperAdmin principal is grantable
 //     ONLY through an application that serves its own reserved org.
-//   - Presence: an attended application (any application of a reserved org, or
-//     one that keeps no sign-in session) is granted only on a credential proved
-//     in this sign-in, never on a session.
+//   - Presence: an attended application is granted only on a credential, never a session.
 func MintFor(ctx context.Context, db orm.DB, app *schema.Application, userID string, p Mint) (string, error) {
 	// The user's org is the owner half of its own id, set server-side at
 	// authentication — never read from the request.
@@ -82,8 +78,7 @@ func MintFor(ctx context.Context, db orm.DB, app *schema.Application, userID str
 	if policy.IsReservedOrg(org) && (app == nil || org != app.Organization) {
 		return "", errors.New("the user is not permitted to sign in to this application")
 	}
-	// An attended application is never answered from a session, whichever door
-	// the session came in by.
+	// An attended application is never answered from a session.
 	if p.Session && app != nil && app.Attended() {
 		return "", errAttended
 	}

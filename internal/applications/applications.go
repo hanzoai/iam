@@ -369,8 +369,7 @@ func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 	}
 }
 
-// written answers a refused write: the row's own refusal is the caller's to fix,
-// anything else is the store's.
+// written maps a store error to its HTTP answer.
 func written(err error) error {
 	if errors.Is(err, schema.ErrUnconfined) {
 		return zip.ErrBadRequest(err.Error())

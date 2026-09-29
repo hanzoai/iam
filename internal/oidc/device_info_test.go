@@ -145,9 +145,7 @@ func TestDeviceInfo_TenantBoundary(t *testing.T) {
 	}
 }
 
-// The phish, as a SuperAdmin would meet it: signed in at their own console, they
-// open a code somebody else started. The page learns nothing and the one click
-// approves nothing.
+// A SuperAdmin's session neither reads nor approves another app's device code.
 func TestDeviceInfo_SuperAdminSessionApprovesNothing(t *testing.T) {
 	app, db := newServer(t)
 	console := seedApp(t, db, appOpts{clientID: "console", secret: "s3cret", redirectURIs: []string{testRedirect}})

@@ -63,8 +63,7 @@ func refreshTokenGrant(c *zip.Ctx, db orm.DB) error {
 	// expiry, for exactly the clients refresh_token exists for.
 	//
 	// It never widens: a grant that WAS client-authenticated still must
-	// authenticate, a presented secret is always verified, and an application of
-	// a reserved org is never relaxed (Application.Relaxes).
+	// authenticate, and a presented secret is always verified.
 	if clientID != "" && subtle.ConstantTimeCompare([]byte(clientID), []byte(app.ClientId)) != 1 {
 		return tokenError(c, 400, "invalid_grant", "client mismatch")
 	}
@@ -91,16 +90,8 @@ func refreshTokenGrant(c *zip.Ctx, db orm.DB) error {
 		scope = req
 	}
 
-	// Rotate: consume the presented token, then mint a successor in the same
-	// family. The successor is a new row so the consumed one remains as a
-	// tripwire for replay until the family is revoked or expires.
-	//
-	// All three writes are ONE transaction with the mint between them, because
-	// the mint writes too: a SuperAdmin token's record (trail.go). A mint that
-	// fails, that record included, leaves the presented token unconsumed, so a
-	// passing fault costs the holder a retry and not the session. The presented
-	// row is read again inside it, so of two rotations racing on one token only
-	// the first mints and the second is a replay.
+	// Rotate in one transaction: re-read and consume the presented token, mint
+	// its successor, persist it. A failed mint consumes nothing.
 	nameSeed, err := newOpaqueToken()
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
@@ -127,22 +118,12 @@ func refreshTokenGrant(c *zip.Ctx, db orm.DB) error {
 			Nonce:        tok.Nonce,
 			Resource:     tok.Resource,
 			RedirectUri:  tok.RedirectUri,
-			// The successor is the SAME grant, so it carries the same establishment
-			// fact. Dropping it would make only the FIRST refresh work and the second
-			// 401 — a session that dies an hour late instead of on time.
+			// The successor is the same grant.
 			PublicGrant: tok.PublicGrant,
 			Device:      tok.Device,
 		}
 		nu.Name = "rt-" + nameSeed[:24]
-		// issueTokens re-resolves nu.User against the user table, so THIS is where a
-		// rotation revalidates the subject it inherited. It matters here more than at
-		// any other grant: the User key above is copied from the predecessor, frozen at
-		// the establishment that minted the family, and a user can be deleted, banned,
-		// or re-keyed underneath it afterwards. Without the re-read, a family outlives
-		// the identity it was granted to and every rotation renews that.
-		//
-		// A refusal writes nothing, and the family stays refused for as long as its
-		// subject is: every rotation asks again.
+		// issueTokens re-resolves the inherited subject.
 		r, err := issueTokens(ctx, tx, c, app, nu, tok.RefreshFamily, now)
 		if err != nil {
 			return err

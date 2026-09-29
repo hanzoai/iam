@@ -299,15 +299,12 @@ func TestDevice_ConfidentialClientAuth(t *testing.T) {
 	}
 }
 
-// Tenant boundary: a device code is approved under its application's tenant
-// rule and never by, or into, a reserved org. A SuperAdmin approves nothing:
-// approving needs only a session and a code anybody can start.
+// A device code is approved under its application's tenant rule, never by or into a reserved org.
 func TestDevice_ApprovalTenantBoundary(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		org  string // approver's org; the device app lives in "hanzo"
-		// operator grants a membership in the reserved org, which approves
-		// nothing the account's own org could not.
+		// operator grants a membership in the reserved org.
 		operator bool
 		// orgChoice is the device app's OrgChoiceMode. "create" is an application
 		// whose accounts work in orgs of their own — the self-service CLI a
@@ -364,8 +361,7 @@ func TestDevice_ApprovalTenantBoundary(t *testing.T) {
 	}
 }
 
-// An application of a reserved org issues no device code, and a code issued
-// before its org became reserved redeems nothing.
+// A reserved org's application issues no device code and redeems none.
 func TestDevice_ReservedOrgAppIssuesNoCode(t *testing.T) {
 	app, db := newServer(t)
 	cli := seedApp(t, db, appOpts{clientID: "admin-cli", grants: deviceGrants})
@@ -393,8 +389,7 @@ func TestDevice_ReservedOrgAppIssuesNoCode(t *testing.T) {
 	}
 }
 
-// A SuperAdmin approval stored before the rule changed mints nothing: the poll
-// judges the approver again, refuses, and spends the code.
+// A stored SuperAdmin approval mints nothing and spends the code.
 func TestDevice_StoredSuperAdminApprovalMintsNothing(t *testing.T) {
 	app, db := newServer(t)
 	seedDeviceApp(t, db, "hanzo-app")
@@ -417,8 +412,7 @@ func TestDevice_StoredSuperAdminApprovalMintsNothing(t *testing.T) {
 	}
 }
 
-// A device token names the client's org as its owner and the approver's
-// tenancy without any reserved org, on the first mint and on every refresh.
+// A device token's owner is the client's org and it names no reserved org, first mint and refresh.
 func TestDevice_TokenNamesNoReservedOrg(t *testing.T) {
 	app, db := newServer(t)
 	seedDeviceApp(t, db, "hanzo-app")
@@ -471,8 +465,7 @@ func TestDevice_TokenNamesNoReservedOrg(t *testing.T) {
 	}
 	check("refresh", r)
 
-	// The same person signing in through the code flow keeps the membership:
-	// only the device grant narrows.
+	// The code flow keeps the membership.
 	id, err := userClaims(tctx(), db, "hanzo/alice")
 	if err != nil || len(id.Orgs) < 2 {
 		t.Fatalf("alice's membership set = %v (%v), want her admin-org membership kept", id.Orgs, err)
@@ -811,9 +804,7 @@ func TestDevice_ApproveWithoutSessionIsRefused(t *testing.T) {
 	}
 }
 
-// A refresh family a SuperAdmin device approval minted before the rule renews
-// nothing: every mint of a grant asks MintFor's reserved-org confinement again.
-// The same family for a tenant renews, which is what proves the fixture.
+// A SuperAdmin family on a tenant app renews nothing; a tenant's does.
 func TestDevice_StoredSuperAdminFamilyRenewsNothing(t *testing.T) {
 	app, db := newServer(t)
 	seedDeviceApp(t, db, "hanzo-app")

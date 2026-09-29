@@ -95,9 +95,7 @@ func TestUpsertApplication_isSharedDoesNotDisturbTheSecret(t *testing.T) {
 	}
 }
 
-// An application of a reserved org serves that org alone. The upsert refuses to
-// create one shared or with an org choice, and refuses to share one it already
-// holds, naming the rule; the stored row keeps what it had.
+// The upsert refuses to create or share a reserved org's application.
 func TestUpsertApplication_aReservedOrgAppIsNeverShared(t *testing.T) {
 	app, db := boot(t)
 	ctx := context.Background()

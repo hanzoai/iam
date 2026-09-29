@@ -355,8 +355,7 @@ func upsertApplication(db orm.DB) zip.TypedHandler[registration, reply] {
 	}
 }
 
-// unwritten answers an application the store refused: the declaration's own
-// fault by name, anything else as the store's.
+// unwritten maps a store error to its upsert reply.
 func unwritten(err error) *reply {
 	if errors.Is(err, schema.ErrUnconfined) {
 		return refuse(400, err.Error())

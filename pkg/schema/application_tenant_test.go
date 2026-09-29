@@ -66,9 +66,7 @@ func TestNoneConfinesToItsOwnOrg(t *testing.T) {
 	}
 }
 
-// A session answers for no application of a reserved org, secret or not, and
-// for no application that keeps no sign-in session; a tenant's session-keeping
-// application keeps single sign-on.
+// Attended holds for every reserved-org app and every app without a sign-in session.
 func TestAttended(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -89,8 +87,7 @@ func TestAttended(t *testing.T) {
 	}
 }
 
-// The row refuses to be stored unconfined, created or updated; a brand app may be
-// shared and a confined reserved-org app is stored as it is.
+// The row refuses an unconfined reserved-org application on create and update.
 func TestUnconfinedIsRefusedAtTheRow(t *testing.T) {
 	for _, a := range []*Application{
 		{Organization: "admin", IsShared: true},

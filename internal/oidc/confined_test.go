@@ -11,9 +11,7 @@ import (
 	"github.com/hanzoai/iam/pkg/store"
 )
 
-// A row stored shared before the rule, in the admin org, signs no tenant in:
-// not a brand user by the password, and not an admin-org member found through
-// its roster.
+// A stored shared admin-org application signs no tenant in, by password or roster.
 func TestConfined_StoredSharedAdminAppAdmitsNoTenant(t *testing.T) {
 	app, db := newServer(t)
 	legacy := seedApp(t, db, appOpts{clientID: "admin-console", secret: "s3cret", redirectURIs: []string{testRedirect}})

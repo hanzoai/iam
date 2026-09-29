@@ -82,9 +82,6 @@ type Token struct {
 	// behaves like the first.
 	PublicGrant bool `json:"publicGrant,omitempty" url:"-"`
 
-	// Device records that this grant was established by an RFC 8628 approval.
-	// Its tokens name the approver's tenancy without any reserved org, because
-	// the approval is one click on a code anybody can start. Carried across
-	// rotation, like PublicGrant.
+	// Device marks a grant established by an RFC 8628 approval; its tokens name no reserved org.
 	Device bool `json:"device,omitempty" url:"-"`
 }

@@ -71,8 +71,7 @@ type loginForm struct {
 	EnableMfaRemember bool   `json:"enableMfaRemember"`
 	Challenge         string `json:"challenge"`
 
-	// session is set by the handler, never bound: the person was proved by
-	// the session cookie rather than by a credential in this request.
+	// session is set by the handler, never bound: a session proved the person.
 	session bool
 }
 
@@ -340,10 +339,7 @@ func codeLogin(ctx context.Context, db orm.DB, f loginForm, user *schema.User) (
 func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
 	ctx := c.Context()
 
-	// type=device: approve a pending RFC 8628 device authorization against the
-	// identity now fully proven (device.go). The approval is judged by the code's
-	// own application under mayApprove — MintFor's tenant rule, with every reserved
-	// org refused — not by the portal app this form names.
+	// type=device approves a pending RFC 8628 code under mayApprove (device.go).
 	if f.Type == "device" {
 		return approveDevice(c, db, user, f.UserCode)
 	}

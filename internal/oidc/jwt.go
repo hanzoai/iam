@@ -211,8 +211,7 @@ type Signer struct {
 	kid    string // JWKS key id — the Cert name
 	alg    string // JOSE alg — "RS256" | "ES256" | … | "MLDSA65"
 	issuer string
-	// trail records a token that carries SuperAdmin authority (trail.go). A
-	// Signer without one refuses to sign such a token.
+	// trail records a SuperAdmin token; a Signer without one refuses to sign it.
 	trail func(Claims) error
 }
 
@@ -400,9 +399,7 @@ func (s *Signer) SignID(app *schema.Application, id Identity, scope, nonce strin
 
 // signClaims is the single choke point that turns a claim set into a signed
 // compact JWS under this signer's fixed (method, key, kid).
-//
-// A token that carries SuperAdmin authority is released only once its record is
-// written: a signer with no trail, or a record that fails, returns no token.
+// A SuperAdmin token is returned only once its trail record is written.
 func (s *Signer) signClaims(claims Claims) (string, error) {
 	sudo := claims.sudo()
 	if sudo && s.trail == nil {
@@ -424,11 +421,10 @@ func (s *Signer) signClaims(claims Claims) (string, error) {
 	return signed, nil
 }
 
-// errNoTrail refuses a SuperAdmin token from a signer that cannot record it.
+// errNoTrail refuses a SuperAdmin token from a signer with no trail.
 var errNoTrail = errors.New("jwt: a SuperAdmin token is signed only where its record is written")
 
-// sudo reports whether a resource server reading these claims grants SuperAdmin
-// authority: authz.Claims.Sudo, asked of the same membership set and class.
+// sudo is authz.Claims.Sudo over these claims.
 func (c Claims) sudo() bool {
 	p := policy.Claims{Type: c.Type}
 	for _, o := range c.Orgs {

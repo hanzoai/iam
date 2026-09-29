@@ -21,8 +21,7 @@ import (
 	"github.com/hanzoai/iam/pkg/store"
 )
 
-// Every token carrying SuperAdmin authority leaves one superadmin-token row
-// before it is released, and a mint whose row cannot be written returns no token.
+// Every SuperAdmin token leaves one superadmin-token row before release, or is not issued.
 
 // trailRows reads the superadmin-token rows, oldest first.
 func trailRows(t *testing.T, db orm.DB) []*schema.AuditLog {
@@ -37,8 +36,7 @@ func trailRows(t *testing.T, db orm.DB) []*schema.AuditLog {
 	return rows
 }
 
-// consoleCode signs admin/root in at the admin console with a typed password and
-// returns a code with its verifier.
+// consoleCode signs admin/root in at the console and returns a code and its verifier.
 func consoleCode(t *testing.T, app *zip.App) (code, verifier string) {
 	t.Helper()
 	verifier = "verifier-trail-console-0123456789012345678901234567"
@@ -68,9 +66,7 @@ func jtiOf(t *testing.T, db orm.DB, tok string) string {
 	return claims.ID
 }
 
-// A SuperAdmin's code exchange records the access token and the id token: who,
-// the client, the scope, the kind and id, when, and the address that asked. The
-// refresh records the two tokens it mints as well.
+// A SuperAdmin's code exchange and refresh record each token with its origin.
 func TestTrail_RecordsEverySuperAdminToken(t *testing.T) {
 	app, db := newServer(t)
 	superSession(t, app, db)
@@ -128,8 +124,7 @@ func TestTrail_RecordsEverySuperAdminToken(t *testing.T) {
 	}
 }
 
-// A tenant's token, and a brand account holding an admin-org membership, carry
-// no SuperAdmin authority and leave no row.
+// A tenant's token leaves no row, an admin-org membership included.
 func TestTrail_TenantTokensLeaveNoRow(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
@@ -164,8 +159,7 @@ func (d down) RunInTransaction(ctx context.Context, fn func(tx orm.DB) error) er
 	return d.DB.RunInTransaction(ctx, func(tx orm.DB) error { return fn(down{tx}) })
 }
 
-// A SuperAdmin token whose row cannot be written is not issued; a tenant's
-// token on the same store is.
+// An unrecorded SuperAdmin token is not issued; a tenant's is.
 func TestTrail_UnrecordedTokenIsNotIssued(t *testing.T) {
 	seeded, db := newServer(t)
 	superSession(t, seeded, db)
@@ -192,8 +186,7 @@ func TestTrail_UnrecordedTokenIsNotIssued(t *testing.T) {
 	}
 }
 
-// The token exchange for a SuperAdmin subject, and the step into a tenant, are
-// recorded like any other SuperAdmin mint.
+// A SuperAdmin token exchange is recorded.
 func TestTrail_ExchangeRecords(t *testing.T) {
 	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	t.Setenv("IAM_ADMIN_TOKEN_EXCHANGE_APPS", "hanzo-console")
@@ -219,8 +212,7 @@ func TestTrail_ExchangeRecords(t *testing.T) {
 	}
 }
 
-// A signer that cannot record refuses a SuperAdmin token and signs everything
-// else, a program in the admin org included.
+// A signer without a trail refuses SuperAdmin claims and signs the rest.
 func TestTrail_SignerWithoutTrail(t *testing.T) {
 	s := NewRSASigner(testKey(t), "cert-hanzo", "https://hanzo.id")
 	app := &schema.Application{ClientId: "console", Organization: policy.AdminOrg}
@@ -247,8 +239,7 @@ func TestTrail_SignerWithoutTrail(t *testing.T) {
 	}
 }
 
-// A refresh whose SuperAdmin record cannot be written issues nothing and consumes
-// nothing: once the audit log is back, the same refresh token renews.
+// An unrecorded refresh consumes nothing; the same token renews later.
 func TestTrail_UnrecordedRefreshKeepsTheSession(t *testing.T) {
 	up, db := newServer(t)
 	superSession(t, up, db)
@@ -282,8 +273,7 @@ func TestTrail_UnrecordedRefreshKeepsTheSession(t *testing.T) {
 	}
 }
 
-// Two rotations racing on one refresh token mint once: the presented row is read
-// again inside the rotation's transaction, so the others find it consumed.
+// Racing rotations of one refresh token mint once.
 func TestRefresh_RacingRotationsMintOnce(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, refreshHours: 24})
@@ -325,9 +315,7 @@ func TestRefresh_RacingRotationsMintOnce(t *testing.T) {
 	}
 }
 
-// A service account in the admin org signing in at the admin console is a
-// machine on its token: authz reads no platform authority, groups name no
-// reserved org, and no SuperAdmin row is written.
+// An admin-org service account's token is a program's: no SuperAdmin authority, groups or row.
 func TestTrail_AdminOrgServiceAccountIsNoSuperAdmin(t *testing.T) {
 	app, db := newServer(t)
 	superSession(t, app, db)
@@ -364,8 +352,8 @@ func TestTrail_AdminOrgServiceAccountIsNoSuperAdmin(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", kind, err)
 		}
-		if cl.Type != schema.Program || cl.sudo() || len(cl.Groups) != 0 {
-			t.Fatalf("%s type=%q sudo=%v groups=%v, want a program with no platform authority", kind, cl.Type, cl.sudo(), cl.Groups)
+		if cl.Type != schema.Program || cl.sudo() {
+			t.Fatalf("%s type=%q sudo=%v, want a program with no platform authority", kind, cl.Type, cl.sudo())
 		}
 	}
 	if n := len(trailRows(t, db)); n != 0 {

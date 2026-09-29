@@ -66,10 +66,7 @@ const (
 	// the org acted on when there is one.
 	ActionSuperAdmin = "superadmin"
 
-	// A token minted with SuperAdmin authority, one row per token, written before
-	// the token is released: who it names, the client, its scope, its kind and id,
-	// and the address that asked. A mint whose row cannot be written returns no
-	// token. Filed under the admin org, beside the requests those tokens make.
+	// A token minted with SuperAdmin authority, recorded before it is released.
 	ActionSuperAdminToken = "superadmin-token"
 
 	// A workload in a Kubernetes namespace obtaining its application's token by

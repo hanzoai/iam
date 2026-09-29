@@ -15,8 +15,7 @@ import (
 	"github.com/hanzoai/iam/pkg/store"
 )
 
-// origin is where a mint was asked from: the client address, the method and
-// the path. A mint made in process has a path and nothing else.
+// origin is where a mint was asked from.
 type origin struct {
 	ip, method, path string
 }
@@ -26,7 +25,7 @@ func originOf(c *zip.Ctx) origin {
 	return origin{ip: httpx.ClientIP(c), method: c.Method(), path: c.Path()}
 }
 
-// issued is what a SuperAdmin token record says about the token.
+// issued is a SuperAdmin trail row's Object.
 type issued struct {
 	Sub      string   `json:"sub"`
 	Client   string   `json:"client"`
@@ -38,11 +37,7 @@ type issued struct {
 	Assumed  string   `json:"assumed,omitempty"`
 }
 
-// trail is the Signer's record of a token carrying SuperAdmin authority: one
-// schema.ActionSuperAdminToken row, written before the token is released, under
-// the admin org. User is the person, Organization the client's org, Object the
-// client, scope, kind, jti and expiry, and the row's time is when. The error is
-// the Signer's, so a row that cannot be written is a token that is not issued.
+// trail writes the ActionSuperAdminToken row for a SuperAdmin token.
 func trail(ctx context.Context, db orm.DB, at origin) func(Claims) error {
 	return func(cl Claims) error {
 		home := cl.Orgs[0].Org

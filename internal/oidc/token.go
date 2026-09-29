@@ -208,8 +208,7 @@ func authorizationCodeGrant(c *zip.Ctx, db orm.DB) error {
 	// the fix (it breaks client_credentials, which requires a registered secret).
 	//
 	// A code with NO PKCE challenge still requires the secret, so this is not a
-	// downgrade path: an attacker cannot skip client auth by omitting PKCE. An
-	// application of a reserved org is never relaxed (Application.Relaxes).
+	// downgrade path: an attacker cannot skip client auth by omitting PKCE.
 	clientAuthed := app.ClientSecret != "" && (clientSecret != "" || tok.CodeChallenge == "" || !app.Relaxes())
 	if clientAuthed && !app.Proves(clientSecret) {
 		return tokenErrorClient(c, "client authentication failed")
@@ -551,9 +550,7 @@ func passwordGrant(c *zip.Ctx, db orm.DB) error {
 // both the code grant and refresh rotation mint through, so the token shape can
 // never drift between them.
 func issueTokens(ctx context.Context, db orm.DB, c *zip.Ctx, app *schema.Application, row *schema.Token, family string, now time.Time) (tokenResponse, error) {
-	// MintFor's reserved-org confinement, asked again at every mint of the
-	// family: a grant established around it — a device approval stored before
-	// the device rule among them — renews nothing.
+	// MintFor's reserved-org confinement, at every mint.
 	if owner, _ := splitSub(row.User); policy.IsReservedOrg(owner) && owner != app.Organization {
 		return tokenResponse{}, errConfined
 	}
@@ -701,9 +698,7 @@ var ErrNoSigningCert = errors.New("token: application has no trusted signing cer
 // signing-cert owners and builds a Signer with the given canonical issuer. Using
 // the same trusted resolution as the JWKS and verification keeps the three
 // consistent: a token is signed by a key iam will also publish and verify.
-//
-// at is where the mint was asked from; the signer records a SuperAdmin token
-// against it before releasing one (trail).
+// at is the mint's origin for the SuperAdmin trail.
 func signerFor(ctx context.Context, db orm.DB, app *schema.Application, issuer string, at origin) (*Signer, error) {
 	cert, err := store.GetSigningCert(ctx, db, app.Cert)
 	if err != nil {
@@ -741,8 +736,7 @@ func mintError(c *zip.Ctx, err error) error {
 	return tokenError(c, 500, "server_error", "")
 }
 
-// errConfined is a grant naming a reserved org's principal through an
-// application of another org.
+// errConfined is a reserved org's principal minted through another org's application.
 var errConfined = errors.New("oidc: a reserved org's principal is granted only through its own org's application")
 
 // signAccessToken signs a bare access token for a token row under the given
@@ -825,10 +819,7 @@ func identityOf(ctx context.Context, db orm.DB, u *schema.User) Identity {
 	}
 }
 
-// kindOf is a user row's identity class as a token states it: schema.Program
-// for a machine (a service account or a program), empty for a person. It is the
-// fact schema.User.SuperAdmin reads, so a machine in the admin org is never
-// platform authority on its token either (authz.Claims.Sudo refuses a program).
+// kindOf is the token's identity class for a user row: schema.Program for a machine.
 func kindOf(u *schema.User) string {
 	if u.Machine() {
 		return schema.Program
