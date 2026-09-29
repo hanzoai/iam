@@ -66,6 +66,12 @@ const (
 	// the org acted on when there is one.
 	ActionSuperAdmin = "superadmin"
 
+	// A token minted with SuperAdmin authority, one row per token, written before
+	// the token is released: who it names, the client, its scope, its kind and id,
+	// and the address that asked. A mint whose row cannot be written returns no
+	// token. Filed under the admin org, beside the requests those tokens make.
+	ActionSuperAdminToken = "superadmin-token"
+
 	// A workload in a Kubernetes namespace obtaining its application's token by
 	// presenting the ServiceAccount token its cluster minted for it (RFC 7523).
 	// The row names the service account that asked, so the trail reads the same
@@ -92,7 +98,7 @@ func PlatformWritten(action string) bool {
 	switch action {
 	case ActionConsentTraining, ActionIssueUserToken, ActionMintUserKeys,
 		ActionRevokeUserKeys, ActionTokenExchange, ActionAs,
-		ActionAssumeOrg, ActionReleaseOrg, ActionListOrgs, ActionSuperAdmin, ActionWorkloadToken,
+		ActionAssumeOrg, ActionReleaseOrg, ActionListOrgs, ActionSuperAdmin, ActionSuperAdminToken, ActionWorkloadToken,
 		ActionInviteSend, ActionInviteAccept, ActionInviteRefused, ActionInviteSignupRefused,
 		ActionInviteCodeSent:
 		return true

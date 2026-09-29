@@ -81,8 +81,8 @@ func issueUserTokenHandler(db orm.DB) zip.Handler {
 			return mintErr(c, status, msg)
 		}
 
-		access, ttl, err := MintUserToken(ctx, db, clientApp, user,
-			strings.TrimSpace(c.Query("aud")), c.Host(), c.Path())
+		access, ttl, err := mintUserToken(ctx, db, clientApp, user,
+			strings.TrimSpace(c.Query("aud")), c.Host(), originOf(c))
 		if err != nil {
 			return mintErr(c, 500, "server_error")
 		}
@@ -111,11 +111,16 @@ func issueUserTokenHandler(db orm.DB) zip.Handler {
 // claiming the wrong one is a token some other party is trusted to sign. path
 // is the audit row's RequestUri, so a mint traces back to the surface that asked.
 func MintUserToken(ctx context.Context, db orm.DB, clientApp *schema.Application, user *schema.User, aud, host, path string) (string, time.Duration, error) {
+	return mintUserToken(ctx, db, clientApp, user, aud, host, origin{path: path})
+}
+
+// mintUserToken is MintUserToken with the full origin a request carries.
+func mintUserToken(ctx context.Context, db orm.DB, clientApp *schema.Application, user *schema.User, aud, host string, at origin) (string, time.Duration, error) {
 	now := nowFunc()
 	if aud == "" {
 		aud = defaultUserAudience(ctx, db, user, clientApp)
 	}
-	signer, err := signerFor(ctx, db, clientApp, resolveIssuer(host))
+	signer, err := signerFor(ctx, db, clientApp, resolveIssuer(host), at)
 	if err != nil {
 		return "", 0, err
 	}
@@ -140,7 +145,7 @@ func MintUserToken(ctx context.Context, db orm.DB, clientApp *schema.Application
 	if err := store.PersistToken(ctx, db, row); err != nil {
 		return "", 0, err
 	}
-	recordMint(ctx, db, schema.ActionIssueUserToken, clientApp.ClientId, natural, path)
+	recordMint(ctx, db, schema.ActionIssueUserToken, clientApp.ClientId, natural, at.path)
 	return access, ttl, nil
 }
 
@@ -442,7 +447,7 @@ func mintAsToken(ctx context.Context, db orm.DB, c *zip.Ctx, key *schema.Key) er
 	if userApp == nil {
 		return mintErr(c, 500, "server_error")
 	}
-	signer, err := signerFor(ctx, db, userApp, tokenIssuer(c))
+	signer, err := signerFor(ctx, db, userApp, tokenIssuer(c), originOf(c))
 	if err != nil {
 		return mintErr(c, 500, "server_error")
 	}
