@@ -448,7 +448,7 @@ func resolveLoginUser(ctx context.Context, db orm.DB, org, identifier string, me
 // (store.MemberByIdentifier). Any other app searches only the org itself.
 func servesMembers(ctx context.Context, db orm.DB, f loginForm) bool {
 	app, err := ResolveApp(ctx, db, f.ClientId, f.Application)
-	return err == nil && app != nil && app.IsShared && app.Organization == f.Organization
+	return err == nil && app != nil && app.IsShared && app.ServesAnyOrg() && app.Organization == f.Organization
 }
 
 // decoy is a password hash no one holds, verified when a sign-in names nobody so

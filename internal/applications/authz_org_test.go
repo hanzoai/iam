@@ -221,6 +221,43 @@ func TestSharing_OnlyASuperAdminChangesIt(t *testing.T) {
 	}
 }
 
+// An application of a reserved org serves that org alone: not even a SuperAdmin
+// shares it or gives it an org choice, on create or on update, and the refusal
+// is the caller's 400.
+func TestSharing_AReservedOrgAppIsNeverShared(t *testing.T) {
+	h := newOrgHarness(t)
+	root := h.token(t, "admin/root")
+
+	for _, body := range []string{
+		`{"owner":"admin","name":"admin-cli","organization":"admin","clientId":"admin-cli","isShared":true}`,
+		`{"owner":"admin","name":"admin-cli","organization":"admin","clientId":"admin-cli","orgChoiceMode":"create"}`,
+		`{"owner":"admin","name":"admin-cli","organization":"built-in","clientId":"admin-cli","isShared":true}`,
+	} {
+		if st := h.do(t, "POST", "/v1/iam/applications", root, body); st != 400 {
+			t.Fatalf("created %s: status=%d, want 400", body, st)
+		}
+	}
+	if st := h.do(t, "POST", "/v1/iam/applications", root, `{"owner":"admin","name":"admin-cli","organization":"admin","clientId":"admin-cli","orgChoiceMode":"None"}`); st != 200 {
+		t.Fatalf("a confined admin-org app: status=%d, want 200", st)
+	}
+	for _, body := range []string{
+		`{"owner":"admin","name":"admin-cli","organization":"admin","clientId":"admin-cli","isShared":true}`,
+		`{"owner":"admin","name":"admin-cli","organization":"admin","clientId":"admin-cli","orgChoiceMode":"Select"}`,
+	} {
+		if st := h.do(t, "PUT", "/v1/iam/applications/admin/admin-cli", root, body); st != 400 {
+			t.Fatalf("updated to %s: status=%d, want 400", body, st)
+		}
+	}
+	app, err := orm.Get[schema.Application](h.db, "admin/admin-cli")
+	if err != nil || app.IsShared || app.OrgChoiceMode != "None" {
+		t.Fatalf("stored row shared=%v choice=%q (%v), want the confined row unchanged", app.IsShared, app.OrgChoiceMode, err)
+	}
+	// A shared app of a brand org is a SuperAdmin's to make, as before.
+	if st := h.do(t, "POST", "/v1/iam/applications", root, `{"owner":"admin","name":"hanzo-app","organization":"hanzo","clientId":"hanzo-app","isShared":true}`); st != 200 {
+		t.Fatalf("a shared brand app: status=%d, want 200", st)
+	}
+}
+
 // The platform's own applications are the seed's to name: no API write makes an
 // application the platform's or unmakes one, a SuperAdmin's included.
 func TestPlatform_NoAPIWritesTheFlag(t *testing.T) {
