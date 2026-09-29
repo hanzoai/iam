@@ -58,6 +58,8 @@ func TestNoSecretKeyIsWrittenForASuperAdmin(t *testing.T) {
 			{"admin/root", root, `{"owner":"admin","name":"k6","user":"nobody-yet"}`},
 			{"hanzo-visor", visor, `{"owner":"orgb","name":"k7","user":"admin/z"}`},
 			{"hanzo-visor", visor, `{"owner":"orgb","name":"k8","user":"admin/Z"}`},
+			{"hanzo/boss", boss, `{"owner":"hanzo","name":"alice-key","user":"alice"}`},
+			{"hanzo/boss", boss, `{"owner":"hanzo","name":"z-key","user":"z"}`},
 		}
 		for _, r := range refused {
 			if status, body := h.send(t, r.c, "POST", "/v1/iam/keys", r.body); status != 403 {
@@ -65,16 +67,15 @@ func TestNoSecretKeyIsWrittenForASuperAdmin(t *testing.T) {
 			}
 		}
 
-		// Everyone else is written as before, and a publishable key, which names an
-		// org and no principal, is written whoever minted it.
+		// An application writes a person's key through its allowlist, and a
+		// publishable key, which names an org and no principal, is written whoever
+		// minted it. An org's admin writes no key that speaks as a person.
 		for _, r := range []struct {
 			who  string
 			c    caller
 			body string
 		}{
-			{"hanzo/boss", boss, `{"owner":"hanzo","name":"alice-key","user":"alice"}`},
 			{"hanzo-visor", visor, `{"owner":"orgb","name":"alice-member","user":"hanzo/alice"}`},
-			{"hanzo/boss", boss, `{"owner":"hanzo","name":"z-key","user":"z"}`},
 			{"hanzo-visor", visor, `{"owner":"orgb","name":"z-member","user":"hanzo/z"}`},
 			{"admin/root", root, `{"owner":"admin","name":"beacon","user":"z","scope":"publish"}`},
 		} {
@@ -85,6 +86,12 @@ func TestNoSecretKeyIsWrittenForASuperAdmin(t *testing.T) {
 
 		// A key cannot be pointed at the operator after the fact either, and an update
 		// is asked by the class the key was minted with, not one the body claims.
+		ak := orm.New[schema.Key](h.db)
+		ak.Owner, ak.Name, ak.User = "hanzo", "alice-key", "alice"
+		ak.SetId("hanzo/alice-key")
+		if err := ak.CreateCtx(context.Background()); err != nil {
+			t.Fatal(err)
+		}
 		for _, body := range []string{
 			`{"owner":"hanzo","name":"alice-key","user":"admin/z"}`,
 			`{"owner":"hanzo","name":"alice-key","user":"admin/Z"}`,

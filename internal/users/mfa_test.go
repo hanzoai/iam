@@ -5,6 +5,7 @@ package users
 
 import (
 	"context"
+	"github.com/hanzoai/iam/internal/principal"
 	"testing"
 
 	"github.com/hanzoai/iam/internal/mfa/factor"
@@ -57,7 +58,7 @@ func TestUpdateCannotDisableAFactorByOmission(t *testing.T) {
 	api := New(consentTestDB(t))
 	mfaMember(t, api, "enrolled")
 
-	if _, err := api.Update(context.Background(), &UpdateInput{User: schema.User{
+	if _, err := api.Update(as(&principal.Principal{Org: "hanzo", User: "enrolled"}), &UpdateInput{User: schema.User{
 		Owner:       "hanzo",
 		Name:        "enrolled",
 		DisplayName: "Enrolled (routine profile edit)",
@@ -95,7 +96,7 @@ func TestUpdateCannotPlantAFactor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := api.Update(context.Background(), &UpdateInput{User: schema.User{
+	if _, err := api.Update(as(&principal.Principal{Org: "hanzo", User: "victim"}), &UpdateInput{User: schema.User{
 		Owner:             "hanzo",
 		Name:              "victim",
 		TotpSecret:        "ATTACKERSECRETAAA",

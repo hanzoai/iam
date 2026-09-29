@@ -462,6 +462,11 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 	u := &in.User
 	u.Owner, u.Name = owner, name
 	u.Email = store.NormalizeEmail(u.Email)
+	if in.Password != "" || u.Email != store.NormalizeEmail(existing.Email) || u.Phone != existing.Phone {
+		if err := Credential(ctx, a.db, existing.Owner, existing.Name); err != nil {
+			return nil, err
+		}
+	}
 	// Preserve immutable identity and creation provenance. Id is the stable OIDC
 	// `sub` (and the authz principal key): like CreatedTime it is carried from the
 	// stored row and a body-supplied value is IGNORED — mutating it would move the
@@ -652,6 +657,33 @@ func Authorize(ctx context.Context, db orm.DB, owner, name string) error {
 		return zip.ErrForbidden("only its holder or a SuperAdmin may change the account of an organization's owner")
 	}
 	return nil
+}
+
+// Credential authorizes a write of what signs a person in or recovers their
+// account — password, email, phone, second factors, passkeys, and the tokens and
+// keys that speak as them. The person writes their own, and a SuperAdmin or an
+// application's capability allowlist anyone's; no other person does, an org's
+// admin included, so nothing an admin files for a member signs in as them once
+// they own the org. A machine account's credentials are its org admin's to run.
+func Credential(ctx context.Context, db orm.DB, owner, name string) error {
+	p, ok := principal.From(ctx)
+	if ok && p.Sudo && p.App == nil {
+		return nil
+	}
+	if owner == policy.AdminOrg {
+		return zip.ErrForbidden("only a SuperAdmin may change an account in the admin organization")
+	}
+	if ok && (p.App != nil || (p.Org == owner && strings.EqualFold(p.User, name))) {
+		return nil
+	}
+	u, err := store.GetUserByName(ctx, db, owner, name)
+	if err != nil {
+		return zip.ErrInternal(err.Error())
+	}
+	if u == nil || u.Machine() {
+		return nil
+	}
+	return zip.ErrForbidden("only its holder or a SuperAdmin changes how a person signs in")
 }
 
 // lookup resolves a single user by its (owner, name) natural key. It returns

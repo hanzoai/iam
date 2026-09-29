@@ -126,7 +126,8 @@ func TestSuperAdminWritesAdminCertAndCrossOrg(t *testing.T) {
 }
 
 // 5. An org admin manages its OWN org's users and apps (2xx) but not another
-// org's (403). This is the org-admin tier: org-scoped, never cross-tenant.
+// org's (403), and never how a person signs in. This is the org-admin tier:
+// org-scoped, never cross-tenant.
 func TestOrgAdminManagesOwnOrgOnly(t *testing.T) {
 	h := newHarness(t)
 	boss := h.token(t, "hanzo/boss")
@@ -136,7 +137,7 @@ func TestOrgAdminManagesOwnOrgOnly(t *testing.T) {
 		body               any
 	}{
 		{"create user in own org", "POST", "/v1/iam/users", user("hanzo", "newhire")},
-		{"update self org's user", "PUT", "/v1/iam/users/hanzo/alice", user("hanzo", "alice")},
+		{"update self org's user", "PUT", "/v1/iam/users/hanzo/alice", map[string]any{"user": map[string]any{"owner": "hanzo", "name": "alice", "displayName": "Alice"}}},
 		{"register app in own org", "POST", "/v1/iam/applications", map[string]any{"owner": "hanzo", "name": "hanzo-app", "clientId": "hanzo-app"}},
 	}
 	for _, c := range allow {
@@ -153,13 +154,14 @@ func TestOrgAdminManagesOwnOrgOnly(t *testing.T) {
 		body               any
 	}{
 		{"create user in another org", "POST", "/v1/iam/users", user("orgb", "mole")},
+		{"reset a member's password", "PUT", "/v1/iam/users/hanzo/alice", user("hanzo", "alice")},
 		{"register app in another org", "POST", "/v1/iam/applications", map[string]any{"owner": "orgb", "name": "x", "clientId": "x"}},
 		{"write a platform (admin) app", "POST", "/v1/iam/applications", map[string]any{"owner": "admin", "name": "x", "clientId": "x"}},
 	}
 	for _, c := range deny {
 		t.Run("deny/"+c.name, func(t *testing.T) {
 			if got := h.do(t, c.method, c.path, boss, c.body); got != http.StatusForbidden {
-				t.Fatalf("org admin %s %s (foreign) = %d, want 403", c.method, c.path, got)
+				t.Fatalf("org admin %s %s = %d, want 403", c.method, c.path, got)
 			}
 		})
 	}

@@ -305,8 +305,8 @@ func holdable(ctx context.Context, db orm.DB, owner, user, scope string) error {
 		o, name = owner, user
 	}
 	// A key speaks as its holder, so it is written only by whoever may write the
-	// holder's account: an owner's key by the owner or a SuperAdmin.
-	if err := users.Authorize(ctx, db, o, name); err != nil {
+	// holder's credentials: a person's by that person or a SuperAdmin.
+	if err := users.Credential(ctx, db, o, name); err != nil {
 		return err
 	}
 	if o == owner {

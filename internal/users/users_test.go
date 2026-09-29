@@ -5,6 +5,7 @@ package users
 
 import (
 	"context"
+	"github.com/hanzoai/iam/internal/principal"
 	"path/filepath"
 	"testing"
 
@@ -110,7 +111,7 @@ func TestUpdate_IdIsImmutable(t *testing.T) {
 	original := created.Id
 
 	// Attempt to move Id to a victim's UUID.
-	moved, err := api.Update(ctx, &UpdateInput{
+	moved, err := api.Update(as(&principal.Principal{Org: "zoo", User: "eve"}), &UpdateInput{
 		User: schema.User{Id: "victim-uuid-9999", Owner: "zoo", Name: "eve", DisplayName: "Eve"},
 	})
 	if err != nil {
@@ -121,7 +122,7 @@ func TestUpdate_IdIsImmutable(t *testing.T) {
 	}
 
 	// F-A2: an update that OMITS id must preserve the existing subject, not erase it.
-	edited, err := api.Update(ctx, &UpdateInput{
+	edited, err := api.Update(as(&principal.Principal{Org: "zoo", User: "eve"}), &UpdateInput{
 		User: schema.User{Owner: "zoo", Name: "eve", DisplayName: "Eve Edited"},
 	})
 	if err != nil {

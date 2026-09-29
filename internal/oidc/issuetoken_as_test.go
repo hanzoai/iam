@@ -289,8 +289,8 @@ func TestAs_superAdminTarget_refused(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-app", secret: "app-secret"})
 	seedActUser(t, db, "hanzo", "root", "ext-root")
-	seedMembership(t, db, "hanzo/root", "admin", "admin") // an admin-org membership held from hanzo
-	seedActUser(t, db, "admin", "z", "ext-z")             // the SuperAdmin
+	seedMembership(t, db, "hanzo/root", "admin", "member") // an admin-org membership held from hanzo
+	seedActUser(t, db, "admin", "z", "ext-z")              // the SuperAdmin
 	seedActKey(t, db, "hanzo", "op", "sk-live-optoken", "hanzo-app", true)
 
 	resp, body := do(t, app, asReq("sk-live-optoken", "?id=admin/z"))
@@ -350,6 +350,33 @@ func TestAs_ownerTarget_refused(t *testing.T) {
 	resp, body := do(t, app, asReq("sk-live-acmeowner", "?id=acme/founder"))
 	if resp.StatusCode != 403 {
 		t.Fatalf("owner target status = %d, want 403; body=%s", resp.StatusCode, body)
+	}
+}
+
+// An as() token acts in the key's org alone: the target's other memberships are
+// not in it, and a target holding an admin or owner role anywhere is refused.
+func TestAs_confinedToTheKeysOrg(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-app", secret: "app-secret"})
+	seedActUser(t, db, "acme", "bob", "ext-bob")
+	seedMembership(t, db, "acme/bob", "beta", "member")
+	seedActUser(t, db, "acme", "cy", "ext-cy")
+	seedMembership(t, db, "acme/cy", "gamma", "owner")
+	seedActKey(t, db, "acme", "agent", "sk-live-acmeagent", "hanzo-app", true)
+
+	resp, body := do(t, app, asReq("sk-live-acmeagent", "?id=acme/bob"))
+	if resp.StatusCode != 200 {
+		t.Fatalf("member target status = %d; body=%s", resp.StatusCode, body)
+	}
+	claims, err := verifyToken(context.Background(), db, dataMap(t, body)["accessToken"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claims.Orgs) != 1 || claims.Orgs[0].Org != "acme" {
+		t.Fatalf("orgs = %+v, want acme alone", claims.Orgs)
+	}
+	if resp, body := do(t, app, asReq("sk-live-acmeagent", "?id=acme/cy")); resp.StatusCode != 403 {
+		t.Fatalf("an owner of another org as target = %d, want 403; body=%s", resp.StatusCode, body)
 	}
 }
 

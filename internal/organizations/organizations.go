@@ -141,40 +141,47 @@ func (h *OrganizationAPI) Create(ctx context.Context, in *CreateOrganizationInpu
 	if err != nil {
 		return nil, err
 	}
-	switch _, err := h.find(org.Owner, org.Name); {
-	case err == nil:
-		return nil, zip.ErrConflict("organization already exists")
-	case errors.Is(err, orm.ErrNotFound):
-		// free to create, unless a deleted org of this name left people behind
-	default:
-		return nil, zip.ErrInternal(err.Error())
+	if org.CreatedTime == "" {
+		org.CreatedTime = time.Now().UTC().Format(time.RFC3339)
 	}
-	if err := store.Leftovers(ctx, h.DB, org.Name); errors.Is(err, store.ErrLeftovers) {
-		return nil, zip.ErrConflict(err.Error())
-	} else if err != nil {
-		return nil, zip.ErrInternal(err.Error())
-	}
-
-	entity := orm.New[schema.Organization](h.DB)
-	model := entity.Model // keep orm binding (db handle, key) across the overlay
-	*entity = org
-	entity.Model = model
-	if entity.CreatedTime == "" {
-		entity.CreatedTime = time.Now().UTC().Format(time.RFC3339)
-	}
-	// The natural key IS the key, the way every sibling writer states it. The store
-	// keys a row by this string, so one (owner, name) is one row by construction
-	// rather than by a check that has to be run first.
-	entity.SetId(org.Owner + "/" + org.Name)
-	if err := entity.CreateCtx(ctx); err != nil {
-		return nil, zip.ErrInternal(err.Error())
-	}
-	if founder != "" {
-		if _, err := store.SetRole(ctx, h.DB, founder, entity.Name, store.RoleOwner, ""); err != nil {
-			_ = entity.DeleteCtx(ctx)
-			return nil, zip.ErrInternal(err.Error())
+	var entity *schema.Organization
+	err = h.DB.RunInTransactionWith(ctx, &orm.TxOptions{MaxAttempts: 5}, func(tx orm.DB) error {
+		switch _, err := orm.TypedQuery[schema.Organization](tx).Filter("Owner=", org.Owner).Filter("Name=", org.Name).First(); {
+		case err == nil:
+			return zip.ErrConflict("organization already exists")
+		case errors.Is(err, orm.ErrNotFound):
+		default:
+			return zip.ErrInternal(err.Error())
 		}
-		store.Record(ctx, h.DB, store.RoleChange(entity.Name, actor(ctx), founder, "", store.RoleOwner))
+		if err := store.Leftovers(ctx, tx, org.Name); errors.Is(err, store.ErrLeftovers) {
+			return zip.ErrConflict(err.Error())
+		} else if err != nil {
+			return zip.ErrInternal(err.Error())
+		}
+		entity = orm.New[schema.Organization](tx)
+		model := entity.Model // keep orm binding (db handle, key) across the overlay
+		*entity = org
+		entity.Model = model
+		// The natural key IS the key, the way every sibling writer states it.
+		entity.SetId(org.Owner + "/" + org.Name)
+		if err := entity.CreateCtx(ctx); err != nil {
+			return zip.ErrInternal(err.Error())
+		}
+		if founder == "" {
+			return nil
+		}
+		if _, err := store.SetRole(ctx, tx, founder, entity.Name, store.RoleOwner, ""); err != nil {
+			return zip.ErrInternal(err.Error())
+		}
+		store.Record(ctx, tx, store.RoleChange(entity.Name, actor(ctx), founder, "", store.RoleOwner))
+		return nil
+	})
+	var answer *zip.HTTPError
+	if err != nil && !errors.As(err, &answer) {
+		return nil, zip.ErrInternal(err.Error())
+	}
+	if err != nil {
+		return nil, err
 	}
 	return entity.Mask(), nil
 }
@@ -192,10 +199,10 @@ func (h *OrganizationAPI) founder(ctx context.Context, org *schema.Organization)
 	if err != nil {
 		return "", zip.ErrInternal(err.Error())
 	}
-	if u == nil || u.IsDeleted || u.Machine() {
+	if u == nil || u.IsDeleted || u.IsForbidden || u.Machine() {
 		return "", zip.ErrBadRequest("founder names no person")
 	}
-	org.Founder = u.Model.Id()
+	org.Founder = u.Id
 	return u.Owner + "/" + u.Name, nil
 }
 
@@ -343,10 +350,13 @@ func (h *OrganizationAPI) Delete(ctx context.Context, in *DeleteOrganizationInpu
 	if err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
-	// The org's memberships, invitations and keys go with it, so nothing of it
-	// speaks for a later org of the same name.
+	// The org's memberships, invitations and keys go with it, and its name is on
+	// the trail for good, so nothing of it speaks for a later org of the same name.
 	if err := h.DB.RunInTransactionWith(ctx, &orm.TxOptions{MaxAttempts: 5}, func(tx orm.DB) error {
 		if err := store.ForgetOrg(ctx, tx, in.Name); err != nil {
+			return err
+		}
+		if err := store.Tombstone(ctx, tx, in.Name, actor(ctx)); err != nil {
 			return err
 		}
 		existing.SetDB(tx)
@@ -354,10 +364,6 @@ func (h *OrganizationAPI) Delete(ctx context.Context, in *DeleteOrganizationInpu
 	}); err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
-	store.Record(ctx, h.DB, &schema.AuditLog{
-		Owner: in.Name, Organization: in.Name, User: actor(ctx),
-		Action: schema.ActionOrgDelete, StatusCode: 200,
-	})
 	return &DeleteOrganizationOutput{Affected: true}, nil
 }
 

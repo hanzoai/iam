@@ -10,9 +10,11 @@ import (
 	"testing"
 
 	policy "github.com/hanzoai/authz"
+	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/principal"
+	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
 
@@ -85,5 +87,49 @@ func TestAuthorizeKeepsAnOwnersAccountFromOtherPeople(t *testing.T) {
 	}
 	if err := Authorize(boss, db, "hanzo", "bob"); err != nil {
 		t.Errorf("an admin writing a member's account: %v", err)
+	}
+}
+
+// How a person signs in is theirs and a SuperAdmin's: an org's admin reaches a
+// member's profile but never their password, address, factors or keys, so
+// nothing an admin files for a member signs in as them once they own the org, or
+// in another org they belong to. A machine's credentials are its org admin's.
+func TestCredentialIsTheHoldersOrASuperAdmins(t *testing.T) {
+	db := consentTestDB(t)
+	api := New(db)
+	seedMember(t, api, "ann", nil)
+	bot := orm.New[schema.User](db)
+	bot.Owner, bot.Name, bot.Type = "hanzo", "bot", "service-account"
+	bot.SetId("hanzo/bot")
+	if err := bot.CreateCtx(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	boss := as(&principal.Principal{Org: "hanzo", User: "boss", Admin: true, Orgs: map[string]policy.Role{"hanzo": policy.Admin}})
+	ann := as(&principal.Principal{Org: "hanzo", User: "ann"})
+	super := as(&principal.Principal{Org: policy.AdminOrg, User: "z", Sudo: true})
+
+	if err := Credential(boss, db, "hanzo", "ann"); !forbidden(err) {
+		t.Errorf("an admin writing a member's credentials: %v, want 403", err)
+	}
+	if err := Credential(context.Background(), db, "hanzo", "ann"); !forbidden(err) {
+		t.Errorf("no caller writing a person's credentials: %v, want 403", err)
+	}
+	for name, ctx := range map[string]context.Context{"the holder": ann, "a SuperAdmin": super} {
+		if err := Credential(ctx, db, "hanzo", "ann"); err != nil {
+			t.Errorf("%s writing ann's credentials: %v", name, err)
+		}
+	}
+	if err := Credential(boss, db, "hanzo", "bot"); err != nil {
+		t.Errorf("an admin writing its org's machine credentials: %v", err)
+	}
+
+	if _, err := api.Update(boss, &UpdateInput{User: schema.User{Owner: "hanzo", Name: "ann", DisplayName: "Ann A"}}); err != nil {
+		t.Errorf("an admin's profile edit: %v", err)
+	}
+	if _, err := api.Update(boss, &UpdateInput{User: schema.User{Owner: "hanzo", Name: "ann"}, Password: "admin-knows-this"}); !forbidden(err) {
+		t.Errorf("an admin resetting a member's password: %v, want 403", err)
+	}
+	if _, err := api.Update(boss, &UpdateInput{User: schema.User{Owner: "hanzo", Name: "ann", Email: "boss@evil.test"}}); !forbidden(err) {
+		t.Errorf("an admin moving a member's address: %v, want 403", err)
 	}
 }

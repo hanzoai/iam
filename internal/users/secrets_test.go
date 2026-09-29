@@ -5,6 +5,7 @@ package users
 
 import (
 	"context"
+	"github.com/hanzoai/iam/internal/principal"
 	"path/filepath"
 	"testing"
 
@@ -67,7 +68,7 @@ func TestUpdate_keepsAuthenticatorSeed(t *testing.T) {
 		t.Fatalf("premise broken: Mask no longer blanks the seed (%q/%v) — this test would prove nothing",
 			body.TotpSecret, body.RecoveryCodes)
 	}
-	if _, err := New(db).Update(ctx, &UpdateInput{User: body}); err != nil {
+	if _, err := New(db).Update(as(&principal.Principal{Org: org, User: name}), &UpdateInput{User: body}); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 
@@ -126,7 +127,7 @@ func TestUpdate_keepsEverySecretMaskHides(t *testing.T) {
 
 	body := *before.Mask()
 	body.DisplayName = "Bob B"
-	if _, err := New(db).Update(ctx, &UpdateInput{User: body}); err != nil {
+	if _, err := New(db).Update(as(&principal.Principal{Org: org, User: name}), &UpdateInput{User: body}); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	after, _ := store.GetUserByName(ctx, db, org, name)
@@ -162,7 +163,7 @@ func TestUpdate_keepsEverySecretMaskHides(t *testing.T) {
 	if after.DisplayName != "Bob B" {
 		t.Fatalf("displayName = %q, want %q — the intended edit was lost", after.DisplayName, "Bob B")
 	}
-	if _, err := New(db).Update(ctx, &UpdateInput{User: body, Password: "a whole new password"}); err != nil {
+	if _, err := New(db).Update(as(&principal.Principal{Org: org, User: name}), &UpdateInput{User: body, Password: "a whole new password"}); err != nil {
 		t.Fatalf("password reset: %v", err)
 	}
 	reset, _ := store.GetUserByName(ctx, db, org, name)

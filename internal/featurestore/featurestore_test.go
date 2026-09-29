@@ -13,6 +13,7 @@ import (
 	"github.com/hanzoai/orm"
 
 	"github.com/hanzoai/iam/feature"
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/model"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
@@ -306,7 +307,11 @@ func TestSetAndVerifyPassword(t *testing.T) {
 	if _, err := s.AddUser(ctx, &model.User{Owner: "acme", Name: "frank"}); err != nil {
 		t.Fatalf("AddUser: %v", err)
 	}
-	if ok, err := s.SetPassword(ctx, "acme", "frank", "correct horse battery staple"); err != nil || !ok {
+	if ok, err := s.SetPassword(ctx, "acme", "frank", "correct horse battery staple"); err == nil || ok {
+		t.Fatalf("SetPassword with no caller = %v, %v; want refused", ok, err)
+	}
+	self := principal.Bind(ctx, &principal.Principal{Org: "acme", User: "frank"})
+	if ok, err := s.SetPassword(self, "acme", "frank", "correct horse battery staple"); err != nil || !ok {
 		t.Fatalf("SetPassword = %v, %v; want true, nil", ok, err)
 	}
 
@@ -359,7 +364,8 @@ func TestVerifyPasswordWithOrg(t *testing.T) {
 	if _, err := s.AddUser(ctx, &model.User{Owner: "acme", Name: "grace"}); err != nil {
 		t.Fatalf("AddUser: %v", err)
 	}
-	if ok, err := s.SetPassword(ctx, "acme", "grace", "correct horse battery staple"); err != nil || !ok {
+	self := principal.Bind(ctx, &principal.Principal{Org: "acme", User: "grace"})
+	if ok, err := s.SetPassword(self, "acme", "grace", "correct horse battery staple"); err != nil || !ok {
 		t.Fatalf("SetPassword = %v, %v", ok, err)
 	}
 	if ok, err := s.VerifyPassword(ctx, "acme", "grace", "correct horse battery staple"); err != nil || !ok {

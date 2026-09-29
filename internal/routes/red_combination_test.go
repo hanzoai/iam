@@ -71,11 +71,15 @@ func TestRedFinal_AdminByMembershipReachesNoneOfZ(t *testing.T) {
 		t.Errorf("z's token was revoked: %v", err)
 	}
 
-	// Ordinary hanzo people stay mallory's to run.
+	// Ordinary hanzo people stay mallory's to run, and how they sign in stays theirs.
 	seedUser(t, h.db, "hanzo", "alice", false)
 	if status, body := h.send(t, mallory, "PUT", "/v1/iam/users/hanzo/alice",
-		`{"user":{"displayName":"Alice"},"password":"a fresh password"}`); status != 200 {
-		t.Errorf("mallory could not reset an ordinary hanzo user: %d %s", status, body)
+		`{"user":{"displayName":"Alice"}}`); status != 200 {
+		t.Errorf("mallory could not run an ordinary hanzo user: %d %s", status, body)
+	}
+	if status, body := h.send(t, mallory, "PUT", "/v1/iam/users/hanzo/alice",
+		`{"user":{"displayName":"Alice"},"password":"a fresh password"}`); status != 403 {
+		t.Errorf("mallory reset an ordinary hanzo user's password: %d %s", status, body)
 	}
 }
 

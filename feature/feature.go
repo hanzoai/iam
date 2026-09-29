@@ -55,7 +55,8 @@ type Store interface {
 	// SetPassword sets a user's password: the core hashes the plaintext exactly
 	// once and stores only the one-way digest (never the clear text). An empty
 	// plaintext leaves the digest untouched. Hashing lives in ONE place (the core) —
-	// a module never sees a hash, and never grows its own.
+	// a module never sees a hash, and never grows its own. It is written as the
+	// caller ctx carries, and only a person's own or a SuperAdmin's write lands.
 	SetPassword(ctx context.Context, owner, name, plaintext string) (bool, error)
 	// VerifyPassword reports whether plaintext matches the user's stored digest
 	// (argon2id for migrated v1 rows, bcrypt for v2, per the org's password type).

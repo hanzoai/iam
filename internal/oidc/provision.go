@@ -128,7 +128,16 @@ func provision(ctx context.Context, db orm.DB, cl claim) (provisioned, error) {
 		if user == nil {
 			return &fault{400, "the user does not exist"}
 		}
-		founder := user.Model.Id() // stable surrogate storage id — survives the Owner re-key
+		// The founder is the caller's subject id, which survives the Owner re-key and
+		// names no one else. An org founded before founders were subject ids recorded
+		// the account's storage key.
+		founder := user.Id
+		if founder == "" {
+			founder = user.Model.Id()
+		}
+		founded := func(o *schema.Organization) bool {
+			return o.Founder != "" && (o.Founder == founder || o.Founder == user.Model.Id())
+		}
 
 		// First-run gate. Onboarding MOVES the caller into the new org, so founding a
 		// SECOND org would strip the caller from — and orphan — the org it already
@@ -175,9 +184,13 @@ func provision(ctx context.Context, db orm.DB, cl claim) (provisioned, error) {
 		// pre-existing org belongs to another tenant → refuse. So an interrupted signup
 		// RESUMES to one org + admin instead of stranding on a permanent 409, and a
 		// second identity can never complete, join, or hijack the org.
-		if !orgCreated && !(user.Owner == cl.slug && user.IsAdmin) && org.Founder != founder {
+		if !orgCreated && !(user.Owner == cl.slug && user.IsAdmin) && !founded(org) {
 			return &fault{409, "the organization \"" + cl.slug + "\" already exists"}
 		}
+		// The owner role goes to whoever this call founded the org for: its creator,
+		// or the recorded founder resuming a create that was interrupted. An admin
+		// re-driving its own org's converge is its admin and nothing more.
+		owns := orgCreated || founded(org)
 
 		// Move the caller into the org as its admin (changing Owner re-keys the
 		// identity; lookups are by (owner, name)). Already-there is a no-op that skips
@@ -260,15 +273,23 @@ func provision(ctx context.Context, db orm.DB, cl claim) (provisioned, error) {
 		// so a later home-org backfill (which would write RoleAdmin) can no longer
 		// quietly demote them. Idempotent on the (user, org) pair, so a replay adds
 		// nothing.
-		if _, err := store.EnsureMembership(ctx, tx, cl.slug+"/"+cl.name, cl.slug, store.RoleOwner); err != nil {
-			return &fault{500, "server_error"}
+		if owns {
+			added, err := store.EnsureMembership(ctx, tx, cl.slug+"/"+cl.name, cl.slug, store.RoleOwner)
+			if err != nil {
+				return &fault{500, "server_error"}
+			}
+			if added {
+				store.Record(ctx, tx, store.RoleChange(cl.slug, cl.slug+"/"+cl.name, cl.slug+"/"+cl.name, "", store.RoleOwner))
+			}
 		}
 		// The move RE-KEYS the caller (user ids are "<owner>/<name>"), so every row
 		// filed under the OLD id moves to the new one in the same converge: one
 		// identity, one set of memberships, and nothing left under a name the old
 		// org can give someone else. The row for the org left behind is dropped.
 		if wasOwner != cl.slug {
-			if err := store.Rekey(ctx, tx, wasOwner+"/"+cl.name, cl.slug+"/"+cl.name); err != nil {
+			if err := store.Rekey(ctx, tx, wasOwner+"/"+cl.name, cl.slug+"/"+cl.name); errors.Is(err, store.ErrLastOwner) {
+				return &fault{409, "you are the last owner of " + wasOwner + "; make someone else its owner first"}
+			} else if err != nil {
 				return &fault{500, "server_error"}
 			}
 		}

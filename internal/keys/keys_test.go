@@ -665,6 +665,7 @@ func TestKeys_ANameCanBeUsedAgainAfterDelete(t *testing.T) {
 	db := memDB(t)
 	ctx := context.Background()
 	seedUser(t, db, "acme", "ada")
+	ctx = principal.Bind(ctx, &principal.Principal{Org: "acme", User: "ada"})
 
 	c, d, g := create(db), del(db), get(db)
 	if _, err := c(ctx, &schema.Key{Owner: "acme", Name: "server", User: "ada"}); err != nil {

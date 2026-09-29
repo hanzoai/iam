@@ -115,8 +115,12 @@ func TestOnboard_FounderGetsAFirstClassOrg(t *testing.T) {
 	if org.DisplayName != "First-Start" {
 		t.Errorf("org displayName = %q, want %q", org.DisplayName, "First-Start")
 	}
-	if org.Founder != moved.Model.Id() {
-		t.Errorf("org.Founder = %q, want the founder's storage id %q", org.Founder, moved.Model.Id())
+	want := moved.Id
+	if want == "" {
+		want = moved.Model.Id()
+	}
+	if org.Founder != want {
+		t.Errorf("org.Founder = %q, want the founder's subject id %q", org.Founder, want)
 	}
 
 	// It has a ROSTER: the founder is on it, as owner. Without this the org is born

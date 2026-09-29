@@ -162,9 +162,11 @@ func ensure(db orm.DB) zip.Handler {
 		if !mayGive(ctx, in.Org, "", in.Role) {
 			return httpx.Err(c, unauthorized)
 		}
-		if err := account(ctx, in.User); err != nil {
+		user, err := account(ctx, db, in.User)
+		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
+		in.User = user
 		added, err := store.EnsureMembership(ctx, db, in.User, in.Org, in.Role)
 		if err != nil {
 			return httpx.Err(c, err.Error())
@@ -197,6 +199,14 @@ func update(db orm.DB) zip.Handler {
 		default:
 			return httpx.Err(c, "role must be owner, admin, or member")
 		}
+		if !mayGrant(ctx, in.Org) {
+			return httpx.Err(c, unauthorized)
+		}
+		user, err := account(ctx, db, in.User)
+		if err != nil {
+			return httpx.Err(c, err.Error())
+		}
+		in.User = user
 		held, err := store.MembershipIn(ctx, db, in.User, in.Org, "", "")
 		if err != nil {
 			return httpx.Err(c, err.Error())
@@ -207,9 +217,6 @@ func update(db orm.DB) zip.Handler {
 		}
 		if !mayGive(ctx, in.Org, from, in.Role) {
 			return httpx.Err(c, unauthorized)
-		}
-		if err := account(ctx, in.User); err != nil {
-			return httpx.Err(c, err.Error())
 		}
 		was, err := store.SetRole(ctx, db, in.User, in.Org, in.Role, from)
 		if err != nil {
@@ -239,7 +246,7 @@ func remove(db orm.DB) zip.Handler {
 		if in.User == "" || in.Org == "" {
 			return httpx.Err(c, "user and org are required")
 		}
-		held, err := store.GetMembership(ctx, db, in.User, in.Org)
+		held, err := store.MembershipIn(ctx, db, in.User, in.Org, "", "")
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
@@ -250,7 +257,7 @@ func remove(db orm.DB) zip.Handler {
 		if !mayGive(ctx, in.Org, from, "") {
 			return httpx.Err(c, unauthorized)
 		}
-		if err := account(ctx, in.User); err != nil {
+		if err := admin(ctx, in.User); err != nil {
 			return httpx.Err(c, err.Error())
 		}
 		// A home-org pair names tenancy this relation does not grant, so it cannot
@@ -277,12 +284,35 @@ func remove(db orm.DB) zip.Handler {
 	}
 }
 
-// account refuses a grant or revoke that names an account in the admin org
-// unless the caller is a SuperAdmin: which organizations the platform's operator
-// belongs to is theirs, and an org's admin or an org-admin client is not entitled
-// to change it. A user that is not "<homeOrg>/<username>" names no account and is
-// left to the store.
-func account(ctx context.Context, user string) error {
+// account resolves the account a grant or role change names to the id it lives
+// under, and refuses one that names no live account, or an account in the admin
+// org unless the caller is a SuperAdmin.
+func account(ctx context.Context, db orm.DB, user string) (string, error) {
+	if err := admin(ctx, user); err != nil {
+		return "", err
+	}
+	owner, name, ok := strings.Cut(user, "/")
+	if !ok || owner == "" || name == "" {
+		return "", errNoAccount
+	}
+	u, err := store.GetUserByName(ctx, db, owner, name)
+	if err != nil {
+		return "", err
+	}
+	if u == nil || u.IsDeleted {
+		return "", errNoAccount
+	}
+	return u.Owner + "/" + u.Name, nil
+}
+
+// errNoAccount refuses a membership naming no live account.
+var errNoAccount = errors.New("user names no account; it is <organization>/<username>")
+
+// admin refuses a membership write naming an account in the admin org unless the
+// caller is a SuperAdmin: which organizations the platform's operator belongs to
+// is theirs, and an org's admin or an org-admin client is not entitled to change
+// it.
+func admin(ctx context.Context, user string) error {
 	owner, _, ok := strings.Cut(user, "/")
 	if !ok || owner != policy.AdminOrg || authz.IsSuper(ctx) {
 		return nil

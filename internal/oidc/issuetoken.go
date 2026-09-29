@@ -424,7 +424,7 @@ func mintAsToken(ctx context.Context, db orm.DB, c *zip.Ctx, key *schema.Key) er
 	if status != 0 {
 		return mintErr(c, status, msg)
 	}
-	// An ADMIN or OWNER of the key's own org never becomes an as() subject either. A token
+	// An ADMIN or OWNER of any org never becomes an as() subject either. A token
 	// minted for an admin is indistinguishable from that admin at her keyboard —
 	// the principal is built from the user row and nothing downstream reads the act
 	// claim — so it mints durable keys, answers the holds a person was supposed to
@@ -435,7 +435,7 @@ func mintAsToken(ctx context.Context, db orm.DB, c *zip.Ctx, key *schema.Key) er
 	// ordinary subject, filed under the tenant like any other member; acting AS the
 	// person who governs the tenant is the one thing it must never do.
 	for _, r := range store.MemberOrgRefs(ctx, db, user) {
-		if r.Org == key.Owner && (r.Role == store.RoleAdmin || r.Role == store.RoleOwner) {
+		if role := store.Role(r.Role); role == store.RoleAdmin || role == store.RoleOwner {
 			return mintErr(c, 403, "the target may not be acted for")
 		}
 	}
@@ -479,6 +479,9 @@ func mintAsToken(ctx context.Context, db orm.DB, c *zip.Ctx, key *schema.Key) er
 
 	natural := user.Owner + "/" + user.Name
 	id := identityOf(ctx, db, user) // the ONE user→claims resolution
+	// The token acts in the key's org and nowhere else the target belongs.
+	id.Orgs = []schema.OrgRef{{Org: key.Owner, Role: store.RoleMember}}
+	id.Billing = store.BillingAccount(user, id.Orgs)
 	access, err := signer.SignAct(id, user.Owner, aud, azp, actor, ttl, now)
 	if err != nil {
 		return mintErr(c, 500, "server_error")

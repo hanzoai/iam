@@ -341,14 +341,27 @@ of its `isAdmin` bit and its home row, so an owner row makes it owner.
   `DeleteMembership` take the role the caller read; a row that moved since answers
   `ErrMoved`, so a racing demotion cannot turn an admin's decision into an owner's.
 - **An owner's account is written by the owner or a SuperAdmin** (`users.Authorize`),
-  and never with no caller: no other person resets its password, factors, tokens,
-  passkeys or keys (`keys.holdable`), or deletes it. An admin or owner of the key's
-  org is never an as() subject.
-- **A deleted org leaves nothing that speaks.** `store.ForgetOrg` removes its
-  memberships, member keys, invitations and keys in the delete's transaction; a new
-  org under a name whose accounts or memberships remain is refused
-  (`ErrLeftovers`). An account that moves home keeps its other memberships under
-  its new id (`store.Rekey`).
+  and never with no caller; no other person deletes it.
+- **How a person signs in is theirs** (`users.Credential`): password, email, phone,
+  factors, passkeys, and the tokens and keys that speak as them are written by the
+  person, a SuperAdmin or an application's allowlist — never by an org admin, who
+  runs profiles, roles and machine accounts. A person's credential is never
+  another's to plant, in this org or any other they belong to.
+- **An as() token acts in the key's org alone** (`orgs` is that org), and a target
+  holding an admin or owner role anywhere is refused.
+- **A deleted org leaves nothing that speaks, and its name is given once.**
+  `store.ForgetOrg` removes its memberships, member keys, invitations and keys, and
+  `store.Tombstone` files the delete under a key derived from the name, in the
+  delete's transaction; `store.Leftovers` refuses the name forever after. An
+  account that moves home keeps its other memberships under its new id, at the
+  higher role where it already holds one, and a move that would take an org's last
+  owner is refused (`store.Rekey`).
+- **A founder is a subject id** (`store.Founder`). Onboarding records the caller's,
+  and writes the owner row only for the org's founder — its creator or the
+  recorded founder resuming — never for an admin re-driving its org. Boot also
+  reads a storage key, which onboarding recorded before.
+- **A membership names a live account**, stored as `<owner>/<name>` as the account
+  is; a revoke is decided on the org-wide row and removes every scope.
 - **Every org is born owned.** `POST /v1/iam/organizations` with `founder` (the
   creator's key or subject) makes them the first owner, and self-service
   onboarding writes the owner row itself. At boot `store.BackfillOwners` gives an

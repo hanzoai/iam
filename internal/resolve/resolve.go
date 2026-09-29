@@ -168,7 +168,8 @@ func who(db orm.DB) zip.Handler {
 		admin := u.IsAdmin
 		if h.Org != u.Owner {
 			billing = account.Org(h.Org).String()
-			admin = h.Role == store.RoleOwner || h.Role == store.RoleAdmin
+			role := store.Role(h.Role)
+			admin = role == store.RoleOwner || role == store.RoleAdmin
 		}
 		return httpx.Ok(c, holder{
 			Owner:          u.Owner,

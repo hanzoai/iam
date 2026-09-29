@@ -90,20 +90,26 @@ func EnsureMembershipIn(ctx context.Context, db orm.DB, user, org, workspace, pr
 			return false, err
 		}
 	}
-	existing, err := MembershipIn(ctx, db, user, org, workspace, project)
-	if err != nil || existing != nil {
-		return false, err
-	}
-	m := orm.New[schema.Membership](db)
-	m.Owner, m.Name = MembershipOwner, scopedName(user, org, workspace, project)
-	m.User, m.Org, m.Role = user, org, role
-	m.Workspace, m.Project = workspace, project
-	m.CreatedTime = time.Now().UTC().Format(time.RFC3339)
-	m.SetId(MembershipOwner + "/" + m.Name)
-	if err := m.CreateCtx(ctx); err != nil {
-		return false, err
-	}
-	return true, nil
+	created := false
+	err := db.RunInTransactionWith(ctx, &orm.TxOptions{MaxAttempts: 5}, func(tx orm.DB) error {
+		created = false
+		existing, err := MembershipIn(ctx, tx, user, org, workspace, project)
+		if err != nil || existing != nil {
+			return err
+		}
+		m := orm.New[schema.Membership](tx)
+		m.Owner, m.Name = MembershipOwner, scopedName(user, org, workspace, project)
+		m.User, m.Org, m.Role = user, org, role
+		m.Workspace, m.Project = workspace, project
+		m.CreatedTime = time.Now().UTC().Format(time.RFC3339)
+		m.SetId(MembershipOwner + "/" + m.Name)
+		if err := m.CreateCtx(ctx); err != nil {
+			return err
+		}
+		created = true
+		return nil
+	})
+	return created, err
 }
 
 // MembershipIn returns one scoped membership, or (nil, nil) when absent.
@@ -135,32 +141,49 @@ func GetMembership(_ context.Context, db orm.DB, user, org string) (*schema.Memb
 	return m, err
 }
 
-// DeleteMembership revokes a user's right to act in an org — the inverse of
-// EnsureMembership, keyed by the SAME (user, org) natural key, so a grant and its
-// revoke address exactly one row. held is the role the caller decided on; a row
-// holding another is left alone (ErrMoved). Idempotent: revoking an absent membership reports
-// (false, nil), never an error, so a retried or racing revoke is safe. Reports
-// whether a row was removed.
+// DeleteMembership revokes a user's right to act in an org: every row they hold
+// in it, at every scope, and the member keys they carried there. held is the
+// org-wide role the caller decided on ("" for none); an org-wide row holding
+// another is left alone (ErrMoved). Idempotent: revoking an absent membership
+// reports (false, nil), never an error, so a retried or racing revoke is safe.
+// Reports whether a row was removed.
 func DeleteMembership(ctx context.Context, db orm.DB, user, org, held string) (bool, error) {
 	if user == "" || org == "" {
 		return false, nil
 	}
 	removed := false
 	err := db.RunInTransactionWith(ctx, &orm.TxOptions{MaxAttempts: 5}, func(tx orm.DB) error {
-		m, err := GetMembership(ctx, tx, user, org)
-		if err != nil || m == nil {
+		removed = false
+		wide, err := MembershipIn(ctx, tx, user, org, "", "")
+		if err != nil {
 			return err
 		}
-		if Role(m.Role) != Role(held) {
+		from := ""
+		if wide != nil {
+			from = Role(wide.Role)
+		}
+		if from != Role(held) {
 			return ErrMoved
 		}
-		if err := keepOwner(ctx, tx, m); err != nil {
+		if err := keepOwner(ctx, tx, wide); err != nil {
 			return err
 		}
-		if err := m.DeleteCtx(ctx); err != nil {
+		rows, err := orm.TypedQuery[schema.Membership](tx).Filter("User=", user).Filter("Org=", org).GetAll(ctx)
+		if err != nil && !errors.Is(err, orm.ErrNotFound) {
 			return err
 		}
-		removed = true
+		for _, m := range rows {
+			if m == nil {
+				continue
+			}
+			if err := m.DeleteCtx(ctx); err != nil {
+				return err
+			}
+			removed = true
+		}
+		if !removed {
+			return nil
+		}
 		return forgetMemberKeys(ctx, tx, user, org)
 	})
 	return removed, err
@@ -204,6 +227,7 @@ func ForgetUser(ctx context.Context, db orm.DB, user string) (int, error) {
 			if err := m.DeleteCtx(ctx); err != nil {
 				return err
 			}
+			Record(ctx, tx, RoleChange(m.Org, "", user, Role(m.Role), ""))
 			if err := forgetMemberKeys(ctx, tx, user, m.Org); err != nil {
 				return err
 			}
@@ -517,7 +541,7 @@ func Seats(ctx context.Context, db orm.DB, org string) (seats, guests int, err e
 		if uerr != nil || u == nil || u.Machine() || u.IsDeleted || u.IsForbidden {
 			continue
 		}
-		if m.Role == "guest" {
+		if Role(m.Role) == "guest" {
 			guest[m.User] = true
 			continue
 		}

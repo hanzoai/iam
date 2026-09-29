@@ -74,12 +74,12 @@ func TestAdd_refusesAPasskeyPlantedForAnotherTenant(t *testing.T) {
 	}
 }
 
-// An org-admin may still register a passkey for its OWN member — the gate pins the
-// subject, it does not forbid the enrollment an admin may legitimately do.
-func TestAdd_allowsAPasskeyForAnOwnMember(t *testing.T) {
+// A passkey signs in as its person, so an org-admin files none for its own member
+// either: a person enrolls their own through the WebAuthn ceremony.
+func TestAdd_refusesAPasskeyForAnOwnMember(t *testing.T) {
 	r := newRig(t)
 	if st := r.write(t, "hanzo/boss",
-		`{"owner":"hanzo","name":"alice-newkey","user":"hanzo/alice","credentialId":"AAAA","publicKey":"AAAA"}`); st != 200 {
-		t.Fatalf("registering a passkey for an own member: status=%d, want 200", st)
+		`{"owner":"hanzo","name":"alice-newkey","user":"hanzo/alice","credentialId":"AAAA","publicKey":"AAAA"}`); st != 403 {
+		t.Fatalf("an admin registering a passkey for a member: status=%d, want 403", st)
 	}
 }

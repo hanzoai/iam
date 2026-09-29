@@ -448,10 +448,13 @@ func TestMFA_crossUserRequiresAdmin(t *testing.T) {
 		t.Fatalf("regular user disabling another user's MFA: status=%d, want 403", st)
 	}
 
-	// org-admin → a user in the SAME org: allowed.
-	if st, m := h.do(t, "POST", mfa.PathInitiate, boss,
-		`{"owner":"hanzo","name":"alice"}`); st != 200 || m["status"] != "ok" {
-		t.Fatalf("org-admin initiating a same-org user's MFA: status=%d body=%v", st, m)
+	// org-admin → a person in the SAME org: forbidden; how a person signs in is
+	// theirs and a SuperAdmin's.
+	if st, _ := h.do(t, "POST", mfa.PathInitiate, boss, `{"owner":"hanzo","name":"alice"}`); st != 403 {
+		t.Fatalf("org-admin initiating a same-org person's MFA: status=%d, want 403", st)
+	}
+	if st, _ := h.do(t, "DELETE", mfa.Path, boss, `{"owner":"hanzo","name":"alice"}`); st != 403 {
+		t.Fatalf("org-admin disabling a same-org person's MFA: status=%d, want 403", st)
 	}
 	// super → anyone: allowed.
 	if st, m := h.do(t, "POST", mfa.PathInitiate, super,

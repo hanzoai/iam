@@ -210,6 +210,7 @@ func TestGetMemberships_byOrg(t *testing.T) {
 // shows it — one store behind both.
 func TestAddMembership_thenGetShowsIt(t *testing.T) {
 	h := newHarness(t)
+	seedUser(t, h.db, "hanzo", "alice", false)
 	super := h.token(t, "admin/root")
 
 	status, e := h.post(t, "/v1/iam/memberships",
@@ -283,6 +284,7 @@ func TestMembership_crossTenantDenied(t *testing.T) {
 // a real SuperAdmin may. The client's legitimate power over a normal org is intact.
 func TestEnsureMembership_reservedOrgRequiresSuper(t *testing.T) {
 	h := newHarness(t)
+	seedUser(t, h.db, "hanzo", "alice", false)
 	seedClientApp(t, h.db, "hanzo-console", "console-secret")
 	t.Setenv("IAM_ORG_ADMIN_APPS", "hanzo-console")
 

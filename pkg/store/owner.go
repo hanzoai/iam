@@ -165,7 +165,8 @@ func SetRole(ctx context.Context, db orm.DB, user, org, role, held string) (stri
 // account moves to another home org: the row for the org it left is dropped, the
 // rest keep their org, scope and role, and the old id's member keys end. A row
 // the new id may not hold (the admin org's, for an account that is not homed
-// there) is dropped with it.
+// there) is dropped with it. A dropped owner row that is its org's last is
+// refused, and a row the new id already holds keeps the higher of the two roles.
 func Rekey(ctx context.Context, db orm.DB, from, to string) error {
 	if from == "" || to == "" || from == to {
 		return nil
@@ -181,19 +182,46 @@ func Rekey(ctx context.Context, db orm.DB, from, to string) error {
 				continue
 			}
 			if m.Org != left && !(m.Org == policy.AdminOrg && !IsHomeOrg(to, policy.AdminOrg)) {
-				if _, err := EnsureMembershipIn(ctx, tx, to, m.Org, m.Workspace, m.Project, Role(m.Role)); err != nil {
+				if err := carry(ctx, tx, to, m); err != nil {
 					return err
 				}
+				Record(ctx, tx, RoleChange(m.Org, "", to, "", Role(m.Role)))
+			} else if err := keepOwner(ctx, tx, m); err != nil {
+				return err
 			}
 			if err := m.DeleteCtx(ctx); err != nil {
 				return err
 			}
+			Record(ctx, tx, RoleChange(m.Org, "", from, Role(m.Role), ""))
 			if err := forgetMemberKeys(ctx, tx, from, m.Org); err != nil {
 				return err
 			}
 		}
 		return nil
 	})
+}
+
+// carry gives user the scope and role m holds, keeping the higher role where user
+// already holds that scope.
+func carry(ctx context.Context, db orm.DB, user string, m *schema.Membership) error {
+	held, err := MembershipIn(ctx, db, user, m.Org, m.Workspace, m.Project)
+	if err != nil {
+		return err
+	}
+	if held == nil {
+		_, err := EnsureMembershipIn(ctx, db, user, m.Org, m.Workspace, m.Project, Role(m.Role))
+		return err
+	}
+	if rank(m.Role) <= rank(held.Role) {
+		return nil
+	}
+	if m.Workspace == "" && m.Project == "" {
+		if err := ownable(ctx, db, user, m.Role); err != nil {
+			return err
+		}
+	}
+	held.Role = Role(m.Role)
+	return held.UpdateCtx(ctx)
 }
 
 // ForgetOrg removes what org leaves behind when it is deleted: every membership
@@ -239,9 +267,15 @@ func ForgetOrg(ctx context.Context, db orm.DB, org string) error {
 	return nil
 }
 
-// Leftovers refuses a new org named org while a deleted org of that name left an
-// account homed in it or a membership of it.
+// Leftovers refuses a new org named org while a deleted org of that name is on
+// the trail (Tombstone) or left an account homed in it or a membership of it. A
+// name is given once.
 func Leftovers(ctx context.Context, db orm.DB, org string) error {
+	if _, err := orm.Get[schema.AuditLog](db, policy.AdminOrg+"/"+tombstone(org)); err == nil {
+		return ErrLeftovers
+	} else if !errors.Is(err, orm.ErrNotFound) {
+		return err
+	}
 	u, err := orm.TypedQuery[schema.User](db).Filter("Owner=", org).First()
 	if err != nil && !errors.Is(err, orm.ErrNotFound) {
 		return err
@@ -257,6 +291,21 @@ func Leftovers(ctx context.Context, db orm.DB, org string) error {
 		return ErrLeftovers
 	}
 	return nil
+}
+
+// Tombstone files org's deletion on the trail under a name derived from org
+// alone, and fails when the trail cannot take it: Leftovers reads it to refuse the
+// name forever.
+func Tombstone(ctx context.Context, db orm.DB, org, actor string) error {
+	return AppendNamed(ctx, db, tombstone(org), &schema.AuditLog{
+		Owner: policy.AdminOrg, Organization: org, User: actor,
+		Action: schema.ActionOrgDelete, Object: org, StatusCode: 200,
+	})
+}
+
+func tombstone(org string) string {
+	sum := sha256.Sum256([]byte(schema.ActionOrgDelete + "\x00" + org))
+	return schema.ActionOrgDelete + "-" + hex.EncodeToString(sum[:12])
 }
 
 // BackfillOwners gives every org with no owner the person its Founder names, when
@@ -287,7 +336,7 @@ func BackfillOwners(ctx context.Context, db orm.DB) (added, ownerless []string, 
 		if o == nil || o.Name == "" || policy.IsReservedOrg(o.Name) || owned[o.Name] {
 			continue
 		}
-		u, err := Founder(ctx, db, o.Founder)
+		u, err := recorded(ctx, db, o.Founder)
 		if err != nil {
 			return added, ownerless, err
 		}
@@ -313,21 +362,28 @@ func BackfillOwners(ctx context.Context, db orm.DB) (added, ownerless []string, 
 	return added, ownerless, nil
 }
 
-// Founder resolves the account an org's Founder names, by storage key as
-// self-service onboarding records it, or by subject id. (nil, nil) when it names
-// nobody. Never by "<owner>/<name>": a name is reused, a key and an id are not.
+// Founder resolves the person an org's Founder names, by subject id. (nil, nil)
+// when it names nobody. Never by a name or a storage key: a name is reused, and a
+// storage key keeps the name an account was created under.
 func Founder(ctx context.Context, db orm.DB, id string) (*schema.User, error) {
 	if id == "" {
 		return nil, nil
 	}
-	u, err := orm.Get[schema.User](db, id)
-	if err == nil {
-		return u, nil
-	}
-	if !errors.Is(err, orm.ErrNotFound) {
-		return nil, err
-	}
 	return GetUserById(ctx, db, id)
+}
+
+// recorded is Founder for an org founded before founders were subject ids, when
+// onboarding recorded the founding account's storage key.
+func recorded(ctx context.Context, db orm.DB, id string) (*schema.User, error) {
+	u, err := Founder(ctx, db, id)
+	if err != nil || u != nil || id == "" {
+		return u, err
+	}
+	u, err = orm.Get[schema.User](db, id)
+	if errors.Is(err, orm.ErrNotFound) {
+		return nil, nil
+	}
+	return u, err
 }
 
 // AdminOrgStrangers lists the admin-org memberships held by accounts that live

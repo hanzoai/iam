@@ -17,6 +17,7 @@ package users
 
 import (
 	"context"
+	"github.com/hanzoai/iam/internal/principal"
 	"testing"
 
 	"github.com/hanzoai/iam/pkg/schema"
@@ -145,7 +146,7 @@ func TestUpdate_NewAddressIsUnproven(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	got, err := api.Update(ctx, &UpdateInput{
+	got, err := api.Update(as(&principal.Principal{Org: "acme", User: "carol"}), &UpdateInput{
 		Owner: "acme", Name: "carol",
 		User: schema.User{Owner: "acme", Name: "carol", Email: "Victim@Corp.com"},
 	})
@@ -160,7 +161,7 @@ func TestUpdate_NewAddressIsUnproven(t *testing.T) {
 	}
 
 	// Restating the same address in another spelling is not a change.
-	if _, err := api.Update(ctx, &UpdateInput{
+	if _, err := api.Update(as(&principal.Principal{Org: "acme", User: "carol"}), &UpdateInput{
 		Owner: "acme", Name: "carol",
 		User: schema.User{Owner: "acme", Name: "carol", Email: "carol@acme.test"},
 	}); err != nil {
@@ -173,7 +174,7 @@ func TestUpdate_NewAddressIsUnproven(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	got, err = api.Update(ctx, &UpdateInput{
+	got, err = api.Update(as(&principal.Principal{Org: "acme", User: "dan"}), &UpdateInput{
 		Owner: "acme", Name: "dan",
 		User: schema.User{Owner: "acme", Name: "dan", Email: " DAN@acme.test "},
 	})

@@ -22,8 +22,8 @@ func TestCreate_TheFounderOwnsTheOrg(t *testing.T) {
 	api := organizations.NewOrganizationAPI(db)
 	ctx := context.Background()
 	u := orm.New[schema.User](db)
-	u.Owner, u.Name = "hanzo", "ann"
-	u.SetId("uuid-ann")
+	u.Owner, u.Name, u.Id = "hanzo", "ann", "uuid-ann"
+	u.SetId("hanzo/ann")
 	if err := u.CreateCtx(ctx); err != nil {
 		t.Fatal(err)
 	}

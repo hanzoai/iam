@@ -243,15 +243,17 @@ func AuthorizeRef(ctx context.Context, method, kind, home, ref string) error {
 // is one function, so the token write and the passkey write ask it identically and
 // can never drift.
 //
-// A token or a passkey filed under a SuperAdmin is a credential that speaks as
-// the platform's operator, and one filed under an org's owner speaks as that
-// owner, so it also asks users.Authorize.
+// A token or a passkey speaks as the person it is filed under, so filing one asks
+// users.Credential; revoking one asks users.Authorize.
 func AuthorizeUser(ctx context.Context, db orm.DB, method, user string) error {
 	if err := AuthorizeRef(ctx, method, "users", "", user); err != nil || user == "" {
 		return err
 	}
 	owner, name, _ := strings.Cut(user, "/")
-	return users.Authorize(ctx, db, owner, name)
+	if method == "DELETE" {
+		return users.Authorize(ctx, db, owner, name)
+	}
+	return users.Credential(ctx, db, owner, name)
 }
 
 // AuthorizeGrant gates the rows a grant NAMES in its subject lists — the users,

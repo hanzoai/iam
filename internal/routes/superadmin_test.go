@@ -147,8 +147,8 @@ func TestAnOrgAdminCannotWriteItsSuperAdmin(t *testing.T) {
 		if got := digest(t, h, "admin", "z"); got != secretUserHash {
 			t.Fatalf("the operator's password changed under a refusal: %q", got)
 		}
-		if status, body := h.send(t, boss, "PUT", "/v1/iam/users/hanzo/alice", reset); status != 200 {
-			t.Fatalf("hanzo's admin could not reset a member: %d %s", status, body)
+		if status, body := h.send(t, boss, "PUT", "/v1/iam/users/hanzo/alice", reset); status != 403 {
+			t.Fatalf("hanzo's admin reset a member's password: %d %s", status, body)
 		}
 	})
 }
@@ -184,8 +184,8 @@ func TestASuperAdminsFactorsAndCredentialsAreTheirs(t *testing.T) {
 			t.Fatalf("%s enrolled a factor on the operator: %d %s", who.name, status, body)
 		}
 	}
-	if status, body := h.send(t, boss, "DELETE", "/v1/iam/mfa", `{"owner":"hanzo","name":"alice"}`); status != 200 {
-		t.Fatalf("hanzo's admin could not manage a member's factors: %d %s", status, body)
+	if status, body := h.send(t, boss, "DELETE", "/v1/iam/mfa", `{"owner":"hanzo","name":"alice"}`); status != 403 {
+		t.Fatalf("hanzo's admin dropped a member's factors: %d %s", status, body)
 	}
 
 	if status, body := h.send(t, boss, "POST", "/v1/iam/webauthn-credentials",
@@ -193,8 +193,8 @@ func TestASuperAdminsFactorsAndCredentialsAreTheirs(t *testing.T) {
 		t.Fatalf("hanzo's admin filed a passkey for the operator: %d %s", status, body)
 	}
 	if status, body := h.send(t, boss, "POST", "/v1/iam/webauthn-credentials",
-		`{"owner":"hanzo","name":"member","user":"hanzo/alice"}`); status != 200 {
-		t.Fatalf("hanzo's admin could not file a member's passkey: %d %s", status, body)
+		`{"owner":"hanzo","name":"member","user":"hanzo/alice"}`); status != 403 {
+		t.Fatalf("hanzo's admin filed a member's passkey: %d %s", status, body)
 	}
 
 	patch := `{"schemas":["urn:ietf:params:scim:api:messages:2.0:PatchOp"],"Operations":[{"op":"replace","path":"password","value":"a whole new password"}]}`
@@ -337,8 +337,8 @@ func TestAnOrgAdminCannotNameASuperAdminOnATokenOrPasskey(t *testing.T) {
 	}
 
 	if status, body := h.send(t, boss, "POST", "/v1/iam/tokens",
-		`{"owner":"hanzo","name":"ordinary","user":"hanzo/alice"}`); status != 200 {
-		t.Fatalf("hanzo's admin could not record a member's token: %d %s", status, body)
+		`{"owner":"hanzo","name":"ordinary","user":"hanzo/alice"}`); status != 403 {
+		t.Fatalf("hanzo's admin recorded a member's token: %d %s", status, body)
 	}
 	if status, body := h.send(t, h.person(t, "admin/root"), "POST", "/v1/iam/tokens",
 		`{"owner":"hanzo","name":"operator","user":"admin/z"}`); status != 200 {
@@ -375,15 +375,19 @@ func TestACaseVariantNamesTheSameSuperAdmin(t *testing.T) {
 }
 
 // hanzo/z holds an admin-org membership from hanzo, and that grants nothing:
-// hanzo's admin runs the account like any other of hanzo's, and hanzo/z itself
-// cannot touch the SuperAdmin's account or any other tenant.
+// hanzo's admin runs the account like any other of hanzo's person — its profile
+// and never its password — and hanzo/z itself cannot touch the SuperAdmin's
+// account or any other tenant.
 func TestAnAdminMembershipIsAdministeredLikeAnyAccount(t *testing.T) {
 	eachOrgAdmin(t, func(t *testing.T, h *harness, boss caller) {
-		if status, body := h.send(t, boss, "PUT", "/v1/iam/users/hanzo/z", reset); status != 200 {
+		if status, body := h.send(t, boss, "PUT", "/v1/iam/users/hanzo/z", `{"user":{"displayName":"Z"}}`); status != 200 {
 			t.Fatalf("hanzo's admin could not administer hanzo/z: %d %s", status, body)
 		}
-		if got := digest(t, h, "hanzo", "z"); got == secretUserHash {
-			t.Fatal("hanzo's admin's reset of hanzo/z did not land")
+		if status, body := h.send(t, boss, "PUT", "/v1/iam/users/hanzo/z", reset); status != 403 {
+			t.Fatalf("hanzo's admin reset hanzo/z's password: %d %s", status, body)
+		}
+		if got := digest(t, h, "hanzo", "z"); got != secretUserHash {
+			t.Fatal("hanzo/z's password changed under a refusal")
 		}
 		z := h.person(t, "hanzo/z")
 		if status, body := h.send(t, z, "PUT", "/v1/iam/users/admin/z", reset); status != 403 {
