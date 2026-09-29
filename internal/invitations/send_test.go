@@ -26,6 +26,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/hanzoai/orm"
 
+	"github.com/hanzoai/iam/internal/oidc"
 	"github.com/hanzoai/iam/internal/otp"
 	"github.com/hanzoai/iam/internal/testhttp"
 	"github.com/hanzoai/iam/pkg/schema"
@@ -187,6 +188,12 @@ func TestSend_mailsThePinnedAddressTheWayTheInviterCameIn(t *testing.T) {
 // HIGH 1: the sender and the link are the token's. A request cannot name another
 // brand's application, and the Host header moves neither.
 func TestSend_theTokenDecidesSenderAndLink(t *testing.T) {
+	// lux.id is a brand this IAM mints under, so its access token is a credential here.
+	t.Setenv("IAM_ISSUER", "https://hanzo.id")
+	t.Setenv("IAM_ISSUER_MAP", `{"hanzo.id":"https://hanzo.id","lux.id":"https://lux.id"}`)
+	if err := oidc.InitIssuerResolver(); err != nil {
+		t.Fatal(err)
+	}
 	h, box := sendRig(t)
 	seedPinned(t, h.db, "inv-1", "ada@example.com")
 
@@ -201,20 +208,24 @@ func TestSend_theTokenDecidesSenderAndLink(t *testing.T) {
 }
 
 // HIGH 1 / MEDIUM 1: a tenant's application, an ID token and a plain token with no
-// client send nothing.
+// client send nothing. An ID token is no credential at all, so the Guard refuses
+// it before the handler asks which application it names.
 func TestSend_onlyThePlatformsAccessTokens(t *testing.T) {
-	for name, bearer := range map[string]func(h *harness) string{
-		"a tenant's application": func(h *harness) string {
+	for name, c := range map[string]struct {
+		bearer func(h *harness) string
+		want   int
+	}{
+		"a tenant's application": {func(h *harness) string {
 			return h.access(t, "acme/owner", "globex-console", "https://hanzo.id", "access-token")
-		},
-		"an ID token":            func(h *harness) string { return h.access(t, "acme/owner", "hanzo-app", "https://hanzo.id", "id-token") },
-		"a token with no client": func(h *harness) string { return h.token(t, "acme/owner") },
+		}, 403},
+		"an ID token":            {func(h *harness) string { return h.access(t, "acme/owner", "hanzo-app", "https://hanzo.id", "id-token") }, 401},
+		"a token with no client": {func(h *harness) string { return h.token(t, "acme/owner") }, 403},
 	} {
 		t.Run(name, func(t *testing.T) {
 			h, box := sendRig(t)
 			seedPinned(t, h.db, "inv-1", "ada@example.com")
-			if status, body := h.send(t, bearer(h), "hanzo.id", sendPath, `{}`); status != 403 {
-				t.Fatalf("status=%d body=%s, want 403", status, body)
+			if status, body := h.send(t, c.bearer(h), "hanzo.id", sendPath, `{}`); status != c.want {
+				t.Fatalf("status=%d body=%s, want %d", status, body, c.want)
 			}
 			if len(box.messages()) != 0 {
 				t.Fatal("a refused send mailed")

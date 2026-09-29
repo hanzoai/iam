@@ -156,6 +156,7 @@ func newHarness(t *testing.T) *harness {
 func (h *harness) mint(t *testing.T, sub string, exp time.Time) string {
 	t.Helper()
 	return signRS256(t, h.key, signingKid, jwt.MapClaims{
+		"tokenType": "access-token", "iss": "https://hanzo.id", "aud": "hanzo-test",
 		"sub": sub,
 		"iat": time.Now().Add(-time.Minute).Unix(),
 		"exp": exp.Unix(),
@@ -174,6 +175,7 @@ func (h *harness) token(t *testing.T, sub string) string {
 func (h *harness) sharedAppToken(t *testing.T, sub, ownerClaim string) string {
 	t.Helper()
 	return signRS256(t, h.key, signingKid, jwt.MapClaims{
+		"tokenType": "access-token", "iss": "https://hanzo.id", "aud": "hanzo-test",
 		"sub": sub, "owner": ownerClaim, "organization": ownerClaim, "exp": future(),
 	})
 }
@@ -304,7 +306,7 @@ func future() int64 { return time.Now().Add(time.Hour).Unix() }
 // mintKid signs an hour-long RS256 token for sub under an arbitrary key and kid,
 // for the forged-kid and wrong-key bearer tests.
 func mintKid(t *testing.T, key *rsa.PrivateKey, kid, sub string) string {
-	return signRS256(t, key, kid, jwt.MapClaims{"sub": sub, "exp": future()})
+	return signRS256(t, key, kid, jwt.MapClaims{"tokenType": "access-token", "iss": "https://hanzo.id", "aud": "hanzo-test", "sub": sub, "exp": future()})
 }
 
 // genRSA returns the suite's cached "other" key — a valid key that is NOT the
@@ -320,7 +322,7 @@ func genRSA(t *testing.T) *rsa.PrivateKey {
 // consulted (the classic alg-confusion downgrade, closed).
 func signHS256(t *testing.T, kid, sub string) string {
 	t.Helper()
-	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{"sub": sub, "exp": future()})
+	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{"tokenType": "access-token", "iss": "https://hanzo.id", "aud": "hanzo-test", "sub": sub, "exp": future()})
 	tok.Header["kid"] = kid
 	s, err := tok.SignedString([]byte("attacker-chosen-secret"))
 	if err != nil {

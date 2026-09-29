@@ -40,7 +40,7 @@ func userinfoHandler(db orm.DB) zip.Handler {
 		if row == nil {
 			return userinfoUnauthorized(c, "the access token is invalid or revoked")
 		}
-		claims, err := verifyToken(ctx, db, bearer)
+		claims, err := verifyBearer(ctx, db, bearer)
 		if err != nil {
 			return userinfoUnauthorized(c, "the access token is invalid")
 		}
