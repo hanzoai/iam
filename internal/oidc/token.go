@@ -818,10 +818,22 @@ func identityOf(ctx context.Context, db orm.DB, u *schema.User) Identity {
 		Name:    u.Name,
 		Display: u.DisplayName,
 		Billing: store.BillingAccount(u, refs),
+		Type:    kindOf(u),
 		Orgs:    refs,
 		Wallets: store.WalletRefs(ctx, db, u),
 		DID:     schema.DID(sub),
 	}
+}
+
+// kindOf is a user row's identity class as a token states it: schema.Program
+// for a machine (a service account or a program), empty for a person. It is the
+// fact schema.User.SuperAdmin reads, so a machine in the admin org is never
+// platform authority on its token either (authz.Claims.Sudo refuses a program).
+func kindOf(u *schema.User) string {
+	if u.Machine() {
+		return schema.Program
+	}
+	return ""
 }
 
 // userClaims resolves the token-facing Identity for a token row's (owner/name)
