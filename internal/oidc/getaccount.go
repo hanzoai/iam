@@ -140,7 +140,7 @@ func callerFrom(ctx context.Context, db orm.DB, sessionCookie, bearer string) (o
 	if bearer == "" {
 		return "", "", false
 	}
-	claims, err := verifyToken(ctx, db, bearer)
+	claims, err := verifyBearer(ctx, db, bearer)
 	if err != nil {
 		return "", "", false
 	}

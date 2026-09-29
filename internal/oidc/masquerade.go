@@ -104,7 +104,7 @@ func rescope(ctx context.Context, db orm.DB, in *assumeBody, org string) (*httpx
 	if bearer == "" {
 		return httpx.Bad(401, "present the access token you are re-scoping", CodeLoginRequired), nil
 	}
-	claims, err := verifyToken(ctx, db, bearer)
+	claims, err := verifyBearer(ctx, db, bearer)
 	if err != nil {
 		return httpx.Bad(401, "the access token is not valid", CodeLoginRequired), nil
 	}

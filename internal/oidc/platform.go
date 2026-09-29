@@ -40,8 +40,8 @@ func PlatformBearer(ctx context.Context, db orm.DB, bearer string) (*Claims, *sc
 	if bearer == "" {
 		return nil, nil, ErrNotPlatform
 	}
-	claims, err := verifyToken(ctx, db, bearer)
-	if err != nil || claims.TokenType != "access-token" || claims.Azp == "" || claims.Act != nil {
+	claims, err := verifyBearer(ctx, db, bearer)
+	if err != nil || claims.Azp == "" || claims.Act != nil {
 		return nil, nil, ErrNotPlatform
 	}
 	app, err := store.GetApplicationByClientId(ctx, db, claims.Azp)

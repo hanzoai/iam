@@ -111,6 +111,7 @@ func seedUser(t *testing.T, db orm.DB, owner, name string, admin bool) {
 func (e *certEnv) token(t *testing.T, sub string) string {
 	t.Helper()
 	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		"tokenType": "access-token", "iss": "https://hanzo.id", "aud": "hanzo-test",
 		"sub": sub,
 		"iat": time.Now().Add(-time.Minute).Unix(),
 		"exp": time.Now().Add(time.Hour).Unix(),

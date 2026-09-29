@@ -186,6 +186,7 @@ func guardedList(t *testing.T) (*zip.App, string) {
 	}
 
 	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		"tokenType": "access-token", "iss": "https://hanzo.id", "aud": "hanzo-test",
 		"sub": "admin/root",
 		"iat": time.Now().Add(-time.Minute).Unix(),
 		"exp": time.Now().Add(time.Hour).Unix(),
