@@ -66,20 +66,22 @@ func TestNoneConfinesToItsOwnOrg(t *testing.T) {
 	}
 }
 
-// A session answers for no public client of a reserved org; a confidential one,
-// and any client of a tenant, keep single sign-on.
+// A session answers for no application of a reserved org, secret or not, and
+// for no application that keeps no sign-in session; a tenant's session-keeping
+// application keeps single sign-on.
 func TestAttended(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		app    Application
 		expect bool
 	}{
-		{"public admin client", Application{Organization: "admin"}, true},
-		{"public client of the signing owner", Application{Organization: "built-in"}, true},
-		{"public client of the service org", Application{Organization: "app"}, true},
-		{"confidential admin client", Application{Organization: "admin", ClientSecret: "s"}, false},
-		{"public tenant client", Application{Organization: "hanzo"}, false},
-		{"an owner that only looks reserved", Application{Organization: "Admin"}, false},
+		{"public admin client", Application{Organization: "admin", EnableSigninSession: true}, true},
+		{"confidential admin client", Application{Organization: "admin", ClientSecret: "s", EnableSigninSession: true}, true},
+		{"client of the signing owner", Application{Organization: "built-in", EnableSigninSession: true}, true},
+		{"client of the service org", Application{Organization: "app", EnableSigninSession: true}, true},
+		{"tenant client keeping no session", Application{Organization: "hanzo"}, true},
+		{"tenant client keeping sessions", Application{Organization: "hanzo", EnableSigninSession: true}, false},
+		{"an owner that only looks reserved", Application{Organization: "Admin", EnableSigninSession: true}, false},
 	} {
 		if got := tc.app.Attended(); got != tc.expect {
 			t.Errorf("%s: Attended() = %v, want %v", tc.name, got, tc.expect)

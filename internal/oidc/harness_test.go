@@ -60,6 +60,7 @@ type appOpts struct {
 	codeSignin   bool     // EnableCodeSignin → the app allows sign-in by emailed/texted code
 	orgChoice    string   // OrgChoiceMode → "" none, "create" = self-serve org creation
 	grants       []string // declared OAuth grants; a grant absent here is refused
+	noSession    bool     // EnableSigninSession off → no grant is answered from a session
 }
 
 // tctx is the background context used by the test seed helpers.
@@ -105,6 +106,7 @@ func seedApp(t *testing.T, db orm.DB, o appOpts) *schema.Application {
 	a.EnablePassword = true
 	a.EnableSignUp = o.signup
 	a.EnableCodeSignin = o.codeSignin
+	a.EnableSigninSession = !o.noSession
 	a.ExpireInHours = 1
 	a.RefreshExpireInHours = o.refreshHours
 	a.RedirectUris = o.redirectURIs

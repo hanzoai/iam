@@ -59,8 +59,9 @@ var errAttended = errors.New("this application needs you to sign in again")
 //     challenge — no downgrade.
 //   - Reserved-org confinement: a built-in/SuperAdmin principal is grantable
 //     ONLY through an application that serves its own reserved org.
-//   - Presence: an attended application (a public client of a reserved org) is
-//     granted only on a credential proved in this sign-in, never on a session.
+//   - Presence: an attended application (any application of a reserved org, or
+//     one that keeps no sign-in session) is granted only on a credential proved
+//     in this sign-in, never on a session.
 func MintFor(ctx context.Context, db orm.DB, app *schema.Application, userID string, p Mint) (string, error) {
 	// The user's org is the owner half of its own id, set server-side at
 	// authentication — never read from the request.

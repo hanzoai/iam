@@ -7,11 +7,13 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/pkg/pkce"
+	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
 
@@ -140,9 +142,9 @@ func TestAttended_CredentialSignsIn(t *testing.T) {
 	}
 }
 
-// The admin org's confidential console keeps single sign-on: only a public
-// client needs the person present.
-func TestAttended_ConfidentialConsoleKeepsSSO(t *testing.T) {
+// The admin org's confidential console needs the person present too: a session
+// answers it neither silently nor at the login endpoint.
+func TestAttended_ConsoleNeverAnswersFromASession(t *testing.T) {
 	app, db := newServer(t)
 	cookie := superSession(t, app, db)
 	verifier := "verifier-attended-console-01234567890123456789012345"
@@ -150,5 +152,80 @@ func TestAttended_ConfidentialConsoleKeepsSSO(t *testing.T) {
 	q.Set("client_id", "console")
 	q.Set("redirect_uri", testRedirect)
 
-	codeFromLocation(t, requireRedirect(t, authorizeWith(t, app, q, cookie, nil), testRedirect))
+	loc := requireRedirect(t, authorizeWith(t, app, q, cookie, nil), testRedirect)
+	u, _ := url.Parse(loc)
+	if u.Query().Get("code") != "" || u.Query().Get("error") != errInteractionRequired {
+		t.Fatalf("a session answered the admin console: %q", loc)
+	}
+	q.Del("prompt")
+	req := jsonReq("POST", PathLogin+"?"+q.Encode(), map[string]any{"type": "code", "clientId": "console"})
+	req.Header.Set("Cookie", cookie)
+	_, body := do(t, app, req)
+	if env := decode(t, body); env["status"] != "error" || env["code"] != CodeLoginRequired {
+		t.Fatalf("a session answered the admin console at login: %s", body)
+	}
+}
+
+// An application of a reserved org that holds a secret is proved by it at every
+// redemption, a code minted on a typed credential included; a public one (admin-cli)
+// redeems on its verifier. Live, admin-console holds a secret while both
+// admin.hanzo.ai builds redeem without one, so it is declared public before this
+// rule ships.
+func TestAttended_AReservedOrgSecretBindsEveryRedemption(t *testing.T) {
+	app, db := newServer(t)
+	superSession(t, app, db)
+	code, verifier := consoleCode(t, app)
+	form := url.Values{
+		"code": {code}, "client_id": {"console"},
+		"redirect_uri": {testRedirect}, "code_verifier": {verifier},
+	}
+	resp, tok := exchangeCode(t, app, form)
+	if resp.StatusCode != 401 || tok["error"] != "invalid_client" || tok["access_token"] != nil {
+		t.Fatalf("a PKCE-only redemption for the admin console: %d %v, want 401 invalid_client", resp.StatusCode, tok)
+	}
+	form.Set("client_secret", "s3cret")
+	if resp, tok = exchangeCode(t, app, form); resp.StatusCode != 200 || tok["access_token"] == nil {
+		t.Fatalf("the console with its secret: %d %v", resp.StatusCode, tok)
+	}
+
+	// A family stored as a public grant before the rule renews only with the secret.
+	refresh := "legacy-console-refresh"
+	row := &schema.Token{
+		Owner: "admin", Name: "legacy-console", Application: "console", Organization: "admin",
+		User: "admin/root", Scope: "openid", TokenType: "Bearer", PublicGrant: true,
+		RefreshTokenHash: hashToken(refresh), RefreshExpireIn: time.Now().Add(time.Hour).Unix(),
+	}
+	row.RefreshFamily = "admin/legacy-console"
+	if err := store.PersistToken(tctx(), db, row); err != nil {
+		t.Fatalf("store the family: %v", err)
+	}
+	resp, body := do(t, app, formReq("POST", PathToken, url.Values{
+		"grant_type": {"refresh_token"}, "client_id": {"console"}, "refresh_token": {refresh},
+	}))
+	if resp.StatusCode != 401 {
+		t.Fatalf("a public-grant refresh for the admin console: %d %s, want 401", resp.StatusCode, body)
+	}
+}
+
+// A tenant application that keeps no sign-in session is answered by no session.
+func TestAttended_SessionlessAppNeverAnswersFromASession(t *testing.T) {
+	app, db := newServer(t)
+	twoApps(t, db)
+	seedApp(t, db, appOpts{clientID: "cli", redirectURIs: []string{cliRedirect}, noSession: true})
+	cookie := signIn(t, app, "portal")
+	verifier := "verifier-sessionless-0123456789012345678901234567890"
+	q := cliAuthorize(verifier, "none")
+	q.Set("client_id", "cli")
+
+	loc := requireRedirect(t, authorizeWith(t, app, q, cookie, nil), cliRedirect)
+	if u, _ := url.Parse(loc); u.Query().Get("code") != "" || u.Query().Get("error") != errInteractionRequired {
+		t.Fatalf("a session answered an app keeping no sessions: %q", loc)
+	}
+	q.Del("prompt")
+	req := jsonReq("POST", PathLogin+"?"+q.Encode(), map[string]any{"type": "code", "clientId": "cli"})
+	req.Header.Set("Cookie", cookie)
+	_, body := do(t, app, req)
+	if env := decode(t, body); env["status"] != "error" || env["code"] != CodeLoginRequired {
+		t.Fatalf("a session answered an app keeping no sessions at login: %s", body)
+	}
 }
