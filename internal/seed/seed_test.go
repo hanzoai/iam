@@ -14,6 +14,7 @@ import (
 	ormdb "github.com/hanzoai/orm/db"
 
 	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 func openDB(t *testing.T) orm.DB {
@@ -629,5 +630,25 @@ func TestApply_DeclaredAdminApplicationsAreThePlatforms(t *testing.T) {
 	}
 	if !platform("admin/hanzo-app") {
 		t.Fatal("the next run did not mark the declared application again")
+	}
+}
+
+// The seed does not declare a new admin application under a name an admin
+// account holds.
+func TestApply_refusesAnAdminAccountsName(t *testing.T) {
+	db := openDB(t)
+	ctx := context.Background()
+	u := orm.New[schema.User](db)
+	u.Owner, u.Name = "admin", "ops"
+	u.SetId("admin/ops")
+	if err := u.CreateCtx(ctx); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Apply(ctx, db, &initData{Applications: []*schema.Application{{Owner: "admin", Name: "ops", ClientId: "ops"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a, _ := store.GetApplicationByName(ctx, db, "admin", "ops"); a != nil || len(s.Refused) != 1 {
+		t.Fatalf("the seed created admin/ops beside the account (refused %v)", s.Refused)
 	}
 }

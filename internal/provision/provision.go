@@ -120,15 +120,10 @@ const (
 
 // isAdminByAccountType is the IAM `isAdmin` bit each type is provisioned with.
 //
-// A `service` account gets FALSE, and that is least privilege rather than an
-// oversight: platform authority is an account whose own org is the reserved
-// admin org (schema.User.SuperAdmin, authz.Claims.Sudo — neither reads isAdmin),
-// so a `service` account declared under the admin org holds full platform
-// authority with the bit clear. The upsert writes it as an ordinary account with
-// no machine class, which is what keeps that true: a row IAM marks as a machine
-// is never a SuperAdmin. The bit is a strictly ADDITIONAL grant —
-// authz.Claims.OrgAdmin reads `IsAdmin && org == Home()` — so setting it would
-// hand the account org-admin self-service it has no use for.
+// A `service` account gets FALSE: it is a machine (classByAccountType), and the
+// bit is a strictly ADDITIONAL grant — authz.Claims.OrgAdmin reads
+// `IsAdmin && org == Home()` — that would hand it org-admin self-service it has
+// no use for.
 var isAdminByAccountType = map[string]bool{
 	AccountOwner:   true,
 	AccountService: false,
@@ -414,6 +409,17 @@ type User struct {
 	Email       string `json:"email,omitempty"`
 	Password    string `json:"password,omitempty"`
 	IsAdmin     bool   `json:"isAdmin"`
+	// Type is the class the account is declared as — a person or a machine —
+	// so the upsert files a declared machine as one.
+	Type string `json:"type,omitempty"`
+}
+
+// classByAccountType is the IAM class each declared type is written as. A
+// `service` account is a machine, so it is never read as a person — and never as
+// a SuperAdmin, whatever org declares it.
+var classByAccountType = map[string]string{
+	AccountOwner:   "normal-user",
+	AccountService: "service-account",
 }
 
 // Derive turns a document into the full set of client registrations, in a
@@ -708,6 +714,7 @@ func (r *Reconciler) user(a OrgAccount) (User, error) {
 		Owner: a.Org, Name: a.Account.Name,
 		DisplayName: a.Account.DisplayName, Email: a.Account.Email,
 		IsAdmin: isAdminByAccountType[a.Account.Type],
+		Type:    classByAccountType[a.Account.Type],
 	}
 	if r.Credentials == nil {
 		return u, nil

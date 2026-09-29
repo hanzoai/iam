@@ -1067,3 +1067,12 @@ func GetSignupByConnector(ctx context.Context, db orm.DB, org, field, subject st
 		return nil, fmt.Errorf("store: %d accounts registered in %q share one %s subject", len(us), org, field)
 	}
 }
+
+// ShadowsApplication reports whether an application of the admin directory
+// named name would be shadowed by an account: a client's machine token names
+// admin/<application>, and a subject resolves to an account before an
+// application, so an account of that name answers to the client's tokens.
+func ShadowsApplication(ctx context.Context, db orm.DB, name string) (bool, error) {
+	u, err := GetUserByName(ctx, db, policy.AdminOrg, name)
+	return u != nil, err
+}

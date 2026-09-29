@@ -309,6 +309,13 @@ func upsertApplication(db orm.DB) zip.TypedHandler[registration, reply] {
 			} else if held {
 				return refuse(409, fmt.Sprintf("application name %q is held by another owner", in.Name)), nil
 			}
+			// An account of the admin directory with this name would answer to the
+			// application's machine tokens.
+			if shadowed, err := store.ShadowsApplication(ctx, db, in.Name); err != nil {
+				return refuse(500, "server_error"), nil
+			} else if shadowed {
+				return refuse(409, fmt.Sprintf("an account of the admin directory is named %q", in.Name)), nil
+			}
 			// A new application must NAME a signing cert, or it is not a
 			// registration — it is a login that fails after the user has already
 			// authenticated. Resolved here, where "brand new" is known, rather
@@ -365,6 +372,10 @@ type person struct {
 	Password     string `json:"password" url:"-"`
 	PasswordType string `json:"passwordType" url:"-"`
 	IsAdmin      bool   `json:"isAdmin" url:"-"`
+	// Type is the class the declaration states: "normal-user" for a person,
+	// "service-account" for a declared machine that proves itself with the
+	// credential the declaration locates. Empty states none.
+	Type string `json:"type" url:"-"`
 	// Auth is the `Authorization: Bearer <token>` header — see registration.Auth.
 	Auth string `json:"-" header:"Authorization"`
 
@@ -417,6 +428,11 @@ func upsertUser(db orm.DB) zip.TypedHandler[person, reply] {
 		if bad := verbatim("name", in.Name); bad != nil {
 			return bad, nil
 		}
+		switch in.Type {
+		case "", declaredPerson, schema.ServiceAccount:
+		default:
+			return refuse(400, fmt.Sprintf("type %q is neither %s nor %s", in.Type, declaredPerson, schema.ServiceAccount)), nil
+		}
 
 		existing, err := store.GetUserByName(ctx, db, in.Owner, in.Name)
 		if err != nil {
@@ -435,12 +451,26 @@ func upsertUser(db orm.DB) zip.TypedHandler[person, reply] {
 			// answered by name, and this endpoint stamps no machine class on a row it
 			// creates — the two surfaces make different things and neither writes the
 			// other's.
-			if existing.Machine() {
+			//
+			// A machine this document declared is the exception: it holds the
+			// password the declaration locates, which no key-minted agent ever does,
+			// and the declaration names its class.
+			declared := in.Type == schema.ServiceAccount && existing.Type == schema.ServiceAccount && existing.PasswordHash != ""
+			if existing.Machine() && !declared {
 				return refuse(400, fmt.Sprintf(
 					"account %s/%s is a machine identity, which is minted with its key by the "+
 						"service-account surface: a password declaration does not describe one",
 					in.Owner, in.Name)), nil
 			}
+			// A declaration classes an account that carries no class, and never
+			// re-classes one: a person does not become a machine by being declared,
+			// nor a machine a person.
+			if in.Type != "" && existing.Type != "" && in.Type != existing.Type {
+				return refuse(400, fmt.Sprintf(
+					"account %s/%s is %s, and a declaration does not re-class an account",
+					in.Owner, in.Name, existing.Type)), nil
+			}
+			classify := existing.Type == "" && in.Type != ""
 			// A declaration GRANTS org-admin only to an account it creates. Raising
 			// the bit is the one thing an update does that hands a principal authority
 			// it did not have, and this endpoint has no fact that says which rows are
@@ -481,9 +511,12 @@ func upsertUser(db orm.DB) zip.TypedHandler[person, reply] {
 			// unchanged row makes `updatedTime` say when the reconciler last ran
 			// rather than when the account last changed.
 			if display != existing.DisplayName || email != existing.Email || phone != existing.Phone ||
-				in.IsAdmin != existing.IsAdmin || hash != existing.PasswordHash {
+				in.IsAdmin != existing.IsAdmin || hash != existing.PasswordHash || classify {
 				existing.DisplayName, existing.Email, existing.Phone = display, email, phone
 				existing.IsAdmin = in.IsAdmin
+				if classify {
+					existing.Type = in.Type
+				}
 				if hash != existing.PasswordHash {
 					existing.PasswordHash, existing.PasswordType, existing.PasswordSalt = hash, kind, ""
 				}
@@ -515,6 +548,7 @@ func upsertUser(db orm.DB) zip.TypedHandler[person, reply] {
 			model := u.Model
 			u.Owner, u.Name = in.Owner, name
 			u.DisplayName, u.Email, u.Phone, u.IsAdmin = in.DisplayName, store.NormalizeEmail(in.Email), store.NormalizePhone(in.Phone), in.IsAdmin
+			u.Type = in.Type
 			if hash != "" {
 				u.PasswordHash, u.PasswordType = hash, cred.TypeArgon2id
 			}
@@ -528,6 +562,9 @@ func upsertUser(db orm.DB) zip.TypedHandler[person, reply] {
 		return done(action, &account{Name: in.Name, Owner: in.Owner}), nil
 	}
 }
+
+// declaredPerson is the class a declaration states for a person.
+const declaredPerson = "normal-user"
 
 // ---- helpers ----
 

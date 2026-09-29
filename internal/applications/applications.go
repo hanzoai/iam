@@ -280,6 +280,16 @@ func Create(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 			return nil, zip.ErrConflict("application name already in use: " + in.Name)
 		}
 
+		// An account of the admin directory with this name would answer to the
+		// application's machine tokens.
+		if in.Owner == policy.AdminOrg {
+			if shadowed, err := store.ShadowsApplication(ctx, db, in.Name); err != nil {
+				return nil, zip.ErrInternal(err.Error())
+			} else if shadowed {
+				return nil, zip.ErrConflict("an account of the admin directory is named " + in.Name)
+			}
+		}
+
 		// Bind the decoded entity to db under its natural key and persist.
 		in.Init(db)
 		in.SetId(id)

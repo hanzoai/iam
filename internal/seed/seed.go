@@ -198,6 +198,20 @@ func Apply(ctx context.Context, db orm.DB, data *initData) (*Summary, error) {
 			s.Refused = append(s.Refused, owner+"/"+a.Name+": the name is held by another owner")
 			continue
 		}
+		// A NEW admin application beside an account of the admin directory of the
+		// same name would have its machine tokens answered by that account.
+		if owner == policy.AdminOrg {
+			if existing, err := store.GetApplicationByName(ctx, db, owner, a.Name); err != nil {
+				return s, err
+			} else if existing == nil {
+				if shadowed, err := store.ShadowsApplication(ctx, db, a.Name); err != nil {
+					return s, err
+				} else if shadowed {
+					s.Refused = append(s.Refused, owner+"/"+a.Name+": an account of the admin directory holds the name")
+					continue
+				}
+			}
+		}
 		before := s.Skipped["applications"]
 		if err := upsert[schema.Application](ctx, db, a.Owner, a.Name, a, s, "applications"); err != nil {
 			return s, err
