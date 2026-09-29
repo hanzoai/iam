@@ -1,0 +1,99 @@
+{
+ "I14": [
+  "applications",
+  "audit_logs",
+  "certs",
+  "memberships",
+  "organizations",
+  "providers",
+  "sessions",
+  "tokens"
+ ],
+ "I17": [
+  "User.IsAdmin"
+ ],
+ "I18 dynamic-owner": [
+  "internal/bootstrap/bootstrap.go:upsertUser",
+  "internal/oidc/federation.go:provisionFederatedUser",
+  "internal/oidc/provision.go:provision",
+  "internal/oidc/signup.go:signupHandler",
+  "internal/scim/users.go:createUser",
+  "internal/scim/users.go:patchUser",
+  "internal/scim/users.go:replaceUser",
+  "internal/serviceaccounts/serviceaccounts.go:create",
+  "internal/users/users.go:(*API).Create",
+  "internal/users/users.go:(*API).Update",
+  "internal/wallet/verify.go:provision"
+ ],
+ "I18 static": [],
+ "I19 declared": [
+  "admin-flag",
+  "admits-admin",
+  "orgs-not-home"
+ ],
+ "I19 enterprise": [
+  "admits-admin",
+  "orgs-not-home"
+ ],
+ "I19 invitation-accept": [
+  "orgs-not-home"
+ ],
+ "I19 migration": [],
+ "I19 oauth": [
+  "orgs-not-home"
+ ],
+ "I19 oauth-founding": [
+  "admin-flag",
+  "home-not-owner"
+ ],
+ "I19 onboarding": [],
+ "I19 ordinary-journey": [
+  "admin-flag",
+  "home-not-owner"
+ ],
+ "I19 org-idp": [
+  "orgs-not-home"
+ ],
+ "I19 password-reset": [],
+ "I19 scim": [
+  "admin-flag",
+  "admits-admin",
+  "orgs-not-home"
+ ],
+ "I19 service-account": [],
+ "I19 signup": [
+  "orgs-not-home"
+ ],
+ "I19 signup-founding": [
+  "admin-flag",
+  "home-not-owner"
+ ],
+ "I19 signup-invitation": [
+  "orgs-not-home"
+ ],
+ "I19 superadmin": [],
+ "I19 upsert": [
+  "admin-flag",
+  "admits-admin",
+  "orgs-not-home"
+ ],
+ "I19 users-api": [
+  "admits-admin",
+  "orgs-not-home"
+ ],
+ "I19 wallet": [
+  "orgs-not-home"
+ ],
+ "I19 wallet-founding": [
+  "admin-flag",
+  "home-not-owner"
+ ],
+ "I2": [
+  "assume adds the assumed org to orgs",
+  "orgs names admin for a SuperAdmin"
+ ],
+ "I3": [
+  "a SuperAdmin's orgs names admin",
+  "an account's orgs names admin by membership"
+ ]
+}

@@ -39,6 +39,7 @@ require (
 	github.com/zap-proto/fiber/v3 v3.2.1
 	github.com/zap-proto/zip v1.37.12
 	golang.org/x/crypto v0.54.0
+	golang.org/x/tools v0.47.0
 )
 
 require (
@@ -103,7 +104,6 @@ require (
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
-	golang.org/x/tools v0.47.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	modernc.org/libc v1.72.3 // indirect

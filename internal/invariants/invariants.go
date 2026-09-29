@@ -77,6 +77,28 @@ var Ledger = map[string]Row{
 	// R7 row 7 (I18, R2), static half: exactly one statement files an account
 	// under admin, inside grantSuperAdmin.
 	"I18 static": {Rule: "I18 only grantSuperAdmin creates admin/<a>: one writer (R7.7)", Mode: Enforcing},
+	// R7 row 7: every statement that writes an account's owner from a value only
+	// known when it runs, by declaration. Each is a path its I19 row asks to create
+	// in admin; §5 step 4 removes or proves them.
+	"I18 dynamic-owner": {Rule: "I18 statements that write an account's owner from a run-time value (R7.7)", Mode: Reporting, Known: []string{
+		"internal/bootstrap/bootstrap.go:upsertUser",
+		"internal/oidc/federation.go:provisionFederatedUser",
+		"internal/oidc/provision.go:provision",
+		"internal/oidc/signup.go:signupHandler",
+		"internal/scim/users.go:createUser",
+		"internal/scim/users.go:patchUser",
+		"internal/scim/users.go:replaceUser",
+		"internal/serviceaccounts/serviceaccounts.go:create",
+		"internal/users/users.go:(*API).Create",
+		"internal/users/users.go:(*API).Update",
+		"internal/wallet/verify.go:provision",
+	}},
+	// I3: no account's orgs names a reserved org — not a SuperAdmin's (the admin
+	// directory stands in for a home it does not have) and not by a membership row.
+	"I3": {Rule: "I3 member(a, o) ⇒ o ∉ Reserved: no account's orgs names admin", Mode: Reporting, Known: []string{
+		"a SuperAdmin's orgs names admin",
+		"an account's orgs names admin by membership",
+	}},
 
 	// R7 row 4 / R5: one row per §8.1 creation path. A path's violations are the
 	// checks the account it creates fails: admin-record (filed under admin),

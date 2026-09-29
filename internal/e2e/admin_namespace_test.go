@@ -85,6 +85,28 @@ func TestAdminNamespace_adminHoldsOnlySuperAdmins(t *testing.T) {
 		t.Fatal(err)
 	}
 	invariants.Report(t, "I14", kinds)
+
+	// I3: after a SuperAdmin grants a person a membership of admin, no account's
+	// orgs may name a reserved org.
+	e.req(t, "POST", "/v1/iam/memberships", root, `{"user":"hanzo/alice","org":"admin","role":"member"}`, "application/json")
+	users, err := orm.TypedQuery[schema.User](e.db).GetAll(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reserved []string
+	for _, u := range users {
+		for _, ref := range store.MemberOrgRefs(ctx, e.db, u) {
+			if !store.Reserved(ref.Org) {
+				continue
+			}
+			if u.SuperAdmin() {
+				reserved = append(reserved, "a SuperAdmin's orgs names admin")
+			} else {
+				reserved = append(reserved, "an account's orgs names admin by membership")
+			}
+		}
+	}
+	invariants.Report(t, "I3", reserved)
 }
 
 // R5's second test: one ordinary account driven through the onboarding paths the
