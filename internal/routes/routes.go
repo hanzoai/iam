@@ -65,6 +65,7 @@ import (
 	"github.com/hanzoai/iam/internal/scim"
 	"github.com/hanzoai/iam/internal/serviceaccounts"
 	"github.com/hanzoai/iam/internal/sessions"
+	"github.com/hanzoai/iam/internal/superadmin"
 	"github.com/hanzoai/iam/internal/teams"
 	"github.com/hanzoai/iam/internal/tokens"
 	"github.com/hanzoai/iam/internal/users"
@@ -226,6 +227,7 @@ func Route(app *zip.App, db orm.DB) {
 	// capabilities the Guard attached, and org-scopes reads via principal.Scope.
 	serviceaccounts.Route(authed, db)
 	memberships.Route(authed, db)
+	superadmin.Route(authed, db)
 
 	// TOTP multi-factor enrollment (RFC 6238) — the account security page's
 	// initiate/verify/enable/disable flow. On the guarded group: self-service on the

@@ -82,6 +82,12 @@ const (
 	ActionInviteSignupRefused = "invitation-signup-refused"
 	// A code IAM sent a signed-in account to prove its address for joining.
 	ActionInviteCodeSent = "invitation-code-sent"
+
+	// A SuperAdmin account created for a named person, and one removed: the
+	// appointed and dismissed facts of HIP-0527 §1. They are the only record of who
+	// made a SuperAdmin and when (I18), filed on the SuperAdmin trail.
+	ActionSuperAdminAppoint = "superadmin-appoint"
+	ActionSuperAdminDismiss = "superadmin-dismiss"
 )
 
 // PlatformWritten reports whether action names a record the platform writes
@@ -95,7 +101,7 @@ func PlatformWritten(action string) bool {
 		ActionRevokeUserKeys, ActionTokenExchange, ActionAs,
 		ActionAssumeOrg, ActionReleaseOrg, ActionListOrgs, ActionSuperAdmin, ActionWorkloadToken,
 		ActionInviteSend, ActionInviteAccept, ActionInviteRefused, ActionInviteSignupRefused,
-		ActionInviteCodeSent:
+		ActionInviteCodeSent, ActionSuperAdminAppoint, ActionSuperAdminDismiss:
 		return true
 	}
 	return false
