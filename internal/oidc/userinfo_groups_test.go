@@ -49,26 +49,38 @@ func TestUserinfo_GroupsAreExactlyTheMembershipSet(t *testing.T) {
 	}
 }
 
-// An organization reaches the claim by being GRANTED and by nothing else. Before
-// the grant the reserved organization is absent however the account is written;
-// after it, it is there. So the claim reports a membership rather than a stored
-// string, and a relying party that maps groups onto access is reading a grant.
+// An organization reaches the claim by being GRANTED and by nothing else, and a
+// reserved organization never reaches it for a brand org's person: a relying party
+// that maps a group named admin onto platform authority would otherwise grant it
+// by a membership that opens nothing.
 func TestUserinfo_GroupsFollowTheGrant(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
 	seedRichUser(t, db)
 
 	_, info := userinfo(t, app, accessTokenFor(t, app, "openid profile"))
-	if got := groupsIn(info); got["admin"] || len(got) != 1 {
+	if got := groupsIn(info); len(got) != 1 {
 		t.Fatalf("groups = %v before any grant, want the home organization alone", info["groups"])
 	}
 
-	if _, err := store.EnsureMembership(context.Background(), db, "hanzo/alice", "admin", store.RoleMember); err != nil {
-		t.Fatalf("grant membership: %v", err)
+	for _, org := range []string{"admin", "lux"} {
+		if _, err := store.EnsureMembership(context.Background(), db, "hanzo/alice", org, store.RoleMember); err != nil {
+			t.Fatalf("grant membership: %v", err)
+		}
 	}
-	_, info = userinfo(t, app, accessTokenFor(t, app, "openid profile"))
-	if !groupsIn(info)["admin"] {
-		t.Fatalf("groups = %v after the grant, want the granted organization present", info["groups"])
+	access := accessTokenFor(t, app, "openid profile")
+	_, info = userinfo(t, app, access)
+	if got := groupsIn(info); !got["lux"] || got["admin"] {
+		t.Fatalf("groups = %v after the grants, want lux and never the admin org", info["groups"])
+	}
+	claims, err := verifyToken(context.Background(), db, access)
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	for _, g := range claims.Groups {
+		if g == "admin" {
+			t.Fatalf("token groups = %v, name the admin org for a brand member", claims.Groups)
+		}
 	}
 }
 

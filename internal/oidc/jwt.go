@@ -136,11 +136,12 @@ type Claims struct {
 	// disagree about who belongs where — a second list assembled from a second
 	// query is how a consumer comes to grant on stale membership.
 	//
-	// It lists MEMBERSHIP, so "admin" among a person's groups says they belong to
-	// the reserved org, not that they are a SuperAdmin: a brand org's person added
-	// to it appears here too. SuperAdmin is the person's own org being "admin",
-	// which is the FIRST entry of `orgs` (authz.Claims.Sudo). A relying party that
-	// grants platform authority on `groups` grants it by membership.
+	// A reserved org appears here only for a SuperAdmin (authz.Claims.Sudo on the
+	// same claim set). Relying parties grant platform authority on a group named
+	// "admin" (the forge's --admin-group, Hanzo CD's `g, admin, role:admin`), so a
+	// brand org's member of the admin org, whose membership opens nothing, is
+	// never named in it. `orgs` keeps the membership; authz reads it and it
+	// opens nothing there.
 	Groups []string `json:"groups,omitempty"`
 	// Wallets is the chain-qualified addresses this person has PROVED control
 	// of — each one the result of a CAIP-122 challenge IAM minted, bound to its
@@ -300,24 +301,23 @@ func (s *Signer) claims(id Identity, owner string, aud jwt.ClaimStrings, azp, sc
 		Azp:               azp,
 		TokenType:         kind,
 		Orgs:              id.Orgs,
-		Groups:            groupsOf(id.Orgs),
+		Groups:            groupsOf(id.Orgs, Claims{Type: id.Type, Orgs: id.Orgs}.sudo()),
 		Assumed:           id.Assumed,
 		Wallets:           id.Wallets,
 		DID:               id.DID,
 	}, nil
 }
 
-// groupsOf flattens the membership set to the names a groups claim carries.
-// Nil in, nil out, so a machine token omits the claim exactly as it omits orgs.
-func groupsOf(orgs []schema.OrgRef) []string {
-	if len(orgs) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(orgs))
+// groupsOf flattens the membership set to the names a groups claim carries,
+// leaving out every reserved org unless the subject is a SuperAdmin. An empty
+// result is nil, so a machine token omits the claim exactly as it omits orgs.
+func groupsOf(orgs []schema.OrgRef, sudo bool) []string {
+	var out []string
 	for _, o := range orgs {
-		if o.Org != "" {
-			out = append(out, o.Org)
+		if o.Org == "" || (policy.IsReservedOrg(o.Org) && !sudo) {
+			continue
 		}
+		out = append(out, o.Org)
 	}
 	return out
 }

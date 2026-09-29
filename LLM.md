@@ -292,12 +292,17 @@ nothing.
   machines included, nor a name nobody holds yet) and `users.Authorize` (only a
   SuperAdmin writes an account in `admin`). Both read the owner as written;
   resolving a name folds its case and never its org.
-- **`groups` is membership, not SuperAdmin.** The claim still lists every org a
-  person belongs to, so `admin` appears for a brand org's member of it. Two
-  relying parties read it as platform authority: the forge (`--admin-group
-  admin`, universe `hanzo-git.yaml`) and Hanzo CD (`hanzocd-rbac-cm.yaml`).
-  Moving them to `orgs[0]` needs the SuperAdmin to sign in through an app that
-  serves the admin org — reserved-org confinement refuses the brand apps.
+- **`groups` names a reserved org for a SuperAdmin only.** `groupsOf` drops
+  every reserved org unless `authz.Claims.Sudo` reads the claim set as
+  platform authority, on every token shape and in UserInfo; `orgs` keeps the
+  membership, which authz already reads as opening nothing. Two relying parties
+  grant platform authority on the group `admin`: the forge (`--admin-group
+  admin`, universe `hanzo-git.yaml`) and Hanzo CD (`g, admin, role:admin`,
+  `hanzocd-rbac-cm.yaml`). Both sign in through brand-org clients (`hanzo-git`,
+  `hanzo-cd`) a SuperAdmin cannot use, so until they authorize through an
+  admin-org client nobody is forge admin or holds a CD role through OIDC, and
+  the forge demotes its operator at their next sign-in (the tracker's forge
+  credential is that person's token).
 - **Provisioning** is `POST /v1/iam/admin/users/upsert` with `owner: admin` —
   a named person declared IN the admin org. Nothing promotes from a brand org.
 - **Audit.** Every request the Guard admits for a SuperAdmin is one
