@@ -18,6 +18,7 @@ import (
 
 	"github.com/hanzoai/iam/internal/invariants"
 	"github.com/hanzoai/iam/internal/seed"
+	"github.com/hanzoai/iam/pkg/pkce"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -70,7 +71,13 @@ func TestAdminNamespace_adminHoldsOnlySuperAdmins(t *testing.T) {
 	if err := alice.UpdateCtx(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if st, body := e.req(t, "POST", "/v1/iam/superadmins", root, `{"target":{"owner":"hanzo","name":"alice"}}`, "application/json"); st != 201 {
+	operator, _ := store.GetUserByName(ctx, e.db, "admin", "root")
+	operator.Type = "normal-user" // a SuperAdmin person says so by class
+	if err := operator.UpdateCtx(ctx); err != nil {
+		t.Fatal(err)
+	}
+	seedAdminConsole(t, e.db)
+	if st, body := e.req(t, "POST", "/v1/iam/superadmins", e.signInAdmin(t), `{"target":{"owner":"hanzo","name":"alice"}}`, "application/json"); st != 201 {
 		t.Fatalf("appoint: %d %s", st, body)
 	}
 	kinds, err := invariants.AdminRecords(ctx, e.db)
@@ -121,7 +128,7 @@ func TestAdminNamespace_ordinaryJourney(t *testing.T) {
 	access := func() string {
 		tok := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 			"sub": sub, "azp": "hanzo-app", "aud": "hanzo-app", "iss": "https://hanzo.id", "tokenType": "access-token",
-			"iat": time.Now().Add(-time.Minute).Unix(), "exp": time.Now().Add(time.Hour).Unix(),
+			"iat": time.Now().Unix(), "exp": time.Now().Add(time.Hour).Unix(),
 		})
 		tok.Header["kid"] = kid
 		s, err := tok.SignedString(e.key)
@@ -192,4 +199,46 @@ func foundedBy(t *testing.T, db orm.DB, u *schema.User) []string {
 		}
 	}
 	return out
+}
+
+// seedAdminConsole registers the admin directory's own client, the one a
+// SuperAdmin signs in through.
+func seedAdminConsole(t *testing.T, db orm.DB) {
+	t.Helper()
+	a := orm.New[schema.Application](db)
+	a.Owner, a.Name, a.ClientId, a.ClientSecret = "admin", "admin-console", "admin-console", "admin-secret"
+	a.Organization, a.Cert, a.EnablePassword = "admin", kid, true
+	a.RedirectUris, a.ExpireInHours = []string{redirectURI}, 1
+	a.SetId("admin/admin-console")
+	if err := a.CreateCtx(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// signInAdmin signs admin/root in through the admin console by the
+// authorization-code grant and answers the access token.
+func (e *env) signInAdmin(t *testing.T) string {
+	t.Helper()
+	verifier := "e2e-admin-verifier-000000000000000000000000000000000"
+	body, _ := json.Marshal(map[string]string{
+		"type": "code", "organization": "admin", "username": "root@hanzo.ai", "password": "pw",
+		"clientId": "admin-console", "redirectUri": redirectURI, "scope": "openid",
+		"codeChallenge": pkce.Challenge(verifier), "codeChallengeMethod": "S256",
+	})
+	st, resp := e.req(t, "POST", "/v1/iam/login", "", string(body), "application/json")
+	var m map[string]any
+	_ = json.Unmarshal([]byte(resp), &m)
+	code, _ := m["data"].(string)
+	if st != 200 || code == "" {
+		t.Fatalf("admin sign-in: %d", st)
+	}
+	tok := e.token(t, url.Values{
+		"grant_type": {"authorization_code"}, "code": {code}, "client_id": {"admin-console"},
+		"client_secret": {"admin-secret"}, "redirect_uri": {redirectURI}, "code_verifier": {verifier},
+	})
+	access, _ := tok["access_token"].(string)
+	if access == "" {
+		t.Fatal("admin sign-in minted no token")
+	}
+	return access
 }

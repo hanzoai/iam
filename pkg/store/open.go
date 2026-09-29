@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/hanzoai/orm"
 	ormdb "github.com/hanzoai/orm/db"
@@ -40,6 +41,7 @@ func Open(backend, path, addr string) (orm.DB, error) {
 		if err != nil {
 			return nil, fmt.Errorf("open sqlite %q: %w", path, err)
 		}
+		transactional.Store(db, true)
 		return db, nil
 	case "sql":
 		// addr names the hanzoai/sql backend (e.g. sql://sql-0.sql.hanzo.svc:9651);
@@ -76,4 +78,17 @@ func hostPort(scheme, addr string) (string, error) {
 		return "", fmt.Errorf("store: %s backend is addressed as %s://, not %s://", scheme, scheme, got)
 	}
 	return addr[i+3:], nil
+}
+
+// transactional holds the stores Open made whose transactions are real.
+var transactional sync.Map
+
+// Atomic reports whether db's RunInTransaction is a real transaction: every write
+// inside it commits or none does, and a concurrent writer is serialized against
+// it. SQLite's are. The sql and datastore backends forward each operation on its
+// own (hanzoai/orm db/zap.go), so a read-then-write there is two independent
+// steps; so is any store Open did not make.
+func Atomic(db orm.DB) bool {
+	v, ok := transactional.Load(db)
+	return ok && v.(bool)
 }

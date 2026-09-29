@@ -8,12 +8,14 @@ import (
 
 func init() {
 	zip.Describe("github.com/hanzoai/iam/internal/superadmin DELETE /v1/iam/superadmins/:name", zip.Doc{
-		Description: "Dismisses a SuperAdmin.\n\nThe account admin/<name> is removed with its memberships, and the dismissal is\nrecorded on the platform trail in the same write; its sessions stop at the next\nrequest that reads the account. The person's own account is untouched. Only a\nSuperAdmin, presenting their own credential, dismisses, and the last SuperAdmin\nis not dismissed.",
+		Description: "Dismisses a SuperAdmin.\n\nThe account admin/<name> is removed with its memberships, and the dismissal is\nrecorded on the platform trail in the same write; its sessions stop at the next\nrequest that reads the account. The person's own account is untouched. Only a\nSuperAdmin dismisses, presenting the access token of their own sign-in from the\nlast ten minutes, and the last SuperAdmin is not dismissed.",
 	})
 	zip.Describe("github.com/hanzoai/iam/internal/superadmin POST /v1/iam/superadmins", zip.Doc{
-		Description: "Appoints a SuperAdmin for a named person.\n\nIt creates a new account in the admin directory for the person who signs in as\ntarget today, and records the appointment on the platform trail in the same\nwrite. It never moves or promotes an account: target keeps everything it had,\nand the new account holds no password, key, org role or admin flag. It takes\nthe target's proven address, so the person sets a password by the code mailed\nthere. Only a SuperAdmin, presenting their own credential, appoints. A target\nin the admin directory, a machine, a suspended account, one without a proven\naddress, or a person who already holds a SuperAdmin account is refused.",
+		Description: "Appoints a SuperAdmin for a named person.\n\nIt creates a new account in the admin directory for the person who signs in as\ntarget today, and records the appointment on the platform trail in the same\nwrite. It never moves or promotes an account: target keeps everything it had,\nand the new account holds no password, key, org role or admin flag. It takes\nthe target's proven address, so the person sets a password by the code mailed\nthere; the answer names the person and that address.\n\nOnly a SuperAdmin appoints, presenting the access token of their own sign-in\nfrom the last ten minutes. A target in the admin directory, a machine, a\nsuspended account, one without a proven address, a person who already holds a\nSuperAdmin account, or a name an application of the admin directory holds is\nrefused.",
 		Fields: map[string]string{
+			"Appointed.address": "Address is where the appointed person's recovery code goes.",
 			"Appointed.id":      "Id is the new account's subject.",
+			"Appointed.person":  "Person is the account of the person appointed, \"<owner>/<name>\".",
 			"GrantInput.name":   "Name is the new account's username in the admin directory. Empty takes the\ntarget's own username.",
 			"GrantInput.target": "Target is the person the account is for.",
 		},

@@ -63,7 +63,7 @@ var Ledger = map[string]Row{
 	// violations are the kinds of record filed there after IAM's write paths run;
 	// §5 step 8 re-files them.
 	"I14": {Rule: "I14 admin/<x> ⇒ x is a SuperAdmin account (R7.1)", Mode: Reporting, Known: []string{
-		"applications", "audit_logs", "certs", "memberships", "organizations", "providers", "tokens",
+		"applications", "audit_logs", "certs", "memberships", "organizations", "providers", "sessions", "tokens",
 	}},
 	// R7 row 2 (I2): a SuperAdmin holds no org role, and an assume grants none.
 	"I2": {Rule: "I2 superadmin(a) ⇒ no org role; assume leaves orgs unchanged (R7.2)", Mode: Reporting, Known: []string{

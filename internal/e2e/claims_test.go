@@ -4,17 +4,14 @@
 package e2e_test
 
 import (
-	"context"
 	"encoding/json"
 	"net/url"
 	"sort"
 	"testing"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/hanzoai/orm"
 
 	"github.com/hanzoai/iam/pkg/pkce"
-	"github.com/hanzoai/iam/pkg/schema"
 )
 
 // perMint are the claims that differ on every mint and say nothing about who the
@@ -76,14 +73,7 @@ func canonical(m map[string]any) string {
 func TestClaims_pinned(t *testing.T) {
 	e := boot(t)
 	seedUser(t, e.db, "hanzo", "boss", "boss@hanzo.ai", "pw", true)
-	a := orm.New[schema.Application](e.db)
-	a.Owner, a.Name, a.ClientId, a.ClientSecret = "admin", "admin-console", "admin-console", "admin-secret"
-	a.Organization, a.Cert, a.EnablePassword = "admin", kid, true
-	a.RedirectUris, a.ExpireInHours = []string{redirectURI}, 1
-	a.SetId("admin/admin-console")
-	if err := a.CreateCtx(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	seedAdminConsole(t, e.db)
 	for _, c := range []struct {
 		who, client, secret, org, username, claims, userinfo string
 	}{

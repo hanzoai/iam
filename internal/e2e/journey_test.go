@@ -32,13 +32,13 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/hanzoai/orm"
-	ormdb "github.com/hanzoai/orm/db"
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/keyring"
 	"github.com/hanzoai/iam/internal/routes"
 	"github.com/hanzoai/iam/pkg/pkce"
 	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/pkg/store"
 
 	"github.com/hanzoai/iam/internal/testhttp"
 )
@@ -62,10 +62,7 @@ func boot(t *testing.T) *env {
 		t.Fatalf("rsa: %v", err)
 	}
 	dir := t.TempDir()
-	db, err := orm.OpenSQLite(&ormdb.SQLiteDBConfig{
-		Path:   filepath.Join(dir, "e2e.db"),
-		Config: ormdb.SQLiteConfig{BusyTimeout: 5000, JournalMode: "WAL"},
-	})
+	db, err := store.Open("sqlite", filepath.Join(dir, "e2e.db"), "")
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
