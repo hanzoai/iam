@@ -113,6 +113,7 @@ func refreshTokenGrant(c *zip.Ctx, db orm.DB) error {
 		// fact. Dropping it would make only the FIRST refresh work and the second
 		// 401 — a session that dies an hour late instead of on time.
 		PublicGrant: tok.PublicGrant,
+		Device:      tok.Device,
 	}
 	nu.Name = "rt-" + nameSeed[:24]
 	// issueTokens re-resolves nu.User against the user table, so THIS is where a

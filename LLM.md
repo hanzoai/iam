@@ -270,8 +270,8 @@ createdTime).
 `schema.User.SuperAdmin`: a PERSON (`!Machine()`) whose row's `owner` is
 `admin`. Nothing else answers it. The Guard sets `Principal.Sudo` from it when it
 loads the caller's row, and every gate reads `p.Sudo` or asks the row directly
-(assume/release, device approval across tenants, unlink, bootstrap's
-credential freeze, the registry push gate). `authz.Claims.Sudo` is the same rule
+(assume/release, unlink, bootstrap's credential freeze, the registry push
+gate). `authz.Claims.Sudo` is the same rule
 read off a token: its home org is `orgs[0]`, which `store.MemberOrgRefs` opens
 with the row's `owner`, so the row and every token minted from it agree. The
 token shape is unchanged; the `owner` claim is the minting app's org and decides
@@ -302,8 +302,8 @@ nothing.
   a named person declared IN the admin org. Nothing promotes from a brand org.
 - **Audit.** Every request the Guard admits for a SuperAdmin is one
   `schema.ActionSuperAdmin` row (method, URI with query, status, client IP,
-  actor), filed under `admin`; so are a SuperAdmin's unlink of someone else's
-  sign-in method and a device approval into another org. The action is
+  actor), filed under `admin`; so is a SuperAdmin's unlink of someone else's
+  sign-in method. The action is
   `PlatformWritten`: the audit-log CRUD cannot create, alter or delete it.
   assume/release/list-organizations keep their own rows.
 
@@ -547,6 +547,19 @@ relaxation was dormant (every live registration is confidential and takes the
 secret path), so nothing that worked broke. The rule lives on the GRANT, not in a
 document, because registration shape must not be able to open a credential
 surface — the same lesson as `Token.PublicGrant` above, in the other direction.
+
+**A reserved org neither issues nor approves a device code.** Approving needs
+only a session and a user_code anybody can start, so a SuperAdmin approval was
+one phished click from a token whose `orgs[0]` is `admin`. `mayApprove` is
+MintFor's tenant rule — the code's org, or any non-reserved org through an app
+that serves any org — with every reserved org refused on both sides; the poll
+judges the stored approver again, so an approval stored under the old rule
+mints nothing (`access_denied`, code spent). An app of a reserved org answers
+`unauthorized_client` at request and poll. The grant row is marked
+`schema.Token.Device`, carried across rotation, and every token of the family
+drops reserved orgs from `orgs`/`groups` (`unreserved`), so a brand user's
+admin-org membership never rides a device token either. A SuperAdmin signs a
+CLI in through `admin-cli`'s PKCE flow.
 
 **One client id.** `hanzo-cli` is the id BOTH CLIs authenticate as — Rust
 `hanzoai/cli` (`src/iam/oauth.rs` `CLIENT_ID`) and the Go control CLI
