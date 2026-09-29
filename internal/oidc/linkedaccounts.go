@@ -4,8 +4,8 @@
 package oidc
 
 import (
-	"reflect"
-	"strings"
+	"maps"
+	"slices"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
@@ -27,20 +27,6 @@ import (
 
 // PathLinkedAccounts is the canonical linked-identities endpoint.
 const PathLinkedAccounts = "/v1/iam/linked-accounts"
-
-// connectorTags is the set of User json tags that hold a linked federated-identity
-// subject — the legacy per-connector columns (schema/user.go "Linked
-// federated-identity subjects"). ONE list; linked-accounts reflects the non-empty
-// ones out, so a new connector column is picked up by adding its tag here only.
-var connectorTags = fields(
-	"github google qq wechat facebook dingtalk weibo gitee linkedin wecom lark gitlab " +
-		"adfs baidu alipay iam infoflow apple azuread azureadb2c slack steam bilibili okta " +
-		"douyin kwai line amazon auth0 battlenet bitbucket box cloudfoundry dailymotion deezer " +
-		"digitalocean discord dropbox eveonline fitbit gitea heroku influxcloud instagram " +
-		"intercom kakao lastfm mailru meetup microsoftonline naver nextcloud onedrive oura " +
-		"patreon paypal salesforce shopify soundcloud spotify strava stripe telegram tiktok " +
-		"tumblr twitch twitter typetalk uber vk wepay xero yahoo yammer yandex zoom " +
-		"custom custom2 custom3 custom4 custom5 custom6 custom7 custom8 custom9 custom10")
 
 // linkedAccount is one linked social/OAuth identity.
 type linkedAccount struct {
@@ -69,30 +55,14 @@ func linkedAccountsHandler(db orm.DB) zip.Handler {
 	}
 }
 
-// linkedAccountsOf reflects a user's non-empty connector columns into the linked list.
-// Reflection over the ONE connectorTags set avoids a per-field cascade and stays
-// faithful to whichever columns hold a subject.
+// linkedAccountsOf lists a user's federated subjects, in provider order, from the
+// one list of connectors federation signs in with (schema.Connectors).
 func linkedAccountsOf(u *schema.User) []linkedAccount {
 	out := []linkedAccount{}
-	v := reflect.ValueOf(*u)
-	t := v.Type()
-	for i := 0; i < t.NumField(); i++ {
-		tag, _, _ := strings.Cut(t.Field(i).Tag.Get("json"), ",")
-		if !connectorTags[tag] {
-			continue
-		}
-		if s := v.Field(i).String(); s != "" {
-			out = append(out, linkedAccount{Provider: tag, Subject: s})
+	for _, provider := range slices.Sorted(maps.Keys(schema.Connectors)) {
+		if s := *schema.Connectors[provider](u); s != "" {
+			out = append(out, linkedAccount{Provider: provider, Subject: s})
 		}
 	}
 	return out
-}
-
-// fields turns a space-separated tag list into a set.
-func fields(list string) map[string]bool {
-	m := map[string]bool{}
-	for _, f := range strings.Fields(list) {
-		m[f] = true
-	}
-	return m
 }

@@ -349,8 +349,10 @@ of its `isAdmin` bit and its home row, so an owner row makes it owner.
   another's to plant, in this org or any other they belong to. The external id is
   one of them, so an org-scoped SCIM sync moves an address only as a SuperAdmin or
   an application. A full-row update carries the federated subjects
-  (`schema.Connectors`) and raw passkey rows: federation link, sign-in and the
-  WebAuthn ceremony are their only writers.
+  (`schema.Connectors`, the one list federation, linked-accounts and unlink read)
+  and raw passkey rows, under the row's lock; a create drops any a body states,
+  with its secrets and factors. Federation link and sign-in (`CreateInput.Link`)
+  and the WebAuthn ceremony are their only writers.
 - **An as() token acts in the key's org alone** (`orgs` is that org), and a target
   holding an admin or owner role anywhere is refused.
 - **A deleted org leaves nothing that speaks, and its name is given once.**

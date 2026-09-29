@@ -95,6 +95,10 @@ type CreateInput struct {
 	// answers for themselves. A request cannot reach it, which is the point: no
 	// caller can assert a consent on somebody else's behalf.
 	Consent *schema.Consent `json:"-"`
+	// Link is the federated subject the calling code proved the new account holds,
+	// named by its provider in schema.Connectors. Off the wire: a body links no
+	// sign-in to an account.
+	Link Link `json:"-"`
 	// Type and Admin are the identity CLASS — what KIND of principal this is, and
 	// whether it administers its org. They are off the wire for the same reason
 	// Consent is: a request must not be able to assert them, and here that is a
@@ -300,7 +304,16 @@ func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error)
 		return nil, zip.ErrConflict("user id collision; retry")
 	}
 	// Never trust a client-supplied digest; the hash is derived here or nowhere.
-	u.PasswordHash, u.PasswordSalt = "", ""
+	// Nor a stated secret, factor, federated subject or passkey row: each has its
+	// own writer, and a body that carried one would plant it on the new account.
+	// The one federated subject a new account starts with is the calling code's
+	// (in.Link), as federation proved it.
+	u.CarrySecretsFrom(&schema.User{})
+	u.CarryLinksFrom(&schema.User{})
+	factor.Copy(u, &schema.User{})
+	if ref, ok := schema.Connectors[in.Link.Provider]; ok && in.Link.Subject != "" {
+		*ref(u) = in.Link.Subject
+	}
 	u.PasswordType = ""
 	// Nor a client-supplied CREDENTIAL. These fields are credential material, so a
 	// body that carries one plants a value the sender already knows onto the new row.
@@ -459,118 +472,136 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 		return nil, err
 	}
 
+	// The row is read again under its lock and written in the same transaction, so
+	// everything carried from it is what it holds at the write, not at the read.
+	key := existing.Key().Encode()
 	u := &in.User
-	u.Owner, u.Name = owner, name
-	u.Email = store.NormalizeEmail(u.Email)
-	if in.Password != "" || u.Email != store.NormalizeEmail(existing.Email) || u.Phone != existing.Phone || u.ExternalId != existing.ExternalId {
-		if err := Credential(ctx, a.db, existing.Owner, existing.Name); err != nil {
-			return nil, err
-		}
-	}
-	// Preserve immutable identity and creation provenance. Id is the stable OIDC
-	// `sub` (and the authz principal key): like CreatedTime it is carried from the
-	// stored row and a body-supplied value is IGNORED — mutating it would move the
-	// user's subject (breaking every session/reference) or, worse, point it at a
-	// victim's UUID for impersonation on the money path.
-	u.Id = existing.Id
-	u.CreatedTime = existing.CreatedTime
-	u.UpdatedTime = nowRFC3339()
-	// Lockout state is SERVER-OWNED, exactly like Id/CreatedTime: recordAttempt is its
-	// only writer. Carry it from the stored row and IGNORE any body value — this is a
-	// full-row write, so an omitted (or 0) signinWrongTimes would otherwise overwrite a
-	// LOCKED account's counter to 0, and a routine admin profile edit would silently
-	// unlock a user mid-attack (F-6).
-	u.SigninWrongTimes = existing.SigninWrongTimes
-	u.LastSigninWrongTime = existing.LastSigninWrongTime
-	// The identity CLASS is server-owned too, and for a money reason rather than a
-	// bookkeeping one. Type and IsAdmin are the two facts store.BillingAccount reads
-	// to answer "this principal spends the ORG POOL", which IAM then signs as the
-	// `billing_account` claim and account.Payer honours above every other signal —
-	// so in the shared signup org either field is a claim on the platform's own
-	// balance. This is a full-row write reached by the typed CRUD update AND the
-	// legacy update-user verb, both of which bind a whole user from the body, so
-	// without this an org admin could re-class any member of its org — quietly, and
-	// with isAdmin left false, since machine-typing alone is enough. Type is never
-	// restated; IsAdmin only by a caller that has checked it may (SCIM, SuperAdmin).
-	u.Type = existing.Type
-	u.IsAdmin = existing.IsAdmin
-	if in.Admin != nil {
-		u.IsAdmin = *in.Admin
-	}
-	// EmailVerified is a PROOF the server recorded, not a property a body may state.
-	// It is what the federation broker asks before it links a social identity onto an
-	// existing local account: it adopts a row only when that row's own address was
-	// proven, or when the row carries no password anybody could already sign in with.
-	// A body that could state it would answer that question for the broker — a row
-	// carrying a chosen password AND a stated proof passes a gate that exists to say
-	// no. Signup records false, the broker records true when an identity provider
-	// proved it, and both write through their own paths; this one carries — and only
-	// for the address it was proven for. A write that changes the address leaves the
-	// new one unproven, or the proof of one address becomes the proof of any.
-	u.EmailVerified = existing.EmailVerified && u.Email == store.NormalizeEmail(existing.Email)
-	// The registering application is stated once, by the code that registered the
-	// account (CreateInput.Application), and every write after that carries it.
-	u.SignupApplication = existing.SignupApplication
-	// Every secret is carried from the stored row and any body value is IGNORED —
-	// the password digest, the key secret, the bearer material, the authenticator
-	// seed and its recovery codes. CarrySecretsFrom is the inverse of Mask, so the
-	// set is exactly what a reader cannot see: this is a full-row write and every
-	// body reaching it came from a masked read, so a stated secret is either an
-	// erasure (the field arrived blank) or a plant by a caller with user-admin
-	// scope. Each of these has its own seam — password reset below, key rotation at
-	// mint/revoke, multi-factor enrolment in internal/mfa.
-	u.CarrySecretsFrom(existing)
-	u.CarryLinksFrom(existing)
-	// AccessKey and PasswordType are READABLE, so they are not Mask's to carry — but
-	// they are the halves that make the carried secrets interpretable (a digest with
-	// no type cannot be verified; a secret with no key cannot be used), so a partial
-	// body must not orphan them either.
-	u.AccessKey = existing.AccessKey
-	u.PasswordType = existing.PasswordType
-	// A new plaintext password is the one secret a caller MAY state, through its own
-	// field rather than the user row.
-	if in.Password != "" {
-		hash, err := hashPassword(in.Password)
+	err = a.db.RunInTransaction(ctx, func(tx orm.DB) error {
+		fresh, err := orm.GetForUpdate[schema.User](tx, key)
 		if err != nil {
-			return nil, zip.ErrInternal("hash password: " + err.Error())
+			return zip.ErrInternal(err.Error())
 		}
-		u.PasswordHash = hash
-		u.PasswordType = cred.TypeArgon2id
-		u.PasswordSalt = ""
-	}
-	// Multi-factor state is carried from the stored row and any body value is IGNORED,
-	// the same rule as the credentials above and for a sharper version of the same
-	// reason. This is a full-row write, so an ordinary admin profile edit that simply
-	// omits these columns — which is what every partial client sends — TURNED THE
-	// SECOND FACTOR OFF, silently and with nothing in the audit trail saying so; and a
-	// body that supplies them PLANTS a factor (a TotpSecret the caller knows, a
-	// recovery digest they minted) on anyone in reach. factor.Copy is handed the whole
-	// block rather than a line per column so that "what IS multi-factor state" stays
-	// declared in exactly one place; the sibling SCIM surface already has the
-	// regression test for this (internal/scim/regression_test.go) and the native CRUD
-	// had none. Factors are written by internal/mfa and the login gate, through
-	// factor.Save, and nowhere else.
-	factor.Copy(u, existing)
-	// The consent record is the DATA SUBJECT's own answer, so it is carried from
-	// the stored row and a body-supplied one is IGNORED — the same rule as the
-	// credentials above, for the same reason: this is a full-row write that any
-	// org admin can perform on any member. Without it, one request both FORGES a
-	// grant (by sending one) and DESTROYS a real answer (by sending a body with
-	// no properties, which is what a partial client sends) — silently, and with
-	// no audit row, because nothing here knows it happened. Consent is written by
-	// the person it is about, at PUT /v1/iam/consent, and nowhere else.
-	//
-	// Every OTHER property still comes from the body: this carries the one record
-	// that is not the caller's to state, not the whole map.
-	if err := u.CarryConsentFrom(existing); err != nil {
-		return nil, zip.ErrInternal(err.Error())
-	}
+		existing := fresh
+		u.Owner, u.Name = owner, name
+		u.Email = store.NormalizeEmail(u.Email)
+		if in.Password != "" || u.Email != store.NormalizeEmail(existing.Email) || u.Phone != existing.Phone || u.ExternalId != existing.ExternalId {
+			if err := Credential(ctx, tx, existing.Owner, existing.Name); err != nil {
+				return err
+			}
+		}
+		// Preserve immutable identity and creation provenance. Id is the stable OIDC
+		// `sub` (and the authz principal key): like CreatedTime it is carried from the
+		// stored row and a body-supplied value is IGNORED — mutating it would move the
+		// user's subject (breaking every session/reference) or, worse, point it at a
+		// victim's UUID for impersonation on the money path.
+		u.Id = existing.Id
+		u.CreatedTime = existing.CreatedTime
+		u.UpdatedTime = nowRFC3339()
+		// Lockout state is SERVER-OWNED, exactly like Id/CreatedTime: recordAttempt is its
+		// only writer. Carry it from the stored row and IGNORE any body value — this is a
+		// full-row write, so an omitted (or 0) signinWrongTimes would otherwise overwrite a
+		// LOCKED account's counter to 0, and a routine admin profile edit would silently
+		// unlock a user mid-attack (F-6).
+		u.SigninWrongTimes = existing.SigninWrongTimes
+		u.LastSigninWrongTime = existing.LastSigninWrongTime
+		// The identity CLASS is server-owned too, and for a money reason rather than a
+		// bookkeeping one. Type and IsAdmin are the two facts store.BillingAccount reads
+		// to answer "this principal spends the ORG POOL", which IAM then signs as the
+		// `billing_account` claim and account.Payer honours above every other signal —
+		// so in the shared signup org either field is a claim on the platform's own
+		// balance. This is a full-row write reached by the typed CRUD update AND the
+		// legacy update-user verb, both of which bind a whole user from the body, so
+		// without this an org admin could re-class any member of its org — quietly, and
+		// with isAdmin left false, since machine-typing alone is enough. Type is never
+		// restated; IsAdmin only by a caller that has checked it may (SCIM, SuperAdmin).
+		u.Type = existing.Type
+		u.IsAdmin = existing.IsAdmin
+		if in.Admin != nil {
+			u.IsAdmin = *in.Admin
+		}
+		// EmailVerified is a PROOF the server recorded, not a property a body may state.
+		// It is what the federation broker asks before it links a social identity onto an
+		// existing local account: it adopts a row only when that row's own address was
+		// proven, or when the row carries no password anybody could already sign in with.
+		// A body that could state it would answer that question for the broker — a row
+		// carrying a chosen password AND a stated proof passes a gate that exists to say
+		// no. Signup records false, the broker records true when an identity provider
+		// proved it, and both write through their own paths; this one carries — and only
+		// for the address it was proven for. A write that changes the address leaves the
+		// new one unproven, or the proof of one address becomes the proof of any.
+		u.EmailVerified = existing.EmailVerified && u.Email == store.NormalizeEmail(existing.Email)
+		// The registering application is stated once, by the code that registered the
+		// account (CreateInput.Application), and every write after that carries it.
+		u.SignupApplication = existing.SignupApplication
+		// Every secret is carried from the stored row and any body value is IGNORED —
+		// the password digest, the key secret, the bearer material, the authenticator
+		// seed and its recovery codes. CarrySecretsFrom is the inverse of Mask, so the
+		// set is exactly what a reader cannot see: this is a full-row write and every
+		// body reaching it came from a masked read, so a stated secret is either an
+		// erasure (the field arrived blank) or a plant by a caller with user-admin
+		// scope. Each of these has its own seam — password reset below, key rotation at
+		// mint/revoke, multi-factor enrolment in internal/mfa.
+		u.CarrySecretsFrom(existing)
+		u.CarryLinksFrom(existing)
+		// AccessKey and PasswordType are READABLE, so they are not Mask's to carry — but
+		// they are the halves that make the carried secrets interpretable (a digest with
+		// no type cannot be verified; a secret with no key cannot be used), so a partial
+		// body must not orphan them either.
+		u.AccessKey = existing.AccessKey
+		u.PasswordType = existing.PasswordType
+		// A new plaintext password is the one secret a caller MAY state, through its own
+		// field rather than the user row.
+		if in.Password != "" {
+			hash, err := hashPassword(in.Password)
+			if err != nil {
+				return zip.ErrInternal("hash password: " + err.Error())
+			}
+			u.PasswordHash = hash
+			u.PasswordType = cred.TypeArgon2id
+			u.PasswordSalt = ""
+		}
+		// Multi-factor state is carried from the stored row and any body value is IGNORED,
+		// the same rule as the credentials above and for a sharper version of the same
+		// reason. This is a full-row write, so an ordinary admin profile edit that simply
+		// omits these columns — which is what every partial client sends — TURNED THE
+		// SECOND FACTOR OFF, silently and with nothing in the audit trail saying so; and a
+		// body that supplies them PLANTS a factor (a TotpSecret the caller knows, a
+		// recovery digest they minted) on anyone in reach. factor.Copy is handed the whole
+		// block rather than a line per column so that "what IS multi-factor state" stays
+		// declared in exactly one place; the sibling SCIM surface already has the
+		// regression test for this (internal/scim/regression_test.go) and the native CRUD
+		// had none. Factors are written by internal/mfa and the login gate, through
+		// factor.Save, and nowhere else.
+		factor.Copy(u, existing)
+		// The consent record is the DATA SUBJECT's own answer, so it is carried from
+		// the stored row and a body-supplied one is IGNORED — the same rule as the
+		// credentials above, for the same reason: this is a full-row write that any
+		// org admin can perform on any member. Without it, one request both FORGES a
+		// grant (by sending one) and DESTROYS a real answer (by sending a body with
+		// no properties, which is what a partial client sends) — silently, and with
+		// no audit row, because nothing here knows it happened. Consent is written by
+		// the person it is about, at PUT /v1/iam/consent, and nowhere else.
+		//
+		// Every OTHER property still comes from the body: this carries the one record
+		// that is not the caller's to state, not the whole map.
+		if err := u.CarryConsentFrom(existing); err != nil {
+			return zip.ErrInternal(err.Error())
+		}
 
-	// Retarget the decoded value at the stored row (same orm key), then update.
-	u.Init(a.db)
-	u.SetKey(existing.Key())
-	if err := u.Update(); err != nil {
+		// Retarget the decoded value at the stored row (same orm key), then update.
+		u.Init(tx)
+		u.SetKey(existing.Key())
+		if err := u.UpdateCtx(ctx); err != nil {
+			return zip.ErrInternal(err.Error())
+		}
+		return nil
+	})
+	var answer *zip.HTTPError
+	if err != nil && !errors.As(err, &answer) {
 		return nil, zip.ErrInternal(err.Error())
+	}
+	if err != nil {
+		return nil, err
 	}
 	return u.Mask(), nil
 }
@@ -687,6 +718,10 @@ func Credential(ctx context.Context, db orm.DB, owner, name string) error {
 	}
 	return zip.ErrForbidden("only its holder or a SuperAdmin changes how a person signs in")
 }
+
+// Link is a federated subject: the provider's name in schema.Connectors and the
+// subject it vouched for.
+type Link struct{ Provider, Subject string }
 
 // lookup resolves a single user by its (owner, name) natural key. It returns
 // (nil, nil) when no row matches — a not-found is not an error here.

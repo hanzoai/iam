@@ -47,3 +47,25 @@ func TestRedAdminPlantsConnector(t *testing.T) {
 		t.Errorf("CREDENTIAL BYPASS (passkey): org admin planted a WebAuthn credential on bob via profile update")
 	}
 }
+
+// A create body plants no sign-in on the new account either: a federated
+// subject, a passkey row or an authenticator seed it states is dropped, and the
+// one link a new account starts with is the calling code's.
+func TestCreatePlantsNoSignIn(t *testing.T) {
+	ctx := context.Background()
+	api, closeDB := openUsersTestDB(t)
+	defer closeDB()
+
+	body := schema.User{Owner: "acme", Name: "dee", Google: "attacker-google", GitHub: "attacker-github", TotpSecret: "ATTACKERSECRET"}
+	body.WebauthnCredentials = []json.RawMessage{json.RawMessage(`{"id":"attacker-passkey"}`)}
+	if _, err := api.Create(ctx, &CreateInput{User: body, Link: Link{Provider: "github", Subject: "proved-github"}}); err != nil {
+		t.Fatal(err)
+	}
+	stored, _ := store.GetUserByName(ctx, api.db, "acme", "dee")
+	if stored.Google != "" || stored.TotpSecret != "" || len(stored.WebauthnCredentials) != 0 {
+		t.Fatalf("a create body planted google=%q totp=%q passkeys=%d", stored.Google, stored.TotpSecret, len(stored.WebauthnCredentials))
+	}
+	if stored.GitHub != "proved-github" {
+		t.Fatalf("github = %q, want the subject the calling code proved", stored.GitHub)
+	}
+}

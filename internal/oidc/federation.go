@@ -603,7 +603,6 @@ func provisionFederatedUser(ctx context.Context, db orm.DB, app *schema.Applicat
 		RegisterType:   "Federation",
 		RegisterSource: org + "/" + prov.Name,
 	}
-	*binding.ref(&u) = id.subject
 	// A federated sign-in makes a PERSON, and the provider vouched for the address.
 	// Both are stated by this code rather than by the user body (see CreateInput):
 	// this is the one create path entitled to say an address was proven, because it
@@ -613,6 +612,7 @@ func provisionFederatedUser(ctx context.Context, db orm.DB, app *schema.Applicat
 		Type:          "normal-user",
 		EmailVerified: id.emailVerified,
 		Application:   app.Name,
+		Link:          users.Link{Provider: binding.field, Subject: id.subject},
 	})
 	if err != nil {
 		return nil, err
