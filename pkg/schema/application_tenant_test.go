@@ -56,3 +56,24 @@ func TestNoneConfinesToItsOwnOrg(t *testing.T) {
 		t.Fatal("a foreign-org principal must be refused by an unconfigured app")
 	}
 }
+
+// A session answers for no public client of a reserved org; a confidential one,
+// and any client of a tenant, keep single sign-on.
+func TestAttended(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		app    Application
+		expect bool
+	}{
+		{"public admin client", Application{Organization: "admin"}, true},
+		{"public client of the signing owner", Application{Organization: "built-in"}, true},
+		{"public client of the service org", Application{Organization: "app"}, true},
+		{"confidential admin client", Application{Organization: "admin", ClientSecret: "s"}, false},
+		{"public tenant client", Application{Organization: "hanzo"}, false},
+		{"an owner that only looks reserved", Application{Organization: "Admin"}, false},
+	} {
+		if got := tc.app.Attended(); got != tc.expect {
+			t.Errorf("%s: Attended() = %v, want %v", tc.name, got, tc.expect)
+		}
+	}
+}

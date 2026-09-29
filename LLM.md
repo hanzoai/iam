@@ -561,6 +561,19 @@ drops reserved orgs from `orgs`/`groups` (`unreserved`), so a brand user's
 admin-org membership never rides a device token either. A SuperAdmin signs a
 CLI in through `admin-cli`'s PKCE flow.
 
+**A session never answers for a public client of a reserved org.**
+`schema.Application.Attended` — no stored secret and a reserved `organization`,
+i.e. `admin-cli` — needs the person present: `MintFor` refuses a grant whose
+`Mint.Session` is set (silent SSO at authorize, and the credential-less
+`POST /v1/iam/login` branch). Authorize answers `prompt=none` with
+`interaction_required` and otherwise sends the browser to the page, whose
+credential form is the interaction; the login branch answers `login_required`.
+A click cannot be the consent: any page that can send the cookie can send the
+click. A confidential admin-org app (`admin-console`) keeps SSO, and so does
+every tenant app. The hosted page re-enters authorize after MFA enrollment
+(`id` `completeAfterAuth`), so enrolling a factor at `admin-cli` asks for the
+password once more.
+
 **One client id.** `hanzo-cli` is the id BOTH CLIs authenticate as — Rust
 `hanzoai/cli` (`src/iam/oauth.rs` `CLIENT_ID`) and the Go control CLI
 (`hanzoai/cloud` `cli/cli.go` `defaultClientID`). The Go one had been borrowing a
