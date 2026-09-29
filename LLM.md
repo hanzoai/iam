@@ -258,7 +258,9 @@ an item under it.
 **Every privileged act is recorded, refusals included** — a refused attempt to
 step into a tenant is the row an auditor most wants. `schema.AuditLog` carries the
 real actor (`user`), the org (`organization`), the time (`createdTime`) and the
-address (`clientIp`, from `X-Forwarded-For`); the row is filed under the org
+address (`clientIp`: `httpx.Visitor`, the `X-Forwarded-For` hop Cloudflare
+appended — the one before the ingress's own; earlier hops are the client's
+claim and are never recorded); the row is filed under the org
 stepped INTO so that tenant sees who was in it. `ActionAssumeOrg` /
 `ActionReleaseOrg` are `schema.PlatformWritten`, so the generic audit-log CRUD
 refuses to create, alter or delete one. Query it at

@@ -174,14 +174,26 @@ func ErrCode(c *zip.Ctx, msg, code string) error {
 // which is a change to the authz surface and not to this envelope. Until then the
 // machine-readable `code` carries the distinction, which is what it is for.
 
-// ClientIP is the address an audit row records for a request: X-Forwarded-For as
-// the edge delivered it, which is what the typed handlers bind for their rows,
-// else the peer the connection came from.
+// ClientIP is the address an audit row records for a request: the visitor the
+// forwarded chain names (Visitor), else the peer the connection came from.
 func ClientIP(c *zip.Ctx) string {
 	if f := c.Header("X-Forwarded-For"); f != "" {
-		return f
+		return Visitor(f)
 	}
 	return c.Fiber().IP()
+}
+
+// Visitor is the address an X-Forwarded-For chain names for the visitor: the
+// hop before the last. hanzo.id is served Cloudflare → hanzoai/ingress → IAM.
+// Cloudflare appends the address that reached it, and the ingress, which keeps
+// a chain only from the Cloudflare ranges it trusts, appends Cloudflare's; a
+// request that reached the ingress directly arrives with the one hop the
+// ingress wrote. Every hop before those is the client's own claim and is never
+// read. A trusted in-cluster peer is the one sender whose chain this cannot
+// check.
+func Visitor(forwarded string) string {
+	hops := strings.Split(forwarded, ",")
+	return strings.TrimSpace(hops[max(len(hops)-2, 0)])
 }
 
 // Bearer returns the token from an `Authorization: Bearer <token>` header, or "".

@@ -152,7 +152,7 @@ func rescope(ctx context.Context, db orm.DB, in *assumeBody, org string) (*httpx
 	if org == "" {
 		uri = PathRelease
 	}
-	signer, err := signerFor(ctx, db, app, claims.Issuer, origin{ip: in.Forwarded, method: "POST", path: uri})
+	signer, err := signerFor(ctx, db, app, claims.Issuer, origin{ip: httpx.Visitor(in.Forwarded), method: "POST", path: uri})
 	if err != nil {
 		return httpx.Bad(500, "server_error", ""), nil
 	}
@@ -239,7 +239,7 @@ func record(ctx context.Context, db orm.DB, action, actor, org, forwarded string
 		Owner:        owner,
 		Organization: org,
 		User:         actor,
-		ClientIp:     forwarded,
+		ClientIp:     httpx.Visitor(forwarded),
 		Action:       action,
 		Object:       org,
 		Method:       "POST",

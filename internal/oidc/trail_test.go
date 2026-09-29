@@ -81,7 +81,7 @@ func TestTrail_RecordsEverySuperAdminToken(t *testing.T) {
 		"client_id": {"console"}, "client_secret": {"s3cret"},
 		"redirect_uri": {testRedirect}, "code_verifier": {verifier},
 	})
-	req.Header.Set("X-Forwarded-For", "203.0.113.9")
+	req.Header.Set("X-Forwarded-For", "6.6.6.6, 203.0.113.9, 173.245.48.1")
 	resp, body := do(t, app, req)
 	tok := decode(t, body)
 	if resp.StatusCode != 200 {
