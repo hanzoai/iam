@@ -370,12 +370,13 @@ func fact(action, actor string, object map[string]string, uri string, status int
 
 // Classify records the class of every person in the admin directory that carries
 // none, so the SuperAdmins this package counts are the SuperAdmins there are. A
-// row with no class and an address is a person — a machine declares no address
-// (internal/provision) — and is written "normal-user" with its fact, one
-// transaction per account. A row with no address is left as it is and answered,
-// for its owner to decide. Idempotent: a classed row is never touched, so every
-// boot runs it and only the first changes anything. Hosts run it at boot, before
-// serving.
+// row with no class and an address, and no credential a machine could hold — no
+// password and no key — is a person, and is written "normal-user" with its fact,
+// one transaction per account. Any other typeless row is left as it is and
+// answered, for its owner to decide: a declared service account proves itself
+// with a password, and a class written here could never be corrected by its
+// declaration. Idempotent: a classed row is never touched, so every boot runs it
+// and only the first changes anything. Hosts run it at boot, before serving.
 func Classify(ctx context.Context, db orm.DB) (classed, left []string, err error) {
 	us, err := orm.TypedQuery[schema.User](db).Filter("Owner=", policy.AdminOrg).GetAll(ctx)
 	if err != nil && !errors.Is(err, orm.ErrNotFound) {
@@ -386,11 +387,15 @@ func Classify(ctx context.Context, db orm.DB) (classed, left []string, err error
 			continue
 		}
 		key := u.Owner + "/" + u.Name
-		if store.NormalizeEmail(u.Email) == "" {
+		keys, err := orm.TypedQuery[schema.Key](db).Filter("Owner=", u.Owner).Filter("User=", key).GetAll(ctx)
+		if err != nil && !errors.Is(err, orm.ErrNotFound) {
+			return classed, left, err
+		}
+		if store.NormalizeEmail(u.Email) == "" || u.PasswordHash != "" || u.AccessKey != "" || len(keys) > 0 {
 			left = append(left, key)
 			continue
 		}
-		err := db.RunInTransaction(ctx, func(tx orm.DB) error {
+		err = db.RunInTransaction(ctx, func(tx orm.DB) error {
 			row, err := store.GetUserByName(ctx, tx, u.Owner, u.Name)
 			if err != nil || row == nil || row.Type != "" {
 				return err

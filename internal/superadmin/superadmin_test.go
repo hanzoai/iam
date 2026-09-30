@@ -17,6 +17,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -501,42 +502,58 @@ func hash(s string) string {
 }
 
 // The order the change runs in: the admin directory's people are classed at
-// boot, and only then does counting by class decide anything. Before the class,
-// a typeless SuperAdmin person neither appoints nor counts; after it they do, a
-// typeless row with no address is left for its owner, and the fact is recorded
-// once.
+// boot, and only then does counting by class decide anything. A typeless person
+// with an address and no credential is classed and counts; a typeless row that
+// holds a password or a key — what a declared or minted machine holds — is left
+// for its owner, since a class written here could never be corrected by its
+// declaration. The fact is recorded once.
 func TestClassify_typedFirstThenEnforced(t *testing.T) {
 	r := boot(t)
+	ctx := context.Background()
 	r.person(t, "admin", "woo", "woo@hanzo.test", false, false, "")
-	r.person(t, "admin", "robot", "", false, false, "")
-	woo, _ := r.signIn(t, "admin", "woo")
-	if code, _ := r.do(t, "POST", superadmin.Path, woo, `{"target":{"owner":"acme","name":"carol"}}`); code != 403 {
-		t.Fatalf("a typeless person appoints before the class = %d, want 403", code)
+	woo := r.row(t, "admin", "woo")
+	woo.PasswordHash, woo.PasswordType = "", ""
+	if err := woo.UpdateCtx(ctx); err != nil {
+		t.Fatal(err)
 	}
-	classed, left, err := superadmin.Classify(context.Background(), r.db)
+	r.person(t, "admin", "robot", "robot@hanzo.test", false, false, "")
+	r.person(t, "admin", "keyed", "keyed@hanzo.test", false, false, "")
+	keyed := r.row(t, "admin", "keyed")
+	keyed.PasswordHash, keyed.PasswordType = "", ""
+	if err := keyed.UpdateCtx(ctx); err != nil {
+		t.Fatal(err)
+	}
+	k := orm.New[schema.Key](r.db)
+	k.Owner, k.Name, k.User = "admin", "keyed-key", "admin/keyed"
+	k.SetId("admin/keyed-key")
+	if err := k.CreateCtx(ctx); err != nil {
+		t.Fatal(err)
+	}
+	r.person(t, "admin", "nameless", "", false, false, "")
+	root, _ := r.signIn(t, "admin", "root")
+	if code, _ := r.do(t, "DELETE", superadmin.Path+"/root", root, ""); code != 409 {
+		t.Fatalf("before the class, root beside typeless rows is dismissed = %d, want 409", code)
+	}
+	classed, left, err := superadmin.Classify(ctx, r.db)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(classed, ",") != "admin/woo" || strings.Join(left, ",") != "admin/robot" {
-		t.Fatalf("classed %v, left %v; want admin/woo classed and admin/robot left", classed, left)
+	slices.Sort(left)
+	if strings.Join(classed, ",") != "admin/woo" || strings.Join(left, ",") != "admin/keyed,admin/nameless,admin/robot" {
+		t.Fatalf("classed %v, left %v", classed, left)
 	}
-	if u := r.row(t, "admin", "woo"); u.Type != "normal-user" {
-		t.Fatalf("admin/woo is %q after the class", u.Type)
+	for _, name := range []string{"robot", "keyed", "nameless"} {
+		if u := r.row(t, "admin", name); u.Type != "" {
+			t.Fatalf("admin/%s was classed %q", name, u.Type)
+		}
 	}
-	if u := r.row(t, "admin", "robot"); u.Type != "" {
-		t.Fatalf("a row with no address was classed %q", u.Type)
-	}
-	if again, _, _ := superadmin.Classify(context.Background(), r.db); len(again) != 0 {
+	if again, _, _ := superadmin.Classify(ctx, r.db); len(again) != 0 {
 		t.Fatalf("a second boot classed %v", again)
 	}
 	if f := r.facts(t, schema.ActionAccountClass); len(f) != 1 || !strings.Contains(f[0].Object, `"account":"admin/woo"`) || !schema.PlatformWritten(f[0].Action) {
 		t.Fatalf("class facts = %+v", f)
 	}
-	woo, _ = r.signIn(t, "admin", "woo")
-	if code, body := r.do(t, "POST", superadmin.Path, woo, `{"target":{"owner":"acme","name":"carol"}}`); code != 201 {
-		t.Fatalf("a classed person appoints = %d %v, want 201", code, body)
-	}
-	root, _ := r.signIn(t, "admin", "root")
+	root, _ = r.signIn(t, "admin", "root")
 	if code, _ := r.do(t, "DELETE", superadmin.Path+"/root", root, ""); code != 204 {
 		t.Fatalf("with woo classed, root is no longer the last SuperAdmin: dismiss = %d, want 204", code)
 	}
