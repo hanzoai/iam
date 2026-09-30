@@ -368,6 +368,52 @@ func fact(action, actor string, object map[string]string, uri string, status int
 	}
 }
 
+// Classify records the class of every person in the admin directory that carries
+// none, so the SuperAdmins this package counts are the SuperAdmins there are. A
+// row with no class and an address is a person — a machine declares no address
+// (internal/provision) — and is written "normal-user" with its fact, one
+// transaction per account. A row with no address is left as it is and answered,
+// for its owner to decide. Idempotent: a classed row is never touched, so every
+// boot runs it and only the first changes anything. Hosts run it at boot, before
+// serving.
+func Classify(ctx context.Context, db orm.DB) (classed, left []string, err error) {
+	us, err := orm.TypedQuery[schema.User](db).Filter("Owner=", policy.AdminOrg).GetAll(ctx)
+	if err != nil && !errors.Is(err, orm.ErrNotFound) {
+		return nil, nil, err
+	}
+	for _, u := range us {
+		if u.Type != "" {
+			continue
+		}
+		key := u.Owner + "/" + u.Name
+		if store.NormalizeEmail(u.Email) == "" {
+			left = append(left, key)
+			continue
+		}
+		err := db.RunInTransaction(ctx, func(tx orm.DB) error {
+			row, err := store.GetUserByName(ctx, tx, u.Owner, u.Name)
+			if err != nil || row == nil || row.Type != "" {
+				return err
+			}
+			row.Type = person
+			row.UpdatedTime = time.Now().UTC().Format(time.RFC3339)
+			if err := row.UpdateCtx(ctx); err != nil {
+				return err
+			}
+			body, _ := json.Marshal(map[string]string{"account": key, "sub": row.Id, "from": "", "to": person})
+			return store.Append(ctx, tx, &schema.AuditLog{
+				Owner: policy.AdminOrg, User: "iam", Action: schema.ActionAccountClass,
+				Object: string(body), Method: "BOOT", StatusCode: 200,
+			})
+		})
+		if err != nil {
+			return classed, left, err
+		}
+		classed = append(classed, key)
+	}
+	return classed, left, nil
+}
+
 // answer passes a refusal through and hides a store failure's detail.
 func answer(err error) error {
 	if err == nil {

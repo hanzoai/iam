@@ -88,6 +88,9 @@ const (
 	// made a SuperAdmin and when (I18), filed on the SuperAdmin trail.
 	ActionSuperAdminAppoint = "superadmin-appoint"
 	ActionSuperAdminDismiss = "superadmin-dismiss"
+	// An account given the class it was missing: a person of the admin directory
+	// that carried none, recorded as one at boot, once.
+	ActionAccountClass = "account-class"
 )
 
 // PlatformWritten reports whether action names a record the platform writes
@@ -101,7 +104,7 @@ func PlatformWritten(action string) bool {
 		ActionRevokeUserKeys, ActionTokenExchange, ActionAs,
 		ActionAssumeOrg, ActionReleaseOrg, ActionListOrgs, ActionSuperAdmin, ActionWorkloadToken,
 		ActionInviteSend, ActionInviteAccept, ActionInviteRefused, ActionInviteSignupRefused,
-		ActionInviteCodeSent, ActionSuperAdminAppoint, ActionSuperAdminDismiss:
+		ActionInviteCodeSent, ActionSuperAdminAppoint, ActionSuperAdminDismiss, ActionAccountClass:
 		return true
 	}
 	return false

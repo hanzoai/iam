@@ -38,6 +38,7 @@ import (
 	"github.com/hanzoai/iam/internal/provision"
 	"github.com/hanzoai/iam/internal/routes"
 	"github.com/hanzoai/iam/internal/seed"
+	"github.com/hanzoai/iam/internal/superadmin"
 	_ "github.com/hanzoai/iam/pkg/schema" // registers the v2 entity kinds
 	"github.com/hanzoai/iam/pkg/store"
 	"github.com/hanzoai/iam/server"
@@ -182,6 +183,19 @@ func serve(ctx context.Context, storeBackend, dbPath, sqlAddr, zapAddr, httpAddr
 		fmt.Fprintf(os.Stderr, "iam: membership backfill incomplete — org rosters may omit members that hold access: %v\n", err)
 	} else if n > 0 {
 		fmt.Fprintf(os.Stderr, "iam: recorded %d home-org membership(s) that were held but unwritten\n", n)
+	}
+
+	// The admin directory's people are classed before serving, so an operation
+	// that counts SuperAdmins by class never reads one as absent.
+	classed, left, err := superadmin.Classify(ctx, db)
+	if err != nil {
+		return fmt.Errorf("serve: class the admin directory: %w", err)
+	}
+	for _, a := range classed {
+		fmt.Fprintf(os.Stderr, "iam: classed %s as a person\n", a)
+	}
+	for _, a := range left {
+		fmt.Fprintf(os.Stderr, "iam: %s carries no class and no address; left for its owner\n", a)
 	}
 
 	// A process that cannot sign cannot issue, so it does not open a listener.

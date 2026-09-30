@@ -30,6 +30,7 @@ import (
 	"github.com/hanzoai/iam/internal/otp"
 	"github.com/hanzoai/iam/internal/routes"
 	"github.com/hanzoai/iam/internal/seed"
+	"github.com/hanzoai/iam/internal/superadmin"
 	_ "github.com/hanzoai/iam/pkg/schema" // registers the entity kinds
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -156,6 +157,11 @@ func OpenSQLite(path string) (orm.DB, error) {
 // JWKS answered 200 and every mint 401s. A host that seeds its store out of band
 // calls RequireSigning itself.
 func Seed(ctx context.Context, db orm.DB, initDataPath string) (*seed.Summary, error) {
+	// The admin directory's people are classed before anything else runs, so an
+	// operation that counts SuperAdmins by class never reads one as absent.
+	if _, _, err := superadmin.Classify(ctx, db); err != nil {
+		return nil, fmt.Errorf("iam: class the admin directory: %w", err)
+	}
 	sum, err := seed.FromInitData(ctx, db, initDataPath)
 	if err != nil {
 		return sum, err
