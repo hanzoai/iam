@@ -609,10 +609,7 @@ func (a *API) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 	// A crash between the two leaves a live account holding its home org and
 	// missing its team rows: strictly LESS access than before, which is the
 	// direction to fail in, and the retry finishes the job.
-	if _, err := store.ForgetUser(ctx, a.db, in.Owner+"/"+in.Name); err != nil {
-		return nil, zip.ErrInternal(err.Error())
-	}
-	if err := existing.Delete(); err != nil {
+	if err := store.DeleteUser(ctx, a.db, existing); err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
 	return &DeleteOutput{Deleted: true}, nil

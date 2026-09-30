@@ -5,6 +5,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -204,26 +205,40 @@ func TestBackfillMemberships(t *testing.T) {
 	}
 }
 
-// An account owns at most MaxOwnedOrgs organizations. Re-recording one it already
-// owns is not a new one, and other roles never count.
-func TestOwnsTooMany(t *testing.T) {
+// The cap counts the orgs an account founded, so giving up ownership frees nothing.
+func TestFoundTooMany(t *testing.T) {
 	db := memDB(t)
 	ctx := context.Background()
-	for i := range MaxOwnedOrgs {
-		if _, err := EnsureMembership(ctx, db, "acme/bob", fmt.Sprintf("org-%d", i), RoleOwner); err != nil {
+	for i := range MaxFoundedOrgs {
+		o := orm.New[schema.Organization](db)
+		o.Owner, o.Name, o.Founder = "admin", fmt.Sprintf("org-%d", i), "founder-key"
+		o.SetId("admin/" + o.Name)
+		if err := o.CreateCtx(ctx); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := EnsureMembership(ctx, db, "acme/bob", "team", RoleMember); err != nil {
+	if over, err := FoundTooMany(ctx, db, "founder-key"); err != nil || !over {
+		t.Fatalf("founder of %d orgs: over=%v err=%v, want over", MaxFoundedOrgs, over, err)
+	}
+	if over, _ := FoundTooMany(ctx, db, "someone-else"); over {
+		t.Fatal("an account that founded nothing is over the cap")
+	}
+}
+
+// An org never loses its last owner to a revoke.
+func TestDeleteMembership_keepsTheLastOwner(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+	if _, err := EnsureMembership(ctx, db, "acme/bob", "side", RoleOwner); err != nil {
 		t.Fatal(err)
 	}
-	if over, err := OwnsTooMany(ctx, db, "acme/bob", "one-more"); err != nil || !over {
-		t.Fatalf("owner of %d orgs asking for another: over=%v err=%v, want over", MaxOwnedOrgs, over, err)
+	if _, err := DeleteMembership(ctx, db, "acme/bob", "side"); !errors.Is(err, ErrLastOwner) {
+		t.Fatalf("revoking the last owner: %v, want ErrLastOwner", err)
 	}
-	if over, _ := OwnsTooMany(ctx, db, "acme/bob", "org-3"); over {
-		t.Fatal("re-recording an owned org counted as a new one")
+	if _, err := EnsureMembership(ctx, db, "acme/carol", "side", RoleOwner); err != nil {
+		t.Fatal(err)
 	}
-	if over, _ := OwnsTooMany(ctx, db, "acme/carol", "one-more"); over {
-		t.Fatal("an account that owns nothing is over the quota")
+	if removed, err := DeleteMembership(ctx, db, "acme/bob", "side"); err != nil || !removed {
+		t.Fatalf("revoking one of two owners: %v %v", removed, err)
 	}
 }

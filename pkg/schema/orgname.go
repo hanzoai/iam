@@ -33,11 +33,20 @@ func OrgDisplayName(raw string) (string, error) {
 // hiddenRune reports a character that renders as nothing, breaks the line, or
 // reorders the text around it: controls, the format class (bidi overrides and
 // isolates, zero-width spaces and joiners, the byte-order mark), the line and
-// paragraph separators, and the letters that draw nothing (the Hangul fillers and
-// the blank braille pattern).
+// paragraph separators, the characters that draw nothing (the Hangul fillers, the
+// blank braille pattern, the grapheme joiner, variation selectors, the Khmer and
+// Mongolian inherent and free-variation marks), and every code point that is not
+// an assigned visible character.
 func hiddenRune(r rune) bool {
-	switch r {
-	case '\u115f', '\u1160', '\u3164', '\uffa0', '\u2800':
+	switch {
+	case r == '\u115f', r == '\u1160', r == '\u3164', r == '\uffa0', r == '\u2800',
+		r == '\u034f', r == '\u17b4', r >= '\u180b' && r <= '\u180d',
+		r >= '\ufe00' && r <= '\ufe0f', r >= 0xe0100 && r <= 0xe01ef:
+		return true
+	}
+	// Assigned and visible is a letter, mark, number, punctuation, symbol or space;
+	// anything else (unassigned, private use, surrogate) draws nothing reliable.
+	if !unicode.In(r, unicode.L, unicode.M, unicode.N, unicode.P, unicode.S, unicode.Zs) {
 		return true
 	}
 	return unicode.IsControl(r) || unicode.In(r, unicode.Cf, unicode.Zl, unicode.Zp)

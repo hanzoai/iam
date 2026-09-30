@@ -30,6 +30,7 @@ package memberships
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -162,17 +163,16 @@ func ensure(db orm.DB) zip.Handler {
 		if err := account(ctx, in.User); err != nil {
 			return httpx.Err(c, err.Error())
 		}
-		// The count and the write are one transaction, so ownerships recorded in
-		// parallel cannot each see room for themselves.
+		// An owner is recorded only as an org's founder: the first owner of an org
+		// that has none. Anyone after that is offered ownership by invitation and
+		// takes it by accepting, so nobody is made an owner they did not ask to be.
+		// The founder's count, its stamp and the write are one transaction, so
+		// foundings recorded in parallel cannot each see room for themselves.
 		var added bool
 		err := db.RunInTransaction(ctx, func(tx orm.DB) error {
 			if in.Role == store.RoleOwner {
-				over, err := store.OwnsTooMany(ctx, tx, in.User, in.Org)
-				if err != nil {
+				if err := found(ctx, tx, in.User, in.Org); err != nil {
 					return err
-				}
-				if over {
-					return fmt.Errorf("an account owns at most %d organizations", store.MaxOwnedOrgs)
 				}
 			}
 			var err error
@@ -229,6 +229,43 @@ func remove(db orm.DB) zip.Handler {
 		}
 		return httpx.Ok(c, removed)
 	}
+}
+
+// found records user ("<home>/<name>") as the founder of org, or refuses: org must
+// have no owner yet (or have exactly this one, which re-records nothing), the
+// account must exist, and it must not have founded MaxFoundedOrgs organizations.
+// The org carries its founder from then on, which is what the count reads.
+func found(ctx context.Context, db orm.DB, user, org string) error {
+	if m, err := store.GetMembership(ctx, db, user, org); err != nil {
+		return err
+	} else if m != nil && m.Role == store.RoleOwner {
+		return nil
+	}
+	if owned, err := store.HasOwner(ctx, db, org); err != nil {
+		return err
+	} else if owned {
+		return errors.New("an organization's owners are added by invitation, which the invitee accepts")
+	}
+	home, name, _ := strings.Cut(user, "/")
+	u, err := store.GetUserByName(ctx, db, home, name)
+	if err != nil {
+		return err
+	}
+	if u == nil {
+		return errors.New("the account does not exist")
+	}
+	founder := u.Model.Id()
+	if over, err := store.FoundTooMany(ctx, db, founder); err != nil {
+		return err
+	} else if over {
+		return fmt.Errorf("an account founds at most %d organizations", store.MaxFoundedOrgs)
+	}
+	o, err := store.GetOrganizationByName(ctx, db, org)
+	if err != nil || o == nil || o.Founder != "" {
+		return err
+	}
+	o.Founder = founder
+	return o.UpdateCtx(ctx)
 }
 
 // account refuses a grant or revoke that names an account in the admin org

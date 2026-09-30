@@ -359,8 +359,7 @@ func TestCreate_leftoverMembershipsHoldTheName(t *testing.T) {
 }
 
 // Deleting an org takes the rows that name it: its memberships, the keys members
-// held in it, and the applications it owns. Afterwards the name is free and a new
-// org of that name starts with nobody in it.
+// held in it, and the applications it owns. Its tombstone keeps the name held.
 func TestDelete_forgetsTheRowsThatNameTheOrg(t *testing.T) {
 	db := freshDB(t)
 	api := organizations.NewOrganizationAPI(db)
@@ -405,8 +404,12 @@ func TestDelete_forgetsTheRowsThatNameTheOrg(t *testing.T) {
 	if _, err := orm.Get[schema.Application](db, "widgets/widgets-agent"); !errors.Is(err, orm.ErrNotFound) {
 		t.Fatalf("owned application outlived the org: %v", err)
 	}
-	if _, err := api.Create(ctx, createIn(policy.AdminOrg, "widgets")); err != nil {
-		t.Fatalf("the name must be free again: %v", err)
+	// The rows are gone and the name stays held, by its tombstone.
+	if left, err := store.OrgRemains(ctx, db, "widgets"); err != nil || len(left) != 0 {
+		t.Fatalf("rows outlived the org: %v %v", left, err)
+	}
+	if got := code(t, must(api.Create(ctx, createIn(policy.AdminOrg, "widgets")))); got != 409 {
+		t.Fatalf("re-found: status=%d, want 409", got)
 	}
 }
 
@@ -505,11 +508,12 @@ func TestDelete_forgetsEveryRowThatNamesTheOrg(t *testing.T) {
 	if _, err := api.Delete(ctx, &organizations.DeleteOrganizationInput{Owner: policy.AdminOrg, Name: "widgets"}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if held, err := store.OrgHeld(ctx, db, "widgets"); err != nil || held {
-		t.Fatalf("rows outlived the org: held=%v err=%v", held, err)
+	// The rows are gone and the name stays held, by its tombstone.
+	if left, err := store.OrgRemains(ctx, db, "widgets"); err != nil || len(left) != 0 {
+		t.Fatalf("rows outlived the org: %v %v", left, err)
 	}
-	if _, err := api.Create(ctx, createIn(policy.AdminOrg, "widgets")); err != nil {
-		t.Fatalf("the name must be free again: %v", err)
+	if got := code(t, must(api.Create(ctx, createIn(policy.AdminOrg, "widgets")))); got != 409 {
+		t.Fatalf("re-found: status=%d, want 409", got)
 	}
 }
 

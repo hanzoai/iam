@@ -183,3 +183,45 @@ func TestDisplayName_isRefusedOnEveryWrite(t *testing.T) {
 		t.Fatalf("set profile: status=%d, want 400", got)
 	}
 }
+
+// Releasing a tombstoned name is a SuperAdmin's alone, and only once nothing keyed
+// by the name remains; an org's former admin cannot free it.
+func TestRelease_superAdminOnlyAndOnlyWhenNothingRemains(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	seedOrg(t, h.db, "side")
+	seedRow(t, h.db, "side/log-1", func(r *schema.AuditLog) { r.Owner, r.Name, r.Organization = "side", "log-1", "side" })
+	if status, body := h.del(t, "admin/root", "side"); status != 200 {
+		t.Fatalf("delete: %d %s", status, body)
+	}
+	if status, _ := h.release(t, "hanzo/boss", "side"); status != 403 {
+		t.Fatalf("org admin releasing a name: %d, want 403", status)
+	}
+	if status, body := h.release(t, "admin/root", "side"); status != 409 || !strings.Contains(body, "audit") {
+		t.Fatalf("release with an audit trail left: %d %s, want 409 naming it", status, body)
+	}
+	lg, _ := orm.Get[schema.AuditLog](h.db, "side/log-1")
+	if err := lg.DeleteCtx(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if status, body := h.release(t, "admin/root", "side"); status != 200 {
+		t.Fatalf("release once nothing remains: %d %s", status, body)
+	}
+	if held, _ := store.OrgHeld(ctx, h.db, "side"); held {
+		t.Fatal("the name is still held after release")
+	}
+}
+
+func (h *harness) release(t *testing.T, sub, name string) (int, string) {
+	t.Helper()
+	req := httptest.NewRequest("DELETE", "/v1/iam/organizations/tombstones/admin/"+name, nil)
+	req.Host = "hanzo.id"
+	req.Header.Set("Authorization", "Bearer "+h.token(t, sub))
+	resp, err := testhttp.Do(h.app, req)
+	if err != nil {
+		t.Fatalf("release %s: %v", name, err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	return resp.StatusCode, string(b)
+}

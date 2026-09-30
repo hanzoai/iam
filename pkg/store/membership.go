@@ -132,6 +132,14 @@ func DeleteMembership(ctx context.Context, db orm.DB, user, org string) (bool, e
 	if err != nil || m == nil {
 		return false, err
 	}
+	if m.Role == RoleOwner {
+		switch owners, err := orgOwners(ctx, db, org); {
+		case err != nil:
+			return false, err
+		case owners <= 1:
+			return false, ErrLastOwner
+		}
+	}
 	if err := m.DeleteCtx(ctx); err != nil {
 		return false, err
 	}
@@ -139,6 +147,30 @@ func DeleteMembership(ctx context.Context, db orm.DB, user, org string) (bool, e
 		return true, err
 	}
 	return true, nil
+}
+
+// ErrLastOwner refuses a revoke that would leave an organization with no owner.
+var ErrLastOwner = errors.New("this is the organization's last owner; name another owner first")
+
+// orgOwners counts the org-level owners of org.
+func orgOwners(ctx context.Context, db orm.DB, org string) (int, error) {
+	rows, err := MembershipsByOrg(ctx, db, org)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, m := range rows {
+		if m != nil && m.Role == RoleOwner && m.Workspace == "" && m.Project == "" {
+			n++
+		}
+	}
+	return n, nil
+}
+
+// HasOwner reports whether org already has an org-level owner.
+func HasOwner(ctx context.Context, db orm.DB, org string) (bool, error) {
+	n, err := orgOwners(ctx, db, org)
+	return n > 0, err
 }
 
 // ForgetUser removes every membership a user holds — the companion to deleting
@@ -180,28 +212,27 @@ func ForgetUser(ctx context.Context, db orm.DB, user string) (int, error) {
 	return removed, nil
 }
 
-// MaxOwnedOrgs is how many organizations one account may own. Each is a name taken
-// from everyone else, so ownership is bounded where it is recorded.
-const MaxOwnedOrgs = 50
+// MaxFoundedOrgs is how many organizations one account may found. Each is a name
+// taken from everyone else for good (a deleted org's tombstone keeps holding it),
+// so the count is of orgs founded, live or deleted, and giving up ownership frees
+// nothing.
+const MaxFoundedOrgs = 50
 
-// OwnsTooMany reports whether making user an owner of org would take them past
-// MaxOwnedOrgs. Re-recording an ownership they already hold never does.
-func OwnsTooMany(ctx context.Context, db orm.DB, user, org string) (bool, error) {
-	rows, err := MembershipsByUser(ctx, db, user)
-	if err != nil {
+// FoundTooMany reports whether founder (an account's storage key, the value an
+// organization's Founder carries) has founded MaxFoundedOrgs organizations.
+func FoundTooMany(ctx context.Context, db orm.DB, founder string) (bool, error) {
+	if founder == "" {
+		return false, nil
+	}
+	orgs, err := orm.TypedQuery[schema.Organization](db).Filter("Founder=", founder).GetAll(ctx)
+	if err != nil && !errors.Is(err, orm.ErrNotFound) {
 		return false, err
 	}
-	owned := 0
-	for _, m := range rows {
-		if m == nil || m.Role != RoleOwner || m.Workspace != "" || m.Project != "" {
-			continue
-		}
-		if m.Org == org {
-			return false, nil
-		}
-		owned++
+	dead, err := orm.TypedQuery[schema.Tombstone](db).Filter("Founder=", founder).GetAll(ctx)
+	if err != nil && !errors.Is(err, orm.ErrNotFound) {
+		return false, err
 	}
-	return owned >= MaxOwnedOrgs, nil
+	return len(orgs)+len(dead) >= MaxFoundedOrgs, nil
 }
 
 // OrgCredential is the name of an org's own metered credential: the service
@@ -242,7 +273,11 @@ type deletable interface{ DeleteCtx(context.Context) error }
 type orgRow struct {
 	kind  string
 	field string
-	rows  func(ctx context.Context, db orm.DB, org string) ([]deletable, error)
+	// keep marks a row a delete leaves in place: the audit trail is kept for its
+	// retention and is purged, like everything else keyed by the name, before a
+	// SuperAdmin may release the name.
+	keep bool
+	rows func(ctx context.Context, db orm.DB, org string) ([]deletable, error)
 }
 
 // where reads every T whose field equals org.
@@ -263,6 +298,8 @@ func where[T any, P interface {
 	}}
 }
 
+func kept(r orgRow) orgRow { r.keep = true; return r }
+
 // orgRows is every row that names an organization, other than accounts, which
 // OrgAccounts answers for. Nothing checks that the org such a row names still
 // exists, so each would carry into a new org of the same name: a membership seats
@@ -271,6 +308,13 @@ func where[T any, P interface {
 // application mints tokens for it. OrgHeld and ForgetOrg walk this one list.
 var orgRows = []orgRow{
 	where[schema.Membership]("memberships", "Org"),
+	where[schema.Wallet]("wallets", "Owner"),
+	where[schema.WebauthnCredential]("passkeys", "Owner"),
+	where[schema.Token]("tokens", "Organization"),
+	where[schema.Team]("teams", "Owner"),
+	where[schema.Team]("teams", "Organization"),
+	kept(where[schema.AuditLog]("audit logs", "Owner")),
+	kept(where[schema.AuditLog]("audit logs", "Organization")),
 	where[schema.Key]("keys", "Owner"),
 	where[schema.Invitation]("invitations", "Owner"),
 	where[schema.Role]("roles", "Owner"),
@@ -284,19 +328,38 @@ var orgRows = []orgRow{
 	where[schema.Application]("applications", "Organization"),
 }
 
-// OrgHeld reports whether any row still names org: an account filed under it or
-// anything in orgRows. Each is a row a new org of that name would inherit.
+// OrgHeld reports whether the name org is taken by anything other than a live
+// organization row: a deleted org's tombstone, an account filed under it, or any
+// row in orgRows. A new org of that name would inherit each of them.
 func OrgHeld(ctx context.Context, db orm.DB, org string) (bool, error) {
+	if dead, err := orm.TypedQuery[schema.Tombstone](db).Filter("Name=", org).First(); !errors.Is(err, orm.ErrNotFound) {
+		return err == nil && dead != nil, err
+	}
+	left, err := OrgRemains(ctx, db, org)
+	return len(left) > 0, err
+}
+
+// OrgRemains names the kinds of row that still name org — accounts filed under it
+// and every kind in orgRows, the audit trail included. Empty means nothing IAM
+// keeps is keyed by the name.
+func OrgRemains(ctx context.Context, db orm.DB, org string) ([]string, error) {
+	var left []string
 	if _, err := orm.TypedQuery[schema.User](db).Filter("Owner=", org).First(); !errors.Is(err, orm.ErrNotFound) {
-		return err == nil, err
+		if err != nil {
+			return nil, err
+		}
+		left = append(left, "accounts")
 	}
 	for _, r := range orgRows {
 		rows, err := r.rows(ctx, db, org)
-		if err != nil || len(rows) > 0 {
-			return len(rows) > 0, err
+		if err != nil {
+			return nil, err
+		}
+		if len(rows) > 0 && !slices.Contains(left, r.kind) {
+			left = append(left, r.kind)
 		}
 	}
-	return false, nil
+	return left, nil
 }
 
 // PlatformAppsServing lists the platform's own applications (seed-declared, filed
@@ -328,6 +391,9 @@ func ForgetOrg(ctx context.Context, db orm.DB, org string) error {
 		return nil
 	}
 	for _, r := range orgRows {
+		if r.keep {
+			continue
+		}
 		rows, err := r.rows(ctx, db, org)
 		if err != nil {
 			return err
@@ -349,7 +415,97 @@ func ForgetOrg(ctx context.Context, db orm.DB, org string) error {
 			}
 		}
 	}
+	return unlinkProviders(ctx, db, org)
+}
+
+// unlinkProviders drops every application's link to a provider org owns. The link
+// names the provider by (owner, name) and outlives the provider row, so it would
+// otherwise reach whatever provider of that name is made next.
+func unlinkProviders(ctx context.Context, db orm.DB, org string) error {
+	apps, err := orm.TypedQuery[schema.Application](db).GetAll(ctx)
+	if err != nil && !errors.Is(err, orm.ErrNotFound) {
+		return err
+	}
+	for _, app := range apps {
+		if app == nil || !slices.ContainsFunc(app.Providers, func(p *schema.ProviderItem) bool { return p != nil && p.Owner == org }) {
+			continue
+		}
+		if err := db.RunInTransaction(ctx, func(tx orm.DB) error {
+			fresh, err := orm.GetForUpdate[schema.Application](tx, app.Key().Encode())
+			if err != nil {
+				return err
+			}
+			fresh.Providers = slices.DeleteFunc(fresh.Providers, func(p *schema.ProviderItem) bool { return p != nil && p.Owner == org })
+			return fresh.UpdateCtx(ctx)
+		}); err != nil {
+			return fmt.Errorf("unlink %s/%s from %s providers: %w", app.Owner, app.Name, org, err)
+		}
+	}
 	return nil
+}
+
+// BuryOrg writes the tombstone that keeps a deleted org's name taken, carrying its
+// founder. Writing it again changes nothing.
+func BuryOrg(ctx context.Context, db orm.DB, org *schema.Organization) error {
+	t := orm.New[schema.Tombstone](db)
+	t.Owner, t.Name, t.Founder = MembershipOwner, org.Name, org.Founder
+	t.CreatedTime = time.Now().UTC().Format(time.RFC3339)
+	t.SetId("tombstones/" + org.Name) // a key of its own: the org row holds admin/<name>
+	now := time.Now()
+	t.CreatedAt, t.UpdatedAt = now, now
+	_, err := db.CreateIfAbsent(ctx, t.Key(), t)
+	return err
+}
+
+// ForgetCredentials removes the credentials bound to one account by its name — its
+// wallets, passkeys and tokens — the companion to deleting the account. Left
+// behind, each would sign in as the next account given that name.
+func ForgetCredentials(ctx context.Context, db orm.DB, owner, name string) error {
+	id := owner + "/" + name
+	var rows []deletable
+	wallets, err := orm.TypedQuery[schema.Wallet](db).Filter("Owner=", owner).Filter("User=", name).GetAll(ctx)
+	if err != nil && !errors.Is(err, orm.ErrNotFound) {
+		return err
+	}
+	for _, w := range wallets {
+		rows = append(rows, w)
+	}
+	keys, err := orm.TypedQuery[schema.WebauthnCredential](db).Filter("User=", id).GetAll(ctx)
+	if err != nil && !errors.Is(err, orm.ErrNotFound) {
+		return err
+	}
+	for _, k := range keys {
+		rows = append(rows, k)
+	}
+	tokens, err := orm.TypedQuery[schema.Token](db).Filter("User=", id).GetAll(ctx)
+	if err != nil && !errors.Is(err, orm.ErrNotFound) {
+		return err
+	}
+	for _, tk := range tokens {
+		rows = append(rows, tk)
+	}
+	for _, r := range rows {
+		if err := r.DeleteCtx(ctx); err != nil && !errors.Is(err, orm.ErrNotFound) {
+			return err
+		}
+	}
+	return nil
+}
+
+// DeleteUser removes an account and everything bound to it by name: its
+// memberships, its credentials, then the row. The row goes last, so a failure part
+// way leaves an account a retry can finish rather than rows naming a removed one.
+func DeleteUser(ctx context.Context, db orm.DB, u *schema.User) error {
+	if u == nil {
+		return nil
+	}
+	if _, err := ForgetUser(ctx, db, u.Owner+"/"+u.Name); err != nil {
+		return err
+	}
+	if err := ForgetCredentials(ctx, db, u.Owner, u.Name); err != nil {
+		return err
+	}
+	return u.DeleteCtx(ctx)
 }
 
 // InsertOrganization writes o only when no row holds its key, stamping the times a

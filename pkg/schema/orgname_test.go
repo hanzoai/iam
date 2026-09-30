@@ -11,7 +11,7 @@ import (
 func TestOrgDisplayName(t *testing.T) {
 	for _, bad := range []string{
 		"Acme\u202eeVIL", "Ac\u200bme", "Acme\u2066x\u2069", "\ufeffAcme", "Ac\nme",
-		"Ac\u2028me", "Ac\u2029me", "\u3164", "Acme\u3164", "\u2800", "Ac\u115fme", strings.Repeat("a", MaxOrgDisplayName+1),
+		"Ac\u2028me", "Ac\u2029me", "\u3164", "Acme\u3164", "\u2800", "Ac\u115fme", "\u034f", "\ufe0f", "\U000e0100", "\u17b4", "\u180b", "\u2065", "Ac\U000f0000me", strings.Repeat("a", MaxOrgDisplayName+1),
 	} {
 		if _, err := OrgDisplayName(bad); err == nil {
 			t.Errorf("%q must be refused", bad)

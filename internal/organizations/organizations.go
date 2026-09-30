@@ -11,6 +11,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
 
 	policy "github.com/hanzoai/authz"
@@ -23,6 +25,10 @@ import (
 )
 
 const orgBase = "/v1/iam/organizations"
+
+// orgName is the shape of an organization name: lowercase ASCII letters and digits
+// with inner hyphens, 2 to 55 characters (the bound first-run provisioning keeps).
+var orgName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,53}[a-z0-9]$`)
 
 //go:generate go run github.com/zap-proto/zip/cmd/zipdoc
 
@@ -64,6 +70,10 @@ func (h *OrganizationAPI) route(app *zip.Group) {
 		zip.WithOperationID("updateOrganization"), zip.WithTags("organizations"))
 	app.Delete(orgBase+"/:owner/:name", h.Delete,
 		zip.WithOperationID("deleteOrganization"), zip.WithTags("organizations"))
+	app.Get(orgBase+"/tombstones/:owner/:name", h.Tombstone,
+		zip.WithOperationID("getOrganizationTombstone"), zip.WithTags("organizations"))
+	app.Delete(orgBase+"/tombstones/:owner/:name", h.Release,
+		zip.WithOperationID("releaseOrganizationName"), zip.WithTags("organizations"))
 }
 
 // CreateOrganizationInput carries the full organization as the request body.
@@ -137,6 +147,14 @@ func (h *OrganizationAPI) Create(ctx context.Context, in *CreateOrganizationInpu
 	// it after that decision would authorize one owner and write another.
 	if org.Owner != policy.AdminOrg {
 		return nil, zip.ErrBadRequest("an organization is filed under the " + policy.AdminOrg + " owner")
+	}
+	// The name is a tenant key everywhere, compared byte for byte: lowercase ASCII
+	// in the shape every person-facing path produces, and never a held one.
+	if !orgName.MatchString(org.Name) {
+		return nil, zip.ErrBadRequest("an organization name is lowercase letters, digits and inner hyphens")
+	}
+	if policy.IsHeldOrg(org.Name) {
+		return nil, zip.ErrBadRequest("\"" + org.Name + "\" is reserved")
 	}
 	display, err := schema.OrgDisplayName(org.DisplayName)
 	if err != nil {
@@ -359,9 +377,22 @@ func (h *OrganizationAPI) Delete(ctx context.Context, in *DeleteOrganizationInpu
 	case len(apps) > 0:
 		return nil, zip.ErrConflict(fmt.Sprintf("the platform application %s/%s serves this organization; a SuperAdmin re-points it first", apps[0].Owner, apps[0].Name))
 	}
-	// The rows that name the org go first and the org row last, so a failure part
-	// way leaves the org in place for a retry rather than rows naming an org that is
-	// gone.
+	// An org that was founded, or that anything is keyed by, leaves a tombstone:
+	// its name is never free again, not even between these writes. One that was
+	// created and never founded, with nothing keyed by it — the org cloud removes
+	// when its owner could not be recorded — was never anybody's, and leaves none,
+	// so a refused founding cannot use up a name. The tombstone goes first, the rows
+	// that name the org next and the org row last, so a failure part way leaves the
+	// org in place for a retry.
+	left, err := store.OrgRemains(ctx, h.DB, existing.Name)
+	if err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	}
+	if existing.Founder != "" || len(left) > 0 {
+		if err := store.BuryOrg(ctx, h.DB, existing); err != nil {
+			return nil, zip.ErrInternal(err.Error())
+		}
+	}
 	if err := store.ForgetOrg(ctx, h.DB, existing.Name); err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
@@ -369,6 +400,67 @@ func (h *OrganizationAPI) Delete(ctx context.Context, in *DeleteOrganizationInpu
 		return nil, zip.ErrInternal(err.Error())
 	}
 	return &DeleteOrganizationOutput{Affected: true}, nil
+}
+
+// ReleaseInput names the deleted organization whose name is to be released.
+type ReleaseInput struct {
+	Owner string `json:"owner"`
+	Name  string `json:"name"`
+}
+
+// ReleaseOutput reports whether the name was released.
+type ReleaseOutput struct {
+	Released bool `json:"released"`
+}
+
+// Tombstone returns what holds a deleted organization's name: when it was deleted
+// and who founded it. A SuperAdmin reads it before deciding to release the name.
+func (h *OrganizationAPI) Tombstone(ctx context.Context, in *ReleaseInput) (*schema.Tombstone, error) {
+	if in.Owner == "" || in.Name == "" {
+		return nil, zip.ErrBadRequest("owner and name are required")
+	}
+	if !authz.IsSuper(ctx) {
+		return nil, zip.ErrForbidden("a deleted organization's tombstone is read by a SuperAdmin only")
+	}
+	dead, err := orm.TypedQuery[schema.Tombstone](h.DB).Filter("Owner=", in.Owner).Filter("Name=", in.Name).First()
+	if errors.Is(err, orm.ErrNotFound) {
+		return nil, zip.ErrNotFound("no deleted organization holds that name")
+	}
+	if err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	}
+	return dead, nil
+}
+
+// Release frees the name of a deleted organization so it can be founded again.
+// Deleting an organization leaves its name held, because every service keys a
+// tenant by that name; releasing it is a SuperAdmin's decision, recorded on the
+// audit trail, and it is refused while anything IAM keeps is still keyed by the
+// name. Everything else keyed by it across the estate must be purged first.
+func (h *OrganizationAPI) Release(ctx context.Context, in *ReleaseInput) (*ReleaseOutput, error) {
+	if in.Owner == "" || in.Name == "" {
+		return nil, zip.ErrBadRequest("owner and name are required")
+	}
+	if !authz.IsSuper(ctx) {
+		return nil, zip.ErrForbidden("a deleted organization's name is released by a SuperAdmin only")
+	}
+	dead, err := orm.TypedQuery[schema.Tombstone](h.DB).Filter("Owner=", in.Owner).Filter("Name=", in.Name).First()
+	if errors.Is(err, orm.ErrNotFound) {
+		return nil, zip.ErrNotFound("no deleted organization holds that name")
+	}
+	if err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	}
+	switch left, err := store.OrgRemains(ctx, h.DB, in.Name); {
+	case err != nil:
+		return nil, zip.ErrInternal(err.Error())
+	case len(left) > 0:
+		return nil, zip.ErrConflict("still keyed by this name: " + strings.Join(left, ", "))
+	}
+	if err := dead.DeleteCtx(ctx); err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	}
+	return &ReleaseOutput{Released: true}, nil
 }
 
 // find resolves an organization by its (owner, name) natural key. The error is

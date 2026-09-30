@@ -10,6 +10,9 @@ func init() {
 	zip.Describe("github.com/hanzoai/iam/internal/organizations DELETE /v1/iam/organizations/:owner/:name", zip.Doc{
 		Description: "Removes an organization and everything named inside it. There is no\nundo, and every session issued under it stops working.\n\nThe built-in admin organization cannot be deleted — losing it would leave the\naccount with no way back in.",
 	})
+	zip.Describe("github.com/hanzoai/iam/internal/organizations DELETE /v1/iam/organizations/tombstones/:owner/:name", zip.Doc{
+		Description: "Frees the name of a deleted organization so it can be founded again.\nDeleting an organization leaves its name held, because every service keys a\ntenant by that name; releasing it is a SuperAdmin's decision, recorded on the\naudit trail, and it is refused while anything IAM keeps is still keyed by the\nname. Everything else keyed by it across the estate must be purged first.",
+	})
 	zip.Describe("github.com/hanzoai/iam/internal/organizations GET /v1/iam/organizations", zip.Doc{
 		Description: "Returns the organizations you can act in, the ones you belong to first\nand the rest after, newest first, narrowed by an optional query against the\nname or the display name.\n\nPlatform operators see every organization; everyone else sees their own. Pass\nthe cursor from the previous page to continue; an empty cursor in the answer\nmeans there is nothing more.\n\nTHE SCOPE IS THE HANDLER'S OWN, so it holds at every endpoint. The Guard refuses\na bearerless request before this runs, but the MCP server carries a typed op to\nits handler with no middleware in front of it — a handler that read no\nprincipal would answer such a caller with the whole registry. Reading the\nprincipal here is what makes the answer the same one over both.",
 		Fields: map[string]string{
@@ -30,6 +33,15 @@ func init() {
 			"Organization.founder":           "Founder is the stable storage id of the identity that provisioned this org\n(self-service onboarding). It is the resume token that makes provisioning\nconverge on a backend where each write autocommits independently (no\ntransaction rollback): after a partial failure that created the org but did\nnot move the founder in, a retry recognises the org as the founder's own and\ncompletes it, instead of refusing it as \"already taken\". It also fences the\norg to ONE tenant — a different identity can never complete or join it.",
 			"Organization.orgBalance":        "Balance fields are read-only mirrors; authoritative balances live in\nCommerce (billing.hanzo.ai). Carried for field-complete v1 parity.",
 			"Organization.platform":          "Platform marks an organization the platform itself declares (init_data.json):\nthe brand orgs and the others the seed creates, never one a customer made. The\nseed stamps it on every declared organization at boot, and no request sets or\nclears it. Only a SuperAdmin may delete an organization that carries it.",
+		},
+	})
+	zip.Describe("github.com/hanzoai/iam/internal/organizations GET /v1/iam/organizations/tombstones/:owner/:name", zip.Doc{
+		Description: "Returns what holds a deleted organization's name: when it was deleted\nand who founded it. A SuperAdmin reads it before deciding to release the name.",
+		Fields: map[string]string{
+			"Model[github.com/hanzoai/iam/pkg/schema.Tombstone].id": "Persisted fields",
+			"Tombstone.founder": "Founder carries the deleted org's founder, so an org counted against its\nfounder's cap stays counted after it is deleted.",
+			"Tombstone.name":    "the organization's name",
+			"Tombstone.owner":   "the admin registry, as for organizations",
 		},
 	})
 	zip.Describe("github.com/hanzoai/iam/internal/organizations POST /v1/iam/organizations", zip.Doc{

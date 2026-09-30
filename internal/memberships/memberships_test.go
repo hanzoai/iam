@@ -489,3 +489,30 @@ func (h *harness) readBasic(t *testing.T, path, clientID, secret string) (int, s
 	req.SetBasicAuth(clientID, secret)
 	return h.raw(t, req)
 }
+
+// Nobody is made an owner directly. The first owner of an org is its founder,
+// recorded where the org is founded; after that, ownership is offered by
+// invitation and taken by the person who accepts it.
+func TestEnsure_ownerOnlyByFounding(t *testing.T) {
+	h := newHarness(t)
+	seedClientApp(t, h.db, "hanzo-console", "console-secret")
+	t.Setenv("IAM_ORG_ADMIN_APPS", "hanzo-console")
+	seedUser(t, h.db, "hanzo", "alice", false)
+	body := func(user, org string) map[string]string {
+		return map[string]string{"user": user, "org": org, "role": "owner"}
+	}
+
+	// Founding: an org with no owner takes the first one.
+	status, e := h.postBasic(t, "/v1/iam/memberships", body("hanzo/alice", "side"), "hanzo-console", "console-secret")
+	if status != 200 || e.Status != "ok" {
+		t.Fatalf("recording a founder: %d %+v", status, e)
+	}
+	// A second owner is not made directly, however the grant is asked for.
+	status, e = h.postBasic(t, "/v1/iam/memberships", body("hanzo/boss", "side"), "hanzo-console", "console-secret")
+	if e.Status == "ok" {
+		t.Fatalf("a second owner was made directly: %d %+v", status, e)
+	}
+	if m, _ := store.GetMembership(context.Background(), h.db, "hanzo/boss", "side"); m != nil {
+		t.Fatal("the refused grant wrote a row")
+	}
+}

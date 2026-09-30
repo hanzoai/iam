@@ -6,6 +6,7 @@ package oidc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/mail"
 	"regexp"
 	"strconv"
@@ -396,6 +397,23 @@ func signupHandler(db orm.DB) zip.Handler {
 // unauthenticated, and a caller that could NAME the org would be writing a row of
 // its choosing into the tenant registry.
 func charter(ctx context.Context, db orm.DB, user *schema.User) (string, error) {
+	org, err := found(ctx, db, user)
+	if err == nil {
+		return org, nil
+	}
+	// The account was made for this founding. If it is still where it was made,
+	// it was never moved into an org of its own, and left there it would be a
+	// member of whichever tenant the application belongs to — so it goes.
+	if made, gerr := store.GetUserByName(ctx, db, user.Owner, user.Name); gerr == nil && made != nil {
+		if derr := store.DeleteUser(ctx, db, made); derr != nil {
+			return "", fmt.Errorf("%w (and the account it was for could not be removed: %v)", err, derr)
+		}
+	}
+	return "", err
+}
+
+// found derives the account's org name, founds it and moves the account in.
+func found(ctx context.Context, db orm.DB, user *schema.User) (string, error) {
 	// personalOrgSlug caps its derivation at maxOrgSlug, and the walk appends to
 	// what it returns, so the base is trimmed to leave the suffix room. A slug over
 	// that bound cannot be founded at all: provision derives the org's credential
@@ -453,20 +471,22 @@ func Charter(ctx context.Context, db orm.DB, app *schema.Application, user *sche
 const orgChoiceCreate = "create"
 
 // orgSlugFree reports whether slug may be founded as a new organization: long
-// enough to be one, not a reserved system owner, and not already standing.
+// enough to be one, not a held name, not already standing, and not held by rows a
+// removed org left behind — the same question provision asks.
 //
 // All three are reasons a slug is unavailable, so they are one predicate — a
 // derivation that walked only past TAKEN names would hand provision a name it
 // refuses, and the person's signup would fail on a rule they never saw.
 func orgSlugFree(ctx context.Context, db orm.DB, slug string) (bool, error) {
-	if len(slug) < minOrgSlug || len(slug) > maxOrgSlug || policy.IsReservedOrg(slug) {
+	if len(slug) < minOrgSlug || len(slug) > maxOrgSlug || policy.IsHeldOrg(slug) {
 		return false, nil
 	}
 	org, err := store.GetOrganizationByName(ctx, db, slug)
-	if err != nil {
+	if err != nil || org != nil {
 		return false, err
 	}
-	return org == nil, nil
+	held, err := store.OrgHeld(ctx, db, slug)
+	return !held, err
 }
 
 // userExists reports whether a user (org, name) already exists.
