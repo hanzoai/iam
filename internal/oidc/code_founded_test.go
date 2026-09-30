@@ -177,9 +177,10 @@ func TestSignup_NoCodeTakesNoAddressItCouldProve(t *testing.T) {
 	}
 }
 
-// The first submit carries no code, and an address that already has an account
-// is answered there: the person hears it before a code goes to that address.
-func TestSignup_NoCodeHearsTheAddressIsTaken(t *testing.T) {
+// Only the holder of the code sent to an address learns it already has an account.
+// A caller that merely names it is asked for the code, and a wrong code draws the
+// same answer whether the address is free or taken.
+func TestSignup_OnlyTheCodeHolderHearsTheAddressIsTaken(t *testing.T) {
 	sent := &fakeSender{}
 	bindSender(t, sent)
 	app, db := newServer(t)
@@ -187,15 +188,24 @@ func TestSignup_NoCodeHearsTheAddressIsTaken(t *testing.T) {
 	seedOrg(t, db, "hanzo")
 	seedUserInOrg(t, db, "hanzo", "ada", "ada@example.com", "correct horse battery staple")
 
-	_, env := signupReq(t, app, map[string]string{
-		"application": "hanzo-cloud", "organization": "hanzo",
-		"password": "correct horse battery staple", "email": "ada@example.com",
-	})
-	if msg, _ := env["msg"].(string); env["status"] != "error" || msg != "email already exists" {
-		t.Fatalf("a taken address was not reported before the code: %v", env)
+	body := func(addr, code string) map[string]string {
+		return map[string]string{"application": "hanzo-cloud", "organization": "hanzo",
+			"password": "correct horse battery staple", "email": addr, "code": code}
 	}
-	if len(sent.sent) != 0 {
-		t.Fatalf("the refusal sent %d messages", len(sent.sent))
+	msg := func(env map[string]any) string { m, _ := env["msg"].(string); return m }
+
+	_, env := signupReq(t, app, body("ada@example.com", ""))
+	if msg(env) != "the code sent to the email address is required" {
+		t.Fatalf("a code-less submit was answered about the address: %v", env)
+	}
+	_, taken := signupReq(t, app, body("ada@example.com", "000000"))
+	_, free := signupReq(t, app, body("nobody@example.com", "000000"))
+	if msg(taken) != msg(free) || msg(taken) != "the code is incorrect or has expired" {
+		t.Fatalf("a wrong code told taken from free: taken=%v free=%v", taken, free)
+	}
+	code := sentCode(t, app, sent, "ada@example.com")
+	if _, env := signupReq(t, app, body("ada@example.com", code)); msg(env) != "email already exists" {
+		t.Fatalf("the code holder was not told the address is taken: %v", env)
 	}
 }
 

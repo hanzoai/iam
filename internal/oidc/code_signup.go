@@ -86,8 +86,14 @@ func codeSignup(c *zip.Ctx, db orm.DB, f loginForm) error {
 		return httpx.Err(c, "the terms and the acceptable use policy must be accepted")
 	}
 
-	// A row that appeared since the first request holds the address now. Looked up
-	// before the code is spent, so the person keeps it and signs in with it.
+	// A row that appeared since the first request holds the address now. Told only
+	// to the holder of the live code, and before the code is spent, so the person
+	// keeps it and signs in with it.
+	if ok, err := otp.Check(ctx, db, app.Organization, f.Username, f.Code, now); err != nil {
+		return httpx.Err(c, err.Error())
+	} else if !ok {
+		return httpx.Err(c, errCodeRefused)
+	}
 	held, err := resolveLoginUser(ctx, db, app.Organization, f.Username, false)
 	if err != nil {
 		return httpx.Err(c, "sign-in is unavailable")

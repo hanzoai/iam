@@ -189,10 +189,37 @@ func signupHandler(db orm.DB) zip.Handler {
 			return httpx.Err(c, msg)
 		}
 
+		// The code is checked before anything is said about the address: whether an
+		// account already holds it is told only to whoever holds the code sent there,
+		// never to a caller who merely names it. Where a code can reach the address, or
+		// an invitation pins it, the code is required. Checked here, spent below.
 		email := store.NormalizeEmail(f.Email)
+		if f.Code != "" && email == "" {
+			return httpx.Err(c, "a code proves an email address; none was given")
+		}
 		if email != "" {
 			if !isEmailValid(email) {
 				return httpx.Err(c, "email is invalid")
+			}
+			if f.Code == "" && (sendsCodes(app) || (invite != nil && invite.Email != "")) {
+				return httpx.Err(c, "the code sent to the email address is required")
+			}
+			if f.Code != "" {
+				ok, err := otp.Check(ctx, db, app.Organization, email, f.Code, nowFunc())
+				if err != nil {
+					return httpx.Err(c, err.Error())
+				}
+				if !ok {
+					// A code sent to an address that already has an account is filed
+					// for that account. It proves the mailbox all the same, so its
+					// holder is told the address is taken; the code is spent.
+					if holder := addressHolder(ctx, db, f.Organization, app.Organization, email); holder != nil {
+						if held, err := otp.Consume(ctx, db, holder, email, f.Code, nowFunc()); err == nil && held {
+							return httpx.Err(c, "email already exists")
+						}
+					}
+					return httpx.Err(c, "the code is incorrect or has expired")
+				}
 			}
 			// An address that already names an account is taken, and an address that
 			// names TWO is taken twice over — ErrEmailAmbiguous is a uniqueness answer
@@ -216,23 +243,6 @@ func signupHandler(db orm.DB) zip.Handler {
 				return httpx.Err(c, "email already exists")
 			case err != nil:
 				return httpx.Err(c, err.Error())
-			}
-			// Where a code can reach the address, the address is proven or not taken.
-			// An account holding it unproven is one its owner can never have: they
-			// cannot register it again, a social sign-in will not adopt it, and the
-			// password is someone else's.
-			//
-			// Asked after the address is known to be free, so the first submit, which
-			// carries no code, already answers "email already exists": the person is
-			// sent to sign-in or recovery before a code goes to an address that has an
-			// account. The answer is the one a wrong code has always drawn, since the
-			// code is spent last.
-			//
-			// An invitation pinned to this address asks for the same proof whatever
-			// the application offers: the pin says who may take the seat, and an
-			// account that never proved the address would hold it unproven.
-			if f.Code == "" && (sendsCodes(app) || (invite != nil && invite.Email != "")) {
-				return httpx.Err(c, "the code sent to the email address is required")
 			}
 		}
 
@@ -284,12 +294,9 @@ func signupHandler(db orm.DB) zip.Handler {
 		// account held it, so whoever holds the code holds the address, and they are
 		// the one choosing this password. It is spent last, after every refusal that is
 		// about the request, so a person who mistyped their password does not also lose
-		// the code; a wrong code counts against the code like any other guess.
+		// the code.
 		proven := false
 		if f.Code != "" {
-			if email == "" {
-				return httpx.Err(c, "a code proves an email address; none was given")
-			}
 			ok, err := otp.Prove(ctx, db, app.Organization, email, f.Code, nowFunc())
 			if err != nil {
 				return httpx.Err(c, err.Error())
@@ -642,4 +649,16 @@ func isSingleRepeatedRune(s string) bool {
 func isEmailValid(s string) bool {
 	_, err := mail.ParseAddress(s)
 	return err == nil
+}
+
+// addressHolder is the one account holding email in org or among the registrations
+// of appOrg, or nil when none does or the address is ambiguous.
+func addressHolder(ctx context.Context, db orm.DB, org, appOrg, email string) *schema.User {
+	if u, err := store.GetUserByEmail(ctx, db, org, email); err == nil && u != nil {
+		return u
+	}
+	if u, err := store.GetSignupByEmail(ctx, db, appOrg, email); err == nil && u != nil {
+		return u
+	}
+	return nil
 }
