@@ -81,4 +81,10 @@ type Token struct {
 	// the access token's expiry). Carried across rotation, so the second refresh
 	// behaves like the first.
 	PublicGrant bool `json:"publicGrant,omitempty" url:"-"`
+
+	// AuthTime is when the person proved who they are for this grant, in unix
+	// seconds: the moment of a typed credential, a passkey, a wallet signature or
+	// a provider's return, or the sign-in behind the session a silent grant was
+	// answered from. Zero when the grant carries no sign-in of its own.
+	AuthTime int64 `json:"authTime,omitempty" url:"-"`
 }

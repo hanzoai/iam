@@ -195,6 +195,7 @@ func silentGrant(c *zip.Ctx, db orm.DB, app *schema.Application, q authorizeRequ
 		CodeChallenge:       q.codeChallenge,
 		CodeChallengeMethod: q.codeChallengeMethod,
 		Resource:            q.resource,
+		AuthTime:            sc.AuthTime,
 	})
 	if err != nil {
 		// A policy refusal, not a missing session. Re-asking for the password

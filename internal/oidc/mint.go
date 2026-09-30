@@ -32,6 +32,10 @@ type Mint struct {
 	CodeChallenge       string
 	CodeChallengeMethod string
 	Resource            string
+	// AuthTime is when the person proved who they are (unix seconds): now for a
+	// credential presented to this request, the session's sign-in for a grant
+	// answered from a session. It is stamped on the code, never defaulted.
+	AuthTime int64
 }
 
 // MintFor resolves what a successful authentication returns to the SDK: the
@@ -100,6 +104,7 @@ func MintFor(ctx context.Context, db orm.DB, app *schema.Application, userID str
 	// re-verify the redirect and echo the nonce into the id_token.
 	code.RedirectUri = p.RedirectUri
 	code.Nonce = p.Nonce
+	code.AuthTime = p.AuthTime
 	if err := store.PersistToken(ctx, db, code); err != nil {
 		return "", err
 	}

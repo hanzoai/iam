@@ -387,7 +387,7 @@ func age(t *testing.T, db orm.DB, access string, d time.Duration) {
 	}
 	for _, row := range rows {
 		if row.Code != "" && row.AccessTokenHash != "" && row.AccessTokenHash == hash(access) {
-			row.CodeExpireIn -= int64(d.Seconds())
+			row.AuthTime -= int64(d.Seconds())
 			if err := row.UpdateCtx(context.Background()); err != nil {
 				t.Fatal(err)
 			}
@@ -499,3 +499,4 @@ func hash(s string) string {
 	sum := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(sum[:])
 }
+

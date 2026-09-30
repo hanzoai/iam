@@ -343,6 +343,7 @@ func federationMint(c *zip.Ctx, db orm.DB, app *schema.Application, user *schema
 	}
 	codeRow.RedirectUri = p.RedirectUri
 	codeRow.Nonce = p.AppNonce
+	codeRow.AuthTime = now.Unix()
 	if err := store.PersistToken(ctx, db, codeRow); err != nil {
 		return "", err
 	}

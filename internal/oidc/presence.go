@@ -38,10 +38,13 @@ var ErrNotSignedIn = errors.New("sign in again to do this")
 
 // SignedIn resolves the person behind bearer when the bearer is the access token
 // of their own sign-in no more than within ago: minted by the authorization-code
-// or device grant, which authenticate the person at IAM, and not rotated since.
-// A token minted for them by somebody else — issued on behalf, exchanged, acting
-// for an org key, re-scoped by an assume — or renewed by a refresh token does not
-// show a sign-in and is refused, as is one whose sign-in is older than within.
+// grant from a code that records when the person proved who they are (a typed
+// credential, a passkey, a wallet, a provider's return, or the sign-in behind the
+// session a silent grant answered from), and not rotated since. A token minted
+// for them by somebody else — issued on behalf, exchanged, acting for an org key,
+// re-scoped by an assume — or renewed by a refresh token, or minted by the device
+// grant, does not show such a sign-in and is refused, as is one whose sign-in is
+// older than within.
 func SignedIn(ctx context.Context, db orm.DB, bearer string, within time.Duration) (*schema.User, *Claims, error) {
 	claims, err := verifyBearer(ctx, db, bearer)
 	if err != nil {
@@ -54,15 +57,10 @@ func SignedIn(ctx context.Context, db orm.DB, bearer string, within time.Duratio
 	if err != nil {
 		return nil, nil, err
 	}
-	if row == nil || row.Code == "" || row.CodeExpireIn == 0 {
+	if row == nil || row.Code == "" || row.UserCode != "" || row.AuthTime <= 0 {
 		return nil, nil, ErrNotSignedIn
 	}
-	ttl := codeTTL
-	if row.UserCode != "" {
-		ttl = deviceCodeTTL
-	}
-	at := time.Unix(row.CodeExpireIn, 0).Add(-ttl)
-	if nowFunc().Sub(at) > within {
+	if nowFunc().Sub(time.Unix(row.AuthTime, 0)) > within {
 		return nil, nil, ErrNotSignedIn
 	}
 	u, err := Holder(ctx, db, claims)

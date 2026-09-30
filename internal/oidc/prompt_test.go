@@ -16,6 +16,8 @@ import (
 
 	"github.com/hanzoai/iam/pkg/pkce"
 	"github.com/hanzoai/iam/pkg/schema"
+
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // SILENT RE-AUTHENTICATION. Sign in once at the issuer, then a SECOND
@@ -589,5 +591,26 @@ func TestSilent_ForwardedPromptIsReserialized(t *testing.T) {
 	}
 	if strings.Contains(loc, "script") {
 		t.Fatalf("client-controlled text reached the login page: %q", loc)
+	}
+}
+
+// A code answered from a session records the session's sign-in, not the moment
+// of the silent grant, so a later request asking for a recent sign-in reads how
+// long ago the person actually proved who they are.
+func TestSilent_CodeCarriesTheSessionsSignInTime(t *testing.T) {
+	app, db := newServer(t)
+	twoApps(t, db)
+	cookie := signIn(t, app, "portal")
+	signedAt := time.Now().Unix()
+	nowFuncSet(t, time.Now().Add(20*time.Minute))
+	q := silentQuery("verifier-authtime-0123456789012345678901234567890")
+	q.Set("prompt", "none")
+	code := codeFromLocation(t, requireRedirect(t, authorizeWith(t, app, q, cookie, nil), secondRedirect))
+	row, err := store.GetTokenByCode(tctx(), db, code)
+	if err != nil || row == nil {
+		t.Fatalf("code row: %v", err)
+	}
+	if row.AuthTime <= 0 || row.AuthTime > signedAt+5 {
+		t.Fatalf("the silent code records a sign-in at %d, want the session's (~%d), not the grant's", row.AuthTime, signedAt)
 	}
 }

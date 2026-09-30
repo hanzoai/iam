@@ -246,6 +246,7 @@ func check(db orm.DB) zip.Handler {
 			Nonce:               f.Nonce,
 			CodeChallenge:       f.CodeChallenge,
 			CodeChallengeMethod: f.CodeChallengeMethod,
+			AuthTime:            time.Now().Unix(),
 		})
 		if err != nil {
 			return httpx.Err(c, err.Error())

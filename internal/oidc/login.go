@@ -399,6 +399,7 @@ func (f loginForm) mint() Mint {
 		CodeChallenge:       f.CodeChallenge,
 		CodeChallengeMethod: f.CodeChallengeMethod,
 		Resource:            f.Resource,
+		AuthTime:            nowFunc().Unix(),
 	}
 }
 
