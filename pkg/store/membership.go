@@ -180,11 +180,58 @@ func ForgetUser(ctx context.Context, db orm.DB, user string) (int, error) {
 	return removed, nil
 }
 
+// OrgCredential is the name of an org's own metered credential: the service
+// account provisioning mints beside the org ("<org>-default").
+func OrgCredential(org string) string { return org + "-default" }
+
+// OrgAccounts lists the accounts that live in org (User.Owner == org), other than
+// the org's own credential. An org is not removable while any remain: deleting the
+// org row would free its name with its people still filed under it, and whoever
+// created the next org of that name would find them already inside, admins
+// included.
+func OrgAccounts(ctx context.Context, db orm.DB, org string) ([]*schema.User, error) {
+	if org == "" {
+		return nil, nil
+	}
+	users, err := orm.TypedQuery[schema.User](db).Filter("Owner=", org).GetAll(ctx)
+	if err != nil && !errors.Is(err, orm.ErrNotFound) {
+		return nil, err
+	}
+	out := users[:0]
+	for _, u := range users {
+		if u != nil && !isOrgCredential(u, org) {
+			out = append(out, u)
+		}
+	}
+	return out, nil
+}
+
+func isOrgCredential(u *schema.User, org string) bool {
+	return u.Name == OrgCredential(org) && u.Type == schema.ServiceAccount
+}
+
+// OrgHeld reports whether any membership, account or key still names org. Each
+// is a row a new org of that name would inherit: a membership seats its holder,
+// an account lives in it, and a key authenticates into it.
+func OrgHeld(ctx context.Context, db orm.DB, org string) (bool, error) {
+	if rows, err := MembershipsByOrg(ctx, db, org); err != nil || len(rows) > 0 {
+		return len(rows) > 0, err
+	}
+	if _, err := orm.TypedQuery[schema.User](db).Filter("Owner=", org).First(); !errors.Is(err, orm.ErrNotFound) {
+		return err == nil, err
+	}
+	if _, err := orm.TypedQuery[schema.Key](db).Filter("Owner=", org).First(); !errors.Is(err, orm.ErrNotFound) {
+		return err == nil, err
+	}
+	return false, nil
+}
+
 // ForgetOrg removes the rows that name org and would outlive it: every membership
-// of it, the keys each member held there, and the applications it owns. It is the
-// companion to deleting the org itself. Nothing checks that a membership's org or
-// an application's owner still exists, so a row left behind would hand its holder
-// the next org created under the same name.
+// of it, every key it owns (members' keys and its own credential's alike), the
+// applications it owns, and its own credential account. It is the companion to
+// deleting the org itself, run only once OrgAccounts is empty. Nothing checks that
+// the org a row names still exists, so a row left behind would hand its holder the
+// next org created under the same name.
 //
 // It is idempotent: forgetting an org that holds nothing removes nothing and is
 // not an error, so a retried or racing delete is safe.
@@ -203,7 +250,13 @@ func ForgetOrg(ctx context.Context, db orm.DB, org string) error {
 		if err := m.DeleteCtx(ctx); err != nil {
 			return err
 		}
-		if err := forgetMemberKeys(ctx, db, m.User, org); err != nil {
+	}
+	keys, err := orm.TypedQuery[schema.Key](db).Filter("Owner=", org).GetAll(ctx)
+	if err != nil && !errors.Is(err, orm.ErrNotFound) {
+		return err
+	}
+	for _, k := range keys {
+		if err := k.DeleteCtx(ctx); err != nil {
 			return err
 		}
 	}
@@ -216,7 +269,31 @@ func ForgetOrg(ctx context.Context, db orm.DB, org string) error {
 			return err
 		}
 	}
+	users, err := orm.TypedQuery[schema.User](db).Filter("Owner=", org).GetAll(ctx)
+	if err != nil && !errors.Is(err, orm.ErrNotFound) {
+		return err
+	}
+	for _, u := range users {
+		if u != nil && isOrgCredential(u, org) {
+			if err := u.DeleteCtx(ctx); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
+}
+
+// InsertOrganization writes o only when no row holds its key, stamping the times a
+// create stamps, and reports whether this call wrote it. Two creates racing one
+// name leave one row and one winner; the loser learns the name is taken instead of
+// overwriting the winner's row.
+func InsertOrganization(ctx context.Context, db orm.DB, o *schema.Organization) (bool, error) {
+	now := time.Now()
+	o.CreatedAt, o.UpdatedAt = now, now
+	if err := orm.SerializeFields(o); err != nil {
+		return false, err
+	}
+	return db.CreateIfAbsent(ctx, o.Key(), o)
 }
 
 // MembershipsByUser returns every org a user may explicitly act in. A caller

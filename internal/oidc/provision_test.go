@@ -82,6 +82,15 @@ func (f *faultyDB) Put(ctx context.Context, key orm.Key, src interface{}) (orm.K
 	return f.DB.Put(ctx, key, src)
 }
 
+// CreateIfAbsent is a write like Put and counts toward the same ordinal: the org
+// row is inserted create-only.
+func (f *faultyDB) CreateIfAbsent(ctx context.Context, key orm.Key, src interface{}) (bool, error) {
+	if err := f.trip(key); err != nil {
+		return false, err
+	}
+	return f.DB.CreateIfAbsent(ctx, key, src)
+}
+
 func (f *faultyDB) RunInTransactionWith(ctx context.Context, opts *orm.TxOptions, fn func(tx orm.DB) error) error {
 	return f.DB.RunInTransactionWith(ctx, opts, func(tx orm.DB) error {
 		return fn(&faultyTx{DB: tx, f: f})
@@ -98,6 +107,13 @@ func (t *faultyTx) Put(ctx context.Context, key orm.Key, src interface{}) (orm.K
 		return nil, err
 	}
 	return t.DB.Put(ctx, key, src)
+}
+
+func (t *faultyTx) CreateIfAbsent(ctx context.Context, key orm.Key, src interface{}) (bool, error) {
+	if err := t.f.trip(key); err != nil {
+		return false, err
+	}
+	return t.DB.CreateIfAbsent(ctx, key, src)
 }
 
 // ── tests ────────────────────────────────────────────────────────────────────
@@ -607,5 +623,23 @@ func TestProvision_ConvergesAnAccountThatHoldsNoCredential(t *testing.T) {
 	}
 	if again.accessKey != out.accessKey {
 		t.Fatalf("replay named %q, want the credential already held %q", again.accessKey, out.accessKey)
+	}
+}
+
+// TestProvision_HeldNameRefused: a first run never founds an org whose name is
+// still held by a removed org's leftovers — an account filed under it would be
+// inside the new org, and a key would authenticate into it.
+func TestProvision_HeldNameRefused(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	seedUserIn(t, db, "landing", "eve", "eve@example.com")
+	seedUserIn(t, db, "widgets", "mallory", "mallory@example.com") // left behind by a removed "widgets"
+
+	_, err := provision(ctx, db, claim{owner: "landing", name: "eve", slug: "widgets", display: "Widgets"})
+	if ft, ok := err.(*fault); !ok || ft.status != 409 {
+		t.Fatalf("want 409 for a held name, got %v", err)
+	}
+	if org, _ := store.GetOrganizationByName(ctx, db, "widgets"); org != nil {
+		t.Fatalf("org founded over another org's leftovers")
 	}
 }

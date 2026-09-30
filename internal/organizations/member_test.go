@@ -92,14 +92,15 @@ func TestMember_putWritesTheOrganizationInThePath(t *testing.T) {
 // A DELETE carries no body either: the address is the whole request.
 func TestMember_deleteRemovesTheOrganizationInThePath(t *testing.T) {
 	h := newHarness(t)
+	seedOrg(t, h.db, "orgc") // nobody lives in it, so nothing holds it back
 
-	status, body := h.call(t, "DELETE", memberPath+"orgb", "admin/root", "")
+	status, body := h.call(t, "DELETE", memberPath+"orgc", "admin/root", "")
 	if status != 200 {
 		t.Fatalf("status=%d body=%s, want 200", status, body)
 	}
 	if _, err := orm.TypedQuery[schema.Organization](h.db).
-		Filter("Owner=", policy.AdminOrg).Filter("Name=", "orgb").First(); !errors.Is(err, orm.ErrNotFound) {
-		t.Fatalf("orgb read back with %v, want it gone", err)
+		Filter("Owner=", policy.AdminOrg).Filter("Name=", "orgc").First(); !errors.Is(err, orm.ErrNotFound) {
+		t.Fatalf("orgc read back with %v, want it gone", err)
 	}
 	if h.stored(t, "hanzo") == nil {
 		t.Fatal("hanzo went with it")

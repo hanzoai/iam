@@ -156,8 +156,23 @@ func provision(ctx context.Context, db orm.DB, cl claim) (provisioned, error) {
 			o.Founder = founder
 			o.CreatedTime = provisionNow()
 			o.SetId("admin/" + cl.slug)
-			if err := o.CreateCtx(ctx); err != nil {
+			// Rows a removed org of this name left behind would come with it.
+			if held, err := store.OrgHeld(ctx, tx, cl.slug); err != nil {
 				return &fault{500, "server_error"}
+			} else if held {
+				return &fault{409, "the organization \"" + cl.slug + "\" already exists"}
+			}
+			// Create-only: an org another request wrote after the read above is
+			// judged below like any org that already existed, never overwritten.
+			created, err := store.InsertOrganization(ctx, tx, o)
+			if err != nil {
+				return &fault{500, "server_error"}
+			}
+			if !created {
+				if org, err = store.GetOrganizationByName(ctx, tx, cl.slug); err != nil || org == nil {
+					return &fault{500, "server_error"}
+				}
+				orgCreated = false
 			}
 		}
 		out.orgCreated = orgCreated

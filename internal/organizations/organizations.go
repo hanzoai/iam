@@ -10,6 +10,7 @@ package organizations
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	policy "github.com/hanzoai/authz"
@@ -145,14 +146,14 @@ func (h *OrganizationAPI) Create(ctx context.Context, in *CreateOrganizationInpu
 	default:
 		return nil, zip.ErrInternal(err.Error())
 	}
-	// A membership names its org by name, and nothing checks that the org exists,
-	// so rows left by a removed org of this name would put their holders in the new
-	// one. The name is not free until they are gone.
-	switch rows, err := store.MembershipsByOrg(ctx, h.DB, org.Name); {
+	// Memberships, accounts and keys name their org by name, and nothing checks
+	// that the org exists, so rows a removed org of this name left behind would
+	// come with the new one. The name is not free until they are gone.
+	switch held, err := store.OrgHeld(ctx, h.DB, org.Name); {
 	case err != nil:
 		return nil, zip.ErrInternal(err.Error())
-	case len(rows) > 0:
-		return nil, zip.ErrConflict("organization name is still held by memberships of a removed organization")
+	case held:
+		return nil, zip.ErrConflict("organization name is still held by the members, accounts or keys of a removed organization")
 	}
 
 	entity := orm.New[schema.Organization](h.DB)
@@ -169,16 +170,8 @@ func (h *OrganizationAPI) Create(ctx context.Context, in *CreateOrganizationInpu
 	// keys a row by this string, so one (owner, name) is one row by construction
 	// rather than by a check that has to be run first.
 	entity.SetId(org.Owner + "/" + org.Name)
-	// The lookup above answers the common case; this insert is what decides. It
-	// writes only when no row holds the key, so two creates racing one name leave
-	// one org and one winner, and the loser is told the name is taken instead of
-	// overwriting the winner's row.
-	now := time.Now()
-	entity.CreatedAt, entity.UpdatedAt = now, now
-	if err := orm.SerializeFields(entity); err != nil {
-		return nil, zip.ErrInternal(err.Error())
-	}
-	created, err := h.DB.CreateIfAbsent(ctx, entity.Key(), entity)
+	// The lookup above answers the common case; this insert is what decides.
+	created, err := store.InsertOrganization(ctx, h.DB, entity)
 	if err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
@@ -334,6 +327,14 @@ func (h *OrganizationAPI) Delete(ctx context.Context, in *DeleteOrganizationInpu
 	// admins and the org-capable consoles may run it; only a SuperAdmin removes it.
 	if (policy.IsReservedOrg(existing.Name) || existing.Platform) && !authz.IsSuper(ctx) {
 		return nil, zip.ErrForbidden("the platform's own organizations are deleted by a SuperAdmin only")
+	}
+	// An org whose people still live in it is not removed: its name would be free
+	// with them filed under it. They are moved or deleted first.
+	switch accounts, err := store.OrgAccounts(ctx, h.DB, existing.Name); {
+	case err != nil:
+		return nil, zip.ErrInternal(err.Error())
+	case len(accounts) > 0:
+		return nil, zip.ErrConflict(fmt.Sprintf("the organization still holds %d accounts; move or delete them first", len(accounts)))
 	}
 	// The rows that name the org go first and the org row last, so a failure part
 	// way leaves the org in place for a retry rather than rows naming an org that is

@@ -371,12 +371,18 @@ func TestDelete_forgetsTheRowsThatNameTheOrg(t *testing.T) {
 			t.Fatalf("seed membership: %v", err)
 		}
 	}
-	k := orm.New[schema.Key](db)
-	k.Owner, k.Name, k.User = "widgets", "bob-secret", "acme/bob"
-	k.SetId("widgets/bob-secret")
-	if err := k.CreateCtx(ctx); err != nil {
-		t.Fatalf("seed key: %v", err)
+	for _, k := range []struct{ name, user string }{
+		{"bob-secret", "acme/bob"},
+		{store.OrgCredential("widgets") + "-key", "widgets/" + store.OrgCredential("widgets")},
+	} {
+		row := orm.New[schema.Key](db)
+		row.Owner, row.Name, row.User = "widgets", k.name, k.user
+		row.SetId("widgets/" + k.name)
+		if err := row.CreateCtx(ctx); err != nil {
+			t.Fatalf("seed key: %v", err)
+		}
 	}
+	seedAccount(t, db, "widgets", store.OrgCredential("widgets"), schema.ServiceAccount)
 	a := orm.New[schema.Application](db)
 	a.Owner, a.Name, a.Organization = "widgets", "widgets-agent", "widgets"
 	a.SetId("widgets/widgets-agent")
@@ -390,13 +396,72 @@ func TestDelete_forgetsTheRowsThatNameTheOrg(t *testing.T) {
 	if rows, err := store.MembershipsByOrg(ctx, db, "widgets"); err != nil || len(rows) != 0 {
 		t.Fatalf("memberships outlived the org: %v %v", rows, err)
 	}
-	if _, err := orm.Get[schema.Key](db, "widgets/bob-secret"); !errors.Is(err, orm.ErrNotFound) {
-		t.Fatalf("member key outlived the org: %v", err)
+	if keys, _ := orm.TypedQuery[schema.Key](db).Filter("Owner=", "widgets").GetAll(ctx); len(keys) != 0 {
+		t.Fatalf("%d keys owned by the org outlived it", len(keys))
+	}
+	if u, _ := store.GetUserByName(ctx, db, "widgets", store.OrgCredential("widgets")); u != nil {
+		t.Fatal("the org's own credential account outlived it")
 	}
 	if _, err := orm.Get[schema.Application](db, "widgets/widgets-agent"); !errors.Is(err, orm.ErrNotFound) {
 		t.Fatalf("owned application outlived the org: %v", err)
 	}
 	if _, err := api.Create(ctx, createIn(policy.AdminOrg, "widgets")); err != nil {
 		t.Fatalf("the name must be free again: %v", err)
+	}
+}
+
+// seedAccount files an account in org.
+func seedAccount(t *testing.T, db orm.DB, org, name, typ string) {
+	t.Helper()
+	u := orm.New[schema.User](db)
+	u.Owner, u.Name, u.Type = org, name, typ
+	u.SetId(org + "/" + name)
+	if err := u.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed account %s/%s: %v", org, name, err)
+	}
+}
+
+// An org whose people still live in it is not removed, however it is asked: its
+// name would be free with an admin filed under it, and the next org of that name
+// would open with them inside. Nothing is removed on the refusal.
+func TestDelete_refusedWhileAccountsLiveInIt(t *testing.T) {
+	db := freshDB(t)
+	api := organizations.NewOrganizationAPI(db)
+	ctx := context.Background()
+	put(t, db, "widgets")
+	seedAccount(t, db, "widgets", "mallory", "normal-user")
+	if _, err := store.EnsureMembership(ctx, db, "acme/bob", "widgets", store.RoleMember); err != nil {
+		t.Fatal(err)
+	}
+
+	err := must(api.Delete(ctx, &organizations.DeleteOrganizationInput{Owner: policy.AdminOrg, Name: "widgets"}))
+	if got := code(t, err); got != 409 {
+		t.Fatalf("status=%d, want 409", got)
+	}
+	if org, _ := store.GetOrganizationByName(ctx, db, "widgets"); org == nil {
+		t.Fatal("org removed with an account still in it")
+	}
+	if rows, _ := store.MembershipsByOrg(ctx, db, "widgets"); len(rows) != 1 {
+		t.Fatalf("a refused delete removed memberships: %v", rows)
+	}
+}
+
+// A name an account or a key still points to is held: the new org would open with
+// that account inside it, or that key authenticating into it.
+func TestCreate_nameHeldByAnAccountOrAKey(t *testing.T) {
+	db := freshDB(t)
+	api := organizations.NewOrganizationAPI(db)
+	ctx := context.Background()
+	seedAccount(t, db, "ghost", "mallory", "normal-user")
+	k := orm.New[schema.Key](db)
+	k.Owner, k.Name, k.User = "spectre", "old-key", "spectre/"+store.OrgCredential("spectre")
+	k.SetId("spectre/old-key")
+	if err := k.CreateCtx(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"ghost", "spectre"} {
+		if got := code(t, must(api.Create(ctx, createIn(policy.AdminOrg, name)))); got != 409 {
+			t.Fatalf("%s: status=%d, want 409", name, got)
+		}
 	}
 }

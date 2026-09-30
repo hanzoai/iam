@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/hanzoai/orm"
@@ -17,6 +18,7 @@ import (
 	"github.com/hanzoai/iam/internal/seed"
 	"github.com/hanzoai/iam/internal/testhttp"
 	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // del sends DELETE for one organization as sub and returns the status and body.
@@ -56,16 +58,26 @@ func TestDelete_platformOrgIsSuperAdminOnly(t *testing.T) {
 	if h.stored(t, "hanzo") == nil {
 		t.Fatal("platform org removed by its org admin")
 	}
-	if status, body := h.del(t, "admin/root", "hanzo"); status != 200 {
-		t.Fatalf("SuperAdmin deleting a platform org: status=%d body=%s, want 200", status, body)
+	// A SuperAdmin passes the platform check and meets the next one: hanzo still
+	// holds accounts.
+	if status, body := h.del(t, "admin/root", "hanzo"); status != 409 || !strings.Contains(body, "accounts") {
+		t.Fatalf("SuperAdmin deleting a platform org with accounts: status=%d body=%s, want 409", status, body)
 	}
 }
 
-// A customer org carries no flag, and its own admin may still remove it.
-func TestDelete_customerOrgByItsAdmin(t *testing.T) {
+// A customer org carries no flag, and an owner of it may remove it once nobody
+// lives in it: an additional org, owned by membership, is the ordinary case.
+func TestDelete_customerOrgByItsOwner(t *testing.T) {
 	h := newHarness(t)
-	if status, body := h.del(t, "orgb/bob", "orgb"); status != 200 {
-		t.Fatalf("customer admin deleting own org: status=%d body=%s, want 200", status, body)
+	seedOrg(t, h.db, "side")
+	if _, err := store.EnsureMembership(context.Background(), h.db, "orgb/bob", "side", store.RoleOwner); err != nil {
+		t.Fatal(err)
+	}
+	if status, body := h.del(t, "orgb/bob", "side"); status != 200 {
+		t.Fatalf("owner deleting their additional org: status=%d body=%s, want 200", status, body)
+	}
+	if rows, _ := store.MembershipsByOrg(context.Background(), h.db, "side"); len(rows) != 0 {
+		t.Fatalf("memberships outlived the org: %v", rows)
 	}
 }
 
