@@ -258,6 +258,13 @@ func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error)
 	if existing != nil {
 		return nil, zip.ErrConflict("user " + owner + "/" + name + " already exists")
 	}
+	// A client's machine token names admin/<its application>, and a subject
+	// resolves to an account first, so no account takes an admin application's name.
+	if shadowed, err := store.ShadowedByAccount(ctx, a.db, owner, name); err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	} else if shadowed {
+		return nil, zip.ErrConflict("an application of the admin directory is named " + name)
+	}
 
 	u := &in.User
 	u.Owner, u.Name = owner, name

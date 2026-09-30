@@ -1076,3 +1076,14 @@ func ShadowsApplication(ctx context.Context, db orm.DB, name string) (bool, erro
 	u, err := GetUserByName(ctx, db, policy.AdminOrg, name)
 	return u != nil, err
 }
+
+// ShadowedByAccount reports whether an account owner/name would answer to an
+// application's machine tokens: the owner is the admin directory and an
+// application there holds the name.
+func ShadowedByAccount(ctx context.Context, db orm.DB, owner, name string) (bool, error) {
+	if owner != policy.AdminOrg {
+		return false, nil
+	}
+	a, err := GetApplicationByName(ctx, db, policy.AdminOrg, name)
+	return a != nil, err
+}

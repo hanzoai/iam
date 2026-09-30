@@ -112,3 +112,22 @@ func TestUsers_doNotRemoveOrSuspendASuperAdmin(t *testing.T) {
 		t.Error("the SuperAdmin was removed or suspended")
 	}
 }
+
+// No account takes the name of an admin application, on any creation path: the
+// application's machine tokens name admin/<application>, and a subject resolves
+// to an account first.
+func TestUsers_refuseAnAdminApplicationsName(t *testing.T) {
+	h := newHarness(t)
+	seedClientApp(t, h.db, "console", "console-secret")
+	if code, body := h.post(t, "/v1/iam/users", h.token(t, "admin/root"), `{"user":{"owner":"admin","name":"console"}}`); code != 409 {
+		t.Errorf("users API: admin/console beside the console application = %d %.160s, want 409", code, body)
+	}
+	req := httptest.NewRequest("POST", "/v1/iam/scim/v2/Users", strings.NewReader(`{"userName":"console","urn:ietf:params:scim:schemas:extension:hanzo:2.0:User":{"owner":"admin"}}`))
+	req.Host = "hanzo.id"
+	req.Header.Set("Content-Type", "application/scim+json")
+	req.Header.Set("Authorization", "Bearer "+h.token(t, "admin/root"))
+	h.do(t, req)
+	if u, _ := store.GetUserByName(context.Background(), h.db, "admin", "console"); u != nil {
+		t.Error("SCIM created admin/console beside the console application")
+	}
+}

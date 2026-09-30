@@ -66,7 +66,7 @@ func Route(r *zip.Group, db orm.DB) {
 
 	r.Post("/v1/iam/admin/users/upsert", upsertUser(db),
 		zip.WithOperationID("upsertUser"),
-		zip.WithStatus(200, 400, 401, 500),
+		zip.WithStatus(200, 400, 401, 409, 500),
 		zip.WithTags("bootstrap"))
 }
 
@@ -544,6 +544,11 @@ func upsertUser(db orm.DB) zip.TypedHandler[person, reply] {
 				return refuse(400, err.Error()), nil
 			}
 			in.Name = name // the id and the response report what was STORED
+			if shadowed, err := store.ShadowedByAccount(ctx, db, in.Owner, name); err != nil {
+				return refuse(500, "server_error"), nil
+			} else if shadowed {
+				return refuse(409, fmt.Sprintf("an application of the admin directory is named %q", name)), nil
+			}
 			u := orm.New[schema.User](db)
 			model := u.Model
 			u.Owner, u.Name = in.Owner, name

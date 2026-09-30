@@ -101,3 +101,18 @@ func TestUpsertApplication_refusesAnAdminAccountsName(t *testing.T) {
 		t.Fatalf("an application named like admin/ops = %d %v, want 409", code, m)
 	}
 }
+
+// The upsert creates no admin account named like an admin application.
+func TestUpsert_refusesAnAdminApplicationsName(t *testing.T) {
+	app, db := boot(t)
+	if code, m := post(t, app, "/v1/iam/admin/applications/upsert", svcToken,
+		`{"organization":"hanzo","name":"ops","clientId":"ops","grantTypes":["client_credentials"]}`); code != 200 {
+		t.Fatalf("seed the application: %d %v", code, m)
+	}
+	if code, m := post(t, app, "/v1/iam/admin/users/upsert", svcToken, `{"owner":"admin","name":"ops"}`); code != 409 {
+		t.Fatalf("admin/ops beside the ops application = %d %v, want 409", code, m)
+	}
+	if u, _ := store.GetUserByName(context.Background(), db, "admin", "ops"); u != nil {
+		t.Fatal("the upsert created admin/ops")
+	}
+}
