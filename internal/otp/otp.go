@@ -388,7 +388,7 @@ func ConsumeFor(ctx context.Context, db orm.DB, purpose string, user *schema.Use
 	if rec.User == "" || rec.User != user.Owner+"/"+user.Name {
 		return false, nil
 	}
-	return spend(ctx, db, rec, code, now)
+	return spend(ctx, db, rec, code, now, true)
 }
 
 // Prove verifies code against the latest live record for receiver within owner and
@@ -405,7 +405,20 @@ func Prove(ctx context.Context, db orm.DB, owner, receiver, code string, now tim
 	if err != nil || rec == nil || rec.User != "" {
 		return false, err
 	}
-	return spend(ctx, db, rec, code, now)
+	return spend(ctx, db, rec, code, now, true)
+}
+
+// Check reports whether code is the live code for receiver within owner, filed
+// for no account, WITHOUT spending it. A miss counts exactly as it does in
+// [Prove]. It answers a caller that must learn whether an address has been
+// proven before it asks the person for anything more; the act that follows
+// spends the code with [Prove].
+func Check(ctx context.Context, db orm.DB, owner, receiver, code string, now time.Time) (bool, error) {
+	rec, err := live(ctx, db, owner, receiver, PurposeCode, code, now)
+	if err != nil || rec == nil || rec.User != "" {
+		return false, err
+	}
+	return spend(ctx, db, rec, code, now, false)
 }
 
 // spend compares code against rec and accounts for the outcome, under a row lock:
@@ -419,7 +432,7 @@ func Prove(ctx context.Context, db orm.DB, owner, receiver, code string, now tim
 // bound — the whole reason six digits is strong enough to be a credential — was
 // defeated by parallelism. Serializing it also closes the window in which two racing
 // correct submissions both spend one code.
-func spend(ctx context.Context, db orm.DB, rec *schema.VerificationRecord, code string, now time.Time) (bool, error) {
+func spend(ctx context.Context, db orm.DB, rec *schema.VerificationRecord, code string, now time.Time, retire bool) (bool, error) {
 	storageID := rec.Key().Encode()
 
 	var accepted bool
@@ -434,6 +447,10 @@ func spend(ctx context.Context, db orm.DB, rec *schema.VerificationRecord, code 
 			return nil
 		}
 		if cred.ConstantTimeEqual(fresh.Code, code) {
+			if !retire {
+				accepted = true
+				return nil
+			}
 			fresh.IsUsed = true
 			// The code was right, but a record that cannot be spent is a record that can
 			// be replayed. The error aborts the transaction and leaves accepted false —

@@ -710,6 +710,15 @@ the same request resolves through `GetUserByPhone`, which normalizes first, so
 "+1 415 555 0134" at send and "+14155550134" at login found the right user and then
 answered "the code is incorrect or has expired".
 
+## Sign-up by code — the code proves the address, the click creates the account
+
+A code sent to an address no account holds is filed with `User == ""` under the application's org. `POST /v1/iam/login` type=code with that code and no resolved user (`codeSignup`, code_signup.go):
+
+- app code sign-in on, sign-up on, `Registers(app, org)`, the request names the app's org, email only — else the same opaque "incorrect or expired" every miss gets.
+- no `create`: `otp.Check` (live, unowned, NOT spent; a miss counts) then `data: "SignupRequired"`. Only someone who proved the address learns it has no account.
+- `create: true` + `terms` + `aup` (version labels): re-check no row holds the address, `otp.Prove` (spends), make a passwordless account (verified, normal-user, never SuperAdmin, `Charter` founds the personal org like `provisionFederatedUser`), record `schema.Terms` (versions, time, method `email-code`, IP), then `afterFirstFactor` — the one minting tail.
+- `PUT /v1/iam/terms` (caller-scoped) records the same for a federated first sign-in, method `signed-in`. The record lives in the preferences blob under `terms`; the preferences merge refuses the key and `Update` carries it from the stored row.
+
 ## internal/otp is the one-time code; internal/mfa/factor is the second factor
 
 Two words that are easy to braid and must not be. `otp` is a secret SENT to an

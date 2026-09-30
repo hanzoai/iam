@@ -94,6 +94,10 @@ type CreateInput struct {
 	// answers for themselves. A request cannot reach it, which is the point: no
 	// caller can assert a consent on somebody else's behalf.
 	Consent *schema.Consent `json:"-"`
+	// Terms is the person's acceptance of the Terms of Service and the Acceptable
+	// Use Policy, off the wire for the same reason Consent is: only the code that
+	// watched the person accept may state it.
+	Terms *schema.Terms `json:"-"`
 	// Type and Admin are the identity CLASS — what KIND of principal this is, and
 	// whether it administers its org. They are off the wire for the same reason
 	// Consent is: a request must not be able to assert them, and here that is a
@@ -314,6 +318,9 @@ func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error)
 	// signup screen, where the person answers for themselves. A new user with no
 	// answer reads as Unanswered, which refuses.
 	if err := u.SetConsent(in.Consent); err != nil {
+		return nil, zip.ErrBadRequest(err.Error())
+	}
+	if err := u.SetTerms(in.Terms); err != nil {
 		return nil, zip.ErrBadRequest(err.Error())
 	}
 	if in.Password != "" {
@@ -556,6 +563,10 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 	// Every OTHER property still comes from the body: this carries the one record
 	// that is not the caller's to state, not the whole map.
 	if err := u.CarryConsentFrom(existing); err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	}
+	// Terms acceptance is carried for the same reason: it is the person's own act.
+	if err := u.CarryTermsFrom(existing); err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
 
