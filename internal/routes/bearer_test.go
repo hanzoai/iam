@@ -37,11 +37,12 @@ func TestBearer_onlyAnAccessTokenActs(t *testing.T) {
 		claims jwt.MapClaims
 		want   int
 	}{
-		"an access token": {jwt.MapClaims{"sub": "admin/root", "tokenType": "access-token", "iss": "https://hanzo.id", "aud": "hanzo-console"}, 200},
-		"an id_token":     {jwt.MapClaims{"sub": "admin/root", "tokenType": "id-token", "iss": "https://hanzo.id", "aud": "hanzo-console", "nonce": "n"}, 401},
-		"no token type":   {jwt.MapClaims{"sub": "admin/root", "iss": "https://hanzo.id", "aud": "hanzo-console"}, 401},
-		"no audience":     {jwt.MapClaims{"sub": "admin/root", "tokenType": "access-token", "iss": "https://hanzo.id"}, 401},
-		"another issuer":  {jwt.MapClaims{"sub": "admin/root", "tokenType": "access-token", "iss": "https://issuer.example", "aud": "hanzo-console"}, 401},
+		"an access token":   {jwt.MapClaims{"sub": "admin/root", "tokenType": "access-token", "iss": "https://hanzo.id", "aud": "hanzo-console"}, 200},
+		"an id_token":       {jwt.MapClaims{"sub": "admin/root", "tokenType": "id-token", "iss": "https://hanzo.id", "aud": "hanzo-console", "nonce": "n"}, 401},
+		"no token type":     {jwt.MapClaims{"sub": "admin/root", "iss": "https://hanzo.id", "aud": "hanzo-console"}, 401},
+		"no audience":       {jwt.MapClaims{"sub": "admin/root", "tokenType": "access-token", "iss": "https://hanzo.id"}, 401},
+		"an empty audience": {jwt.MapClaims{"sub": "admin/root", "tokenType": "access-token", "iss": "https://hanzo.id", "aud": []string{""}}, 401},
+		"another issuer":    {jwt.MapClaims{"sub": "admin/root", "tokenType": "access-token", "iss": "https://issuer.example", "aud": "hanzo-console"}, 401},
 	} {
 		bearer := h.signed(t, c.claims)
 		if code, body := h.get(t, "/v1/iam/users?owner=hanzo", bearer); code != c.want {

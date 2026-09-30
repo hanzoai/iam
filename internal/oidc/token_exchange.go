@@ -69,7 +69,7 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 		st != subjectTokenTypeAccess && st != subjectTokenTypeIDToken && st != subjectTokenTypeJWTToken {
 		return tokenError(c, 400, "invalid_request", "unsupported subject_token_type")
 	}
-	claims, err := verifyToken(ctx, db, subjectToken)
+	claims, err := verifyBearer(ctx, db, subjectToken)
 	if err != nil {
 		return tokenError(c, 400, "invalid_grant", "subject_token is invalid or expired")
 	}

@@ -516,4 +516,14 @@ func TestAssume_neverRenewsAndReleaseEndsTheAssumedToken(t *testing.T) {
 	if row, _ := store.GetTokenByAccessTokenHash(context.Background(), r.db, h); row != nil {
 		t.Fatal("release left the assumed token live")
 	}
+	req := httptest.NewRequest("GET", "/v1/iam/users?owner=acme", nil)
+	req.Host = "hanzo.id"
+	req.Header.Set("Authorization", "Bearer "+inside)
+	resp, err := testhttp.Do(r.app, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 401 {
+		t.Fatalf("the Guard admits a released assumed token: %d, want 401", resp.StatusCode)
+	}
 }

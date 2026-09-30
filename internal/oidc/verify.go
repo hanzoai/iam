@@ -47,8 +47,20 @@ func verifyBearer(ctx context.Context, db orm.DB, tokenStr string) (*Claims, err
 	if err != nil {
 		return nil, err
 	}
-	if claims.TokenType != "access-token" || len(claims.Audience) == 0 || !issues(claims.Issuer) {
+	if claims.TokenType != "access-token" || !audienced(claims.Audience) || !issues(claims.Issuer) {
 		return nil, errNotBearer
+	}
+	// An assumed token lives only while its record does: release deletes the
+	// record, and the token stops here. Readers that verify a token themselves
+	// honour it until it expires, which its lifetime cap bounds.
+	if claims.Assumed != "" {
+		row, err := store.GetTokenByAccessTokenHash(ctx, db, hashToken(tokenStr))
+		if err != nil {
+			return nil, err
+		}
+		if row == nil {
+			return nil, errNotBearer
+		}
 	}
 	return claims, nil
 }
@@ -113,4 +125,17 @@ func parseToken(ctx context.Context, db orm.DB, tokenStr string, extra ...jwt.Pa
 		return nil, err
 	}
 	return claims, nil
+}
+
+// audienced reports whether aud names at least one audience and no empty one.
+func audienced(aud []string) bool {
+	if len(aud) == 0 {
+		return false
+	}
+	for _, a := range aud {
+		if a == "" {
+			return false
+		}
+	}
+	return true
 }

@@ -169,6 +169,18 @@ func TestJourney_PasswordGrant_and_TokenExchange(t *testing.T) {
 	if xe["issued_token_type"] != "urn:ietf:params:oauth:token-type:access_token" || xe["access_token"] == "" {
 		t.Fatalf("token exchange failed: %v", xe)
 	}
+	// An id_token is no subject: it proves a sign-in to its client, not authority.
+	idt, _ := pw["id_token"].(string)
+	if idt == "" {
+		t.Fatal("the password grant minted no id_token to try")
+	}
+	if bad := e.token(t, url.Values{
+		"grant_type": {"urn:ietf:params:oauth:grant-type:token-exchange"},
+		"client_id":  {"hanzo-console"}, "client_secret": {"top-secret"},
+		"subject_token": {idt}, "resource": {"hanzo-cloud"},
+	}); bad["access_token"] != nil {
+		t.Fatal("token exchange minted an access token from an id_token")
+	}
 }
 
 // TestJourney_AdminConsole proves the console's own calls work: get-account (the
