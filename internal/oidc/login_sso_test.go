@@ -4,6 +4,7 @@ package oidc
 
 import (
 	"context"
+	"github.com/hanzoai/iam/pkg/pkce"
 	"testing"
 
 	"github.com/hanzoai/iam/pkg/store"
@@ -22,7 +23,8 @@ func TestLogin_SessionMintsCodeForTheNextApp(t *testing.T) {
 	cookie := portalSession(t, app, "hanzo", "alice")
 
 	req := jsonReq("POST", PathLogin+"?clientId=conf&responseType=code&redirectUri="+testRedirect+
-		"&scope=openid+profile+email&type=code", map[string]any{
+		"&scope=openid+profile+email&type=code&code_challenge="+pkce.Challenge("verifier-session-sso-0123456789012345678901234567")+
+		"&code_challenge_method=S256", map[string]any{
 		"type": "code", "application": "conf", "autoSignin": true,
 	})
 	req.Header.Set("Cookie", cookie)

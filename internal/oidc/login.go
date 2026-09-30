@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 
@@ -38,6 +39,10 @@ const PathLogin = "/v1/iam/login"
 
 // loginForm is the request body the SDK/portal posts.
 type loginForm struct {
+	// signedAt is when the person proved who they are, for a grant answered from
+	// a session: the session's sign-in, never the moment of this request.
+	signedAt int64
+
 	Application  string `json:"application"`
 	Organization string `json:"organization"`
 	Username     string `json:"username"` // email OR username
@@ -158,7 +163,28 @@ func loginHandler(db orm.DB) zip.Handler {
 			// subdomain could reach this branch. Narrowing an edge rule is therefore
 			// part of this branch's threat model, not an unrelated concern.
 			if f.Type == "code" || f.Type == "device" {
-				if owner, name, ok := sessions.Resolve(ctx, c.Fiber(), db); ok {
+				if sc, ok := sessions.Current(ctx, c.Fiber(), db); ok {
+					owner, name := sc.Owner, sc.Name
+					// A code minted from a session is S256-bound, carries the
+					// session's sign-in time, and — on an application's own host,
+					// where any script of that origin can reach this path — is minted
+					// only for the application the session was opened under. The
+					// IdP's own host keeps single sign-on across applications.
+					if f.Type == "code" {
+						if f.CodeChallenge == "" || normalizeChallengeMethod(f.CodeChallenge, f.CodeChallengeMethod) != "S256" {
+							return httpx.Err(c, "a sign-in continued from a session needs an S256 PKCE challenge")
+						}
+						if !onIssuerHost(c) {
+							app, err := ResolveApp(ctx, db, f.ClientId, f.Application)
+							if err != nil {
+								return httpx.Err(c, err.Error())
+							}
+							if app == nil || app.Name != sc.Application {
+								return httpx.ErrCode(c, "please sign in first", CodeLoginRequired)
+							}
+						}
+						f.signedAt = sc.AuthTime
+					}
 					user, err := store.GetUserByName(ctx, db, owner, name)
 					if err != nil {
 						return httpx.Err(c, err.Error())
@@ -408,8 +434,25 @@ func (f loginForm) mint() Mint {
 		CodeChallenge:       f.CodeChallenge,
 		CodeChallengeMethod: f.CodeChallengeMethod,
 		Resource:            f.Resource,
-		AuthTime:            nowFunc().Unix(),
+		AuthTime:            f.signedTime(),
 	}
+}
+
+// signedTime is when the person proved who they are for this grant: the
+// session's sign-in for a continued session, now for a credential posted here.
+func (f loginForm) signedTime() int64 {
+	if f.signedAt > 0 {
+		return f.signedAt
+	}
+	return nowFunc().Unix()
+}
+
+// onIssuerHost reports whether the request reached the identity provider's own
+// host — the host of the issuer it is served under — rather than an
+// application's host that routes IAM paths to it.
+func onIssuerHost(c *zip.Ctx) bool {
+	u, err := url.Parse(resolveIssuer(c.Host()))
+	return err == nil && normalizeHost(u.Host) == normalizeHost(c.Host())
 }
 
 // resolveLoginUser looks a user up by the login identifier in org: among the

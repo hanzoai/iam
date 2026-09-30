@@ -3,6 +3,7 @@
 package oidc
 
 import (
+	"github.com/hanzoai/iam/pkg/pkce"
 	"net/url"
 	"testing"
 )
@@ -46,7 +47,8 @@ func TestLogin_CodeFlowLeavesTheIdPSessionForTheNextApp(t *testing.T) {
 
 	// 2. The payoff: the SECOND app mints a code from that session alone.
 	req := jsonReq("POST", PathLogin+"?clientId=second&responseType=code&redirectUri="+testRedirect+
-		"&scope=openid+profile+email&type=code", map[string]any{
+		"&scope=openid+profile+email&type=code&code_challenge="+pkce.Challenge("verifier-fleet-sso-01234567890123456789012345678")+
+		"&code_challenge_method=S256", map[string]any{
 		"type": "code", "application": "second", "autoSignin": true,
 	})
 	req.Header.Set("Cookie", cookie)
