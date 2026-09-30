@@ -129,21 +129,33 @@ func TestLogout_IdempotentAndAnonymousSafe(t *testing.T) {
 	}
 }
 
-// One person's logout must not sign out another's session.
-func TestLogout_DoesNotTouchAnotherSession(t *testing.T) {
+// Signing out ends every session the person holds — the one on the application's
+// host and the one on the identity provider's host, which share no cookie the
+// server could link — and no other person's.
+func TestLogout_EndsEverySessionOfThePerson(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
+	seedApp(t, db, appOpts{clientID: "second", redirectURIs: []string{secondRedirect}})
 	seedRichUser(t, db)
+	seedUserInOrg(t, db, "hanzo", "bob", "bob@example.com", "pw-of-bob")
 
-	keep := signIn(t, app, "conf")
-	drop := signIn(t, app, "conf")
-	logout(t, app, drop, "", "")
-
-	if sessionLives(t, app, drop) {
-		t.Fatal("the logged-out session still authenticates")
+	idp := signIn(t, app, "conf")
+	host := signIn(t, app, "second")
+	resp, body := do(t, app, formReq("POST", PathLogin, url.Values{
+		"organization": {"hanzo"}, "application": {"conf"},
+		"username": {"bob"}, "password": {"pw-of-bob"}, "type": {"login"},
+	}))
+	if resp.StatusCode != 200 || decode(t, body)["status"] != "ok" {
+		t.Fatalf("bob's sign-in failed: %s", body)
 	}
-	if !sessionLives(t, app, keep) {
-		t.Fatal("logout revoked a DIFFERENT session — revocation is not scoped to the presented sid")
+	other := cookieKV(resp.Header.Get("Set-Cookie"))
+
+	logout(t, app, host, "", "")
+	if sessionLives(t, app, host) || sessionLives(t, app, idp) {
+		t.Fatal("signing out left one of the person's sessions alive")
+	}
+	if !sessionLives(t, app, other) {
+		t.Fatal("signing out ended another person's session")
 	}
 }
 

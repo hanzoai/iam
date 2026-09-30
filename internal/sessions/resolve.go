@@ -448,3 +448,19 @@ func sidActive(db orm.DB, owner, name, application, sid string) bool {
 	}
 	return false
 }
+
+// EndAll revokes every session owner/name holds, on every host and under every
+// application, so no cookie anywhere resolves to them afterwards.
+func EndAll(db orm.DB, owner, name string) {
+	rows, err := orm.TypedQuery[schema.Session](db).Filter("Owner=", owner).Filter("Name=", name).GetAll(context.Background())
+	if err != nil {
+		return
+	}
+	for _, s := range rows {
+		if len(s.SessionId) == 0 {
+			continue
+		}
+		s.SessionId = nil
+		_ = s.Update()
+	}
+}

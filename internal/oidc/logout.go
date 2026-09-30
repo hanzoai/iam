@@ -58,6 +58,12 @@ func logoutHandler(db orm.DB) zip.Handler {
 		// happen whether or not a hint is supplied, whether or not a redirect is
 		// asked for, and whether or not any of what follows succeeds.
 		ended := sessions.Clear(ctx, c.Fiber(), db)
+		// A person signing out of an application's host is signed out of the
+		// identity provider too, and of every other host they hold a session on:
+		// each session is revoked server-side, whichever cookie carries it.
+		for _, sc := range ended {
+			sessions.EndAll(db, sc.Owner, sc.Name)
+		}
 
 		// The hint is verified — a forged or unsigned one yields nil — and is the
 		// only thing that can name an application here, for BOTH the revocation and
