@@ -42,15 +42,18 @@ func keyFor(ctx context.Context, db orm.DB) ([]byte, error) {
 	return SessionKey(cert.PrivateKey), nil
 }
 
-// Set issues a signed session for a FRESH sign-in of (owner, name, application)
-// — the credential was just checked, so auth_time is now. It registers the sid in
+// Set issues a signed session for a sign-in of (owner, name, application) that
+// happened at authTime (unix seconds), which the session keeps. It registers the sid in
 // the Session row for revocation and puts the session first in the browser's
 // cookie, replacing any session that person already held there; everyone else
 // signed in on the browser stays signed in. This is what the code→session
 // exchange calls, where a session MUST be issued for the subject the redeemed
 // code names.
-func Set(ctx context.Context, c fiber.Ctx, db orm.DB, owner, name, application string) error {
-	return set(ctx, c, db, Cookie{Owner: owner, Name: name, Application: application})
+func Set(ctx context.Context, c fiber.Ctx, db orm.DB, owner, name, application string, authTime int64) error {
+	if authTime <= 0 {
+		return errors.New("a session names when its sign-in happened")
+	}
+	return set(ctx, c, db, Cookie{Owner: owner, Name: name, Application: application, AuthTime: authTime})
 }
 
 // Open is what an interactive SIGN-IN calls once it has proven who someone is:
@@ -83,7 +86,7 @@ func Open(ctx context.Context, c fiber.Ctx, db orm.DB, owner, name, application 
 		front := append([]Cookie{sc}, list[:i]...)
 		return write(ctx, c, db, append(front, list[i+1:]...))
 	}
-	return Set(ctx, c, db, owner, name, application)
+	return Set(ctx, c, db, owner, name, application, time.Now().Unix())
 }
 
 // set is the ONE place a session cookie reaches a browser: mint the sid, record

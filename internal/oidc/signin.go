@@ -31,6 +31,9 @@ const PathSignin = "/v1/iam/signin"
 type signinForm struct {
 	Code  string `json:"code"`
 	State string `json:"state"`
+	// CodeVerifier is the PKCE verifier for the challenge the code was minted
+	// with; a code redeems here only with it.
+	CodeVerifier string `json:"code_verifier"`
 }
 
 // signinHandler completes a sign-in: it exchanges the one-time code your
@@ -45,11 +48,14 @@ func signinHandler(db orm.DB) zip.Handler {
 
 		// Query first (the redirect-flow client posts code+state as query params),
 		// then a JSON body for programmatic callers.
-		code := c.Query("code")
+		var f signinForm
+		_ = c.Bind(&f)
+		code, verifier := c.Query("code"), c.Query("code_verifier")
 		if code == "" {
-			var f signinForm
-			_ = c.Bind(&f)
 			code = f.Code
+		}
+		if verifier == "" {
+			verifier = f.CodeVerifier
 		}
 		if code == "" {
 			return httpx.Err(c, "code is required")
@@ -70,6 +76,22 @@ func signinHandler(db orm.DB) zip.Handler {
 		if owner == "" || name == "" {
 			return httpx.Err(c, "the authorization code has no subject")
 		}
+		// A portal session is minted only from a code the platform's own
+		// application asked for, proven by the PKCE verifier of that request, and
+		// carrying the moment the person signed in — which the session keeps, so a
+		// session is never younger than the sign-in behind it.
+		app, err := store.GetApplicationByName(ctx, db, tok.Owner, tok.Application)
+		if err != nil {
+			return httpx.Err(c, "server_error")
+		}
+		switch {
+		case app == nil || !app.Platform:
+			return httpx.Err(c, "the authorization code was not issued to the platform's own application")
+		case tok.CodeChallenge == "" || VerifyPKCE(verifier, tok.CodeChallenge, tok.CodeChallengeMethod) != nil:
+			return httpx.Err(c, "the authorization code must be redeemed with the PKCE verifier it was requested with")
+		case tok.AuthTime <= 0:
+			return httpx.Err(c, "the authorization code records no sign-in")
+		}
 
 		// Burn the code (single-use) BEFORE establishing the session, so a replay
 		// loses the race and mints nothing.
@@ -80,7 +102,7 @@ func signinHandler(db orm.DB) zip.Handler {
 
 		// Establish the durable session the portal + gateway admin-guard read via
 		// get-account. Its sid is registered for revocation (sessions.Set).
-		if err := sessions.Set(ctx, c.Fiber(), db, owner, name, tok.Application); err != nil {
+		if err := sessions.Set(ctx, c.Fiber(), db, owner, name, tok.Application, tok.AuthTime); err != nil {
 			return httpx.Err(c, err.Error())
 		}
 

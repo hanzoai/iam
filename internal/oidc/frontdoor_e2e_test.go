@@ -4,6 +4,7 @@ package oidc
 
 import (
 	"context"
+	"github.com/hanzoai/iam/pkg/pkce"
 	"net/url"
 	"strings"
 	"testing"
@@ -36,18 +37,19 @@ func sessionCookieFor(t *testing.T, app *zip.App) string {
 // post<Account>('iam/signin') resolves the signed-in user in one call.
 func TestSignin_CodeExchangeSetsSessionAndReturnsAccount(t *testing.T) {
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
+	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, platform: true})
 	seedRichUser(t, db)
 
 	code, _, _ := loginForCode(t, app, map[string]string{
 		"organization": "hanzo", "application": "conf", "clientId": "conf",
 		"username": "alice", "password": "pw",
+		"codeChallenge": pkce.Challenge(portalVerifier), "codeChallengeMethod": "S256",
 	})
 	if code == "" {
 		t.Fatal("login (type=code) minted no code")
 	}
 
-	resp, body := do(t, app, formReqNoBody("POST", PathSignin+"?code="+code))
+	resp, body := do(t, app, formReqNoBody("POST", PathSignin+"?code="+code+"&code_verifier="+portalVerifier))
 	env := decode(t, body)
 	if resp.StatusCode != 200 || env["status"] != "ok" {
 		t.Fatalf("signin status=%d body=%s", resp.StatusCode, body)
@@ -78,17 +80,18 @@ func TestSignin_CodeExchangeSetsSessionAndReturnsAccount(t *testing.T) {
 // The code is single-use: a replay after redemption is refused (no second session).
 func TestSignin_ReplayedCodeRejected(t *testing.T) {
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
+	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, platform: true})
 	seedRichUser(t, db)
 
 	code, _, _ := loginForCode(t, app, map[string]string{
 		"organization": "hanzo", "application": "conf", "clientId": "conf",
 		"username": "alice", "password": "pw",
+		"codeChallenge": pkce.Challenge(portalVerifier), "codeChallengeMethod": "S256",
 	})
-	if _, body := do(t, app, formReqNoBody("POST", PathSignin+"?code="+code)); decode(t, body)["status"] != "ok" {
+	if _, body := do(t, app, formReqNoBody("POST", PathSignin+"?code="+code+"&code_verifier="+portalVerifier)); decode(t, body)["status"] != "ok" {
 		t.Fatalf("first signin should succeed: %s", body)
 	}
-	_, body := do(t, app, formReqNoBody("POST", PathSignin+"?code="+code))
+	_, body := do(t, app, formReqNoBody("POST", PathSignin+"?code="+code+"&code_verifier="+portalVerifier))
 	if decode(t, body)["status"] != "error" {
 		t.Fatalf("replayed code must be refused, got: %s", body)
 	}
@@ -261,3 +264,5 @@ func TestLinkedAccountsOf_OnlyConnectors(t *testing.T) {
 		t.Errorf("want exactly 2 linked accounts, got %d: %v", len(got), got)
 	}
 }
+
+const portalVerifier = "portal-verifier-0123456789012345678901234567890123456"
