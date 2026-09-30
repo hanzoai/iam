@@ -5,7 +5,6 @@ package oidc
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"regexp"
@@ -153,30 +152,29 @@ func createWithCode(ctx context.Context, db orm.DB, app *schema.Application, add
 	return Charter(ctx, db, app, created)
 }
 
-// termsBody is the wire shape of PUT /v1/iam/terms.
+// termsBody is the wire shape of PUT /v1/iam/terms. The credentials ride the
+// request headers so this stays a typed op, and `json:"-"` keeps them off the body.
 type termsBody struct {
-	Terms string `json:"terms"`
-	AUP   string `json:"aup"`
+	Terms     string `json:"terms" url:"-"`
+	AUP       string `json:"aup" url:"-"`
+	Cookie    string `json:"-" header:"Cookie"`
+	Auth      string `json:"-" header:"Authorization"`
+	Forwarded string `json:"-" header:"X-Forwarded-For"`
 }
 
 // putTermsHandler records that the signed-in caller accepted the terms and the
 // acceptable use policy, at the versions named. It is how a person who arrived by
-// a social provider — whose account the callback already made — records the same
+// a social provider, whose account the callback already made, records the same
 // acceptance a code sign-up records at creation. Only the caller's own row is
 // reachable.
-func putTermsHandler(db orm.DB) zip.Handler {
-	return func(c *zip.Ctx) error {
-		ctx := c.Context()
-		owner, name, ok := callerOf(ctx, c, db)
+func putTermsHandler(db orm.DB) zip.TypedHandler[termsBody, httpx.Answer] {
+	return func(ctx context.Context, in *termsBody) (*httpx.Answer, error) {
+		owner, name, ok := callerFrom(ctx, db, sessionCookie(in.Cookie), httpx.BearerValue(in.Auth))
 		if !ok {
-			return httpx.Err(c, "please sign in first")
-		}
-		var in termsBody
-		if err := json.Unmarshal(c.Fiber().Body(), &in); err != nil {
-			return httpx.Err(c, "terms must be a JSON object")
+			return httpx.Bad(400, "please sign in first", CodeLoginRequired), nil
 		}
 		if !termsVersion.MatchString(in.Terms) || !termsVersion.MatchString(in.AUP) {
-			return httpx.Err(c, "the terms and the acceptable use policy must be accepted")
+			return httpx.Bad(400, "the terms and the acceptable use policy must be accepted", ""), nil
 		}
 		var out schema.Terms
 		if _, err := updateUser(ctx, db, owner, name, func(_ orm.DB, u *schema.User) error {
@@ -189,13 +187,13 @@ func putTermsHandler(db orm.DB) zip.Handler {
 				AUP:    in.AUP,
 				Time:   nowFunc().UTC().Format("2006-01-02T15:04:05Z07:00"),
 				Method: methodSignedIn,
-				IP:     httpx.ClientIP(c),
+				IP:     in.Forwarded,
 			}
 			u.UpdatedTime = provisionNow()
 			return u.SetTerms(&out)
 		}); err != nil {
-			return httpx.Err(c, err.Error())
+			return httpx.Bad(400, err.Error(), ""), nil
 		}
-		return httpx.Ok(c, out)
+		return httpx.Good(out), nil
 	}
 }

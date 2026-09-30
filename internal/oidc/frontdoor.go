@@ -86,7 +86,8 @@ func routeFrontDoor(r *zip.Group, db orm.DB) {
 	// source of truth the hanzo.id signup, the browser extension, and hanzo.ai share.
 	r.Raw(http.MethodGet, PathConsent, getConsentHandler(db))
 	r.Raw(http.MethodPut, PathConsent, putConsentHandler(db))
-	r.Raw(http.MethodPut, PathTerms, putTermsHandler(db))
+	r.Put(PathTerms, putTermsHandler(db),
+		zip.WithStatus(200, 400), zip.WithTags("auth"))
 	r.Raw(http.MethodGet, PathLinkedAccounts, linkedAccountsHandler(db))
 	r.Post(PathInvitationsAccept, acceptInvitation(db),
 		zip.WithStatus(200, 400, 403, 429, 502, 503), zip.WithTags("auth"))
