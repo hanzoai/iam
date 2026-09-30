@@ -123,4 +123,10 @@ type Organization struct {
 	// completes it, instead of refusing it as "already taken". It also fences the
 	// org to ONE tenant — a different identity can never complete or join it.
 	Founder string `json:"founder,omitempty" orm:"varchar(255)" url:"-"`
+
+	// Platform marks an organization the platform itself declares (init_data.json):
+	// the brand orgs and the others the seed creates, never one a customer made. The
+	// seed stamps it on every declared organization at boot, and no request sets or
+	// clears it. Only a SuperAdmin may delete an organization that carries it.
+	Platform bool `json:"platform" url:"-"`
 }

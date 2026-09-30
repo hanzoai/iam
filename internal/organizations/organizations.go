@@ -16,6 +16,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -158,6 +159,9 @@ func (h *OrganizationAPI) Create(ctx context.Context, in *CreateOrganizationInpu
 	model := entity.Model // keep orm binding (db handle, key) across the overlay
 	*entity = org
 	entity.Model = model
+	// Which organizations are the platform's own is the seed's to say
+	// (internal/seed markPlatformOrgs), and nobody else's: a create never makes one.
+	entity.Platform = false
 	if entity.CreatedTime == "" {
 		entity.CreatedTime = time.Now().UTC().Format(time.RFC3339)
 	}
@@ -217,9 +221,10 @@ func (h *OrganizationAPI) Update(ctx context.Context, in *UpdateOrganizationInpu
 	}
 
 	model := existing.Model // orm key + pre-update snapshot for the diff hooks
-	created := existing.CreatedTime
+	created, platform := existing.CreatedTime, existing.Platform
 	*existing = desired
 	existing.Model = model
+	existing.Platform = platform // the seed's flag; an update keeps what is stored
 	if existing.CreatedTime == "" {
 		existing.CreatedTime = created
 	}
@@ -323,6 +328,12 @@ func (h *OrganizationAPI) Delete(ctx context.Context, in *DeleteOrganizationInpu
 	}
 	if err != nil {
 		return nil, zip.ErrInternal(err.Error())
+	}
+	// A reserved org and one the seed declares hold the platform's own people,
+	// keys and applications, and the seed restores only the org row. The org's own
+	// admins and the org-capable consoles may run it; only a SuperAdmin removes it.
+	if (policy.IsReservedOrg(existing.Name) || existing.Platform) && !authz.IsSuper(ctx) {
+		return nil, zip.ErrForbidden("the platform's own organizations are deleted by a SuperAdmin only")
 	}
 	// The rows that name the org go first and the org row last, so a failure part
 	// way leaves the org in place for a retry rather than rows naming an org that is

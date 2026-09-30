@@ -14,6 +14,7 @@
 package seed
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -163,10 +164,15 @@ func refuseRegistration(path string, apps []json.RawMessage) error {
 // literal without a file.
 func Apply(ctx context.Context, db orm.DB, data *initData) (*Summary, error) {
 	s := &Summary{Created: map[string]int{}, Skipped: map[string]int{}, Reconciled: map[string]int{}}
+	declared := map[string]bool{}
 	for _, o := range data.Organizations {
 		if err := upsert[schema.Organization](ctx, db, o.Owner, o.Name, o, s, "organizations"); err != nil {
 			return s, err
 		}
+		declared[cmp.Or(o.Owner, policy.AdminOrg)+"/"+o.Name] = true
+	}
+	if err := markPlatformOrgs(ctx, db, declared); err != nil {
+		return s, err
 	}
 	for _, p := range data.Providers {
 		if err := upsert[schema.Provider](ctx, db, p.Owner, p.Name, p, s, "providers"); err != nil {
@@ -246,6 +252,33 @@ func markPlatform(ctx context.Context, db orm.DB, platform map[string]bool) erro
 			return fresh.UpdateCtx(ctx)
 		}); err != nil {
 			return fmt.Errorf("seed: mark application %s/%s: %w", app.Owner, app.Name, err)
+		}
+	}
+	return nil
+}
+
+// markPlatformOrgs makes the platform's own organizations exactly the ones this
+// file declares, on every run, the way markPlatform does for applications: each
+// declared row is marked and every other row is unmarked.
+func markPlatformOrgs(ctx context.Context, db orm.DB, declared map[string]bool) error {
+	orgs, err := orm.TypedQuery[schema.Organization](db).GetAll(ctx)
+	if err != nil && !errors.Is(err, orm.ErrNotFound) {
+		return fmt.Errorf("seed: list organizations: %w", err)
+	}
+	for _, org := range orgs {
+		want := declared[org.Owner+"/"+org.Name]
+		if org.Platform == want {
+			continue
+		}
+		if err := db.RunInTransaction(ctx, func(tx orm.DB) error {
+			fresh, err := orm.GetForUpdate[schema.Organization](tx, org.Key().Encode())
+			if err != nil || fresh.Platform == want {
+				return err
+			}
+			fresh.Platform = want
+			return fresh.UpdateCtx(ctx)
+		}); err != nil {
+			return fmt.Errorf("seed: mark organization %s/%s: %w", org.Owner, org.Name, err)
 		}
 	}
 	return nil

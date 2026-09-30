@@ -23,6 +23,7 @@ func init() {
 			"Organization.failedSigninLimit": "Per-organization signin throttle. Zero means \"inherit the application\ndefault\"; a non-zero value overrides it. Safe bounds are clamped by the\nresource service before persistence.",
 			"Organization.founder":           "Founder is the stable storage id of the identity that provisioned this org\n(self-service onboarding). It is the resume token that makes provisioning\nconverge on a backend where each write autocommits independently (no\ntransaction rollback): after a partial failure that created the org but did\nnot move the founder in, a retry recognises the org as the founder's own and\ncompletes it, instead of refusing it as \"already taken\". It also fences the\norg to ONE tenant — a different identity can never complete or join it.",
 			"Organization.orgBalance":        "Balance fields are read-only mirrors; authoritative balances live in\nCommerce (billing.hanzo.ai). Carried for field-complete v1 parity.",
+			"Organization.platform":          "Platform marks an organization the platform itself declares (init_data.json):\nthe brand orgs and the others the seed creates, never one a customer made. The\nseed stamps it on every declared organization at boot, and no request sets or\nclears it. Only a SuperAdmin may delete an organization that carries it.",
 		},
 	})
 	zip.Describe("github.com/hanzoai/iam/internal/applications GET /v1/iam/applications/:owner/:name", zip.Doc{
@@ -38,6 +39,7 @@ func init() {
 			"Organization.failedSigninLimit": "Per-organization signin throttle. Zero means \"inherit the application\ndefault\"; a non-zero value overrides it. Safe bounds are clamped by the\nresource service before persistence.",
 			"Organization.founder":           "Founder is the stable storage id of the identity that provisioned this org\n(self-service onboarding). It is the resume token that makes provisioning\nconverge on a backend where each write autocommits independently (no\ntransaction rollback): after a partial failure that created the org but did\nnot move the founder in, a retry recognises the org as the founder's own and\ncompletes it, instead of refusing it as \"already taken\". It also fences the\norg to ONE tenant — a different identity can never complete or join it.",
 			"Organization.orgBalance":        "Balance fields are read-only mirrors; authoritative balances live in\nCommerce (billing.hanzo.ai). Carried for field-complete v1 parity.",
+			"Organization.platform":          "Platform marks an organization the platform itself declares (init_data.json):\nthe brand orgs and the others the seed creates, never one a customer made. The\nseed stamps it on every declared organization at boot, and no request sets or\nclears it. Only a SuperAdmin may delete an organization that carries it.",
 		},
 	})
 	zip.Describe("github.com/hanzoai/iam/internal/applications POST /v1/iam/applications", zip.Doc{
@@ -53,6 +55,7 @@ func init() {
 			"Organization.failedSigninLimit": "Per-organization signin throttle. Zero means \"inherit the application\ndefault\"; a non-zero value overrides it. Safe bounds are clamped by the\nresource service before persistence.",
 			"Organization.founder":           "Founder is the stable storage id of the identity that provisioned this org\n(self-service onboarding). It is the resume token that makes provisioning\nconverge on a backend where each write autocommits independently (no\ntransaction rollback): after a partial failure that created the org but did\nnot move the founder in, a retry recognises the org as the founder's own and\ncompletes it, instead of refusing it as \"already taken\". It also fences the\norg to ONE tenant — a different identity can never complete or join it.",
 			"Organization.orgBalance":        "Balance fields are read-only mirrors; authoritative balances live in\nCommerce (billing.hanzo.ai). Carried for field-complete v1 parity.",
+			"Organization.platform":          "Platform marks an organization the platform itself declares (init_data.json):\nthe brand orgs and the others the seed creates, never one a customer made. The\nseed stamps it on every declared organization at boot, and no request sets or\nclears it. Only a SuperAdmin may delete an organization that carries it.",
 		},
 	})
 	zip.Describe("github.com/hanzoai/iam/internal/applications PUT /v1/iam/applications/:owner/:name", zip.Doc{
@@ -68,6 +71,7 @@ func init() {
 			"Organization.failedSigninLimit": "Per-organization signin throttle. Zero means \"inherit the application\ndefault\"; a non-zero value overrides it. Safe bounds are clamped by the\nresource service before persistence.",
 			"Organization.founder":           "Founder is the stable storage id of the identity that provisioned this org\n(self-service onboarding). It is the resume token that makes provisioning\nconverge on a backend where each write autocommits independently (no\ntransaction rollback): after a partial failure that created the org but did\nnot move the founder in, a retry recognises the org as the founder's own and\ncompletes it, instead of refusing it as \"already taken\". It also fences the\norg to ONE tenant — a different identity can never complete or join it.",
 			"Organization.orgBalance":        "Balance fields are read-only mirrors; authoritative balances live in\nCommerce (billing.hanzo.ai). Carried for field-complete v1 parity.",
+			"Organization.platform":          "Platform marks an organization the platform itself declares (init_data.json):\nthe brand orgs and the others the seed creates, never one a customer made. The\nseed stamps it on every declared organization at boot, and no request sets or\nclears it. Only a SuperAdmin may delete an organization that carries it.",
 		},
 	})
 }

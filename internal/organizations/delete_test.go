@@ -1,0 +1,131 @@
+// Copyright 2026 Hanzo AI, Inc.
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
+package organizations_test
+
+import (
+	"context"
+	"io"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/hanzoai/orm"
+
+	"github.com/hanzoai/iam/internal/organizations"
+	"github.com/hanzoai/iam/internal/seed"
+	"github.com/hanzoai/iam/internal/testhttp"
+	"github.com/hanzoai/iam/pkg/schema"
+)
+
+// del sends DELETE for one organization as sub and returns the status and body.
+func (h *harness) del(t *testing.T, sub, name string) (int, string) {
+	t.Helper()
+	req := httptest.NewRequest("DELETE", "/v1/iam/organizations/admin/"+name, nil)
+	req.Host = "hanzo.id"
+	req.Header.Set("Authorization", "Bearer "+h.token(t, sub))
+	resp, err := testhttp.Do(h.app, req)
+	if err != nil {
+		t.Fatalf("DELETE %s: %v", name, err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	return resp.StatusCode, string(b)
+}
+
+func (h *harness) markPlatform(t *testing.T, name string) {
+	t.Helper()
+	org := h.stored(t, name)
+	org.Platform = true
+	if err := org.UpdateCtx(context.Background()); err != nil {
+		t.Fatalf("mark %s: %v", name, err)
+	}
+}
+
+// An org the seed declares holds the platform's own people, keys and applications,
+// and the seed restores only its row. Its own admin runs it but cannot remove it;
+// a SuperAdmin can.
+func TestDelete_platformOrgIsSuperAdminOnly(t *testing.T) {
+	h := newHarness(t)
+	h.markPlatform(t, "hanzo")
+
+	if status, body := h.del(t, "hanzo/boss", "hanzo"); status != 403 {
+		t.Fatalf("org admin deleting a platform org: status=%d body=%s, want 403", status, body)
+	}
+	if h.stored(t, "hanzo") == nil {
+		t.Fatal("platform org removed by its org admin")
+	}
+	if status, body := h.del(t, "admin/root", "hanzo"); status != 200 {
+		t.Fatalf("SuperAdmin deleting a platform org: status=%d body=%s, want 200", status, body)
+	}
+}
+
+// A customer org carries no flag, and its own admin may still remove it.
+func TestDelete_customerOrgByItsAdmin(t *testing.T) {
+	h := newHarness(t)
+	if status, body := h.del(t, "orgb/bob", "orgb"); status != 200 {
+		t.Fatalf("customer admin deleting own org: status=%d body=%s, want 200", status, body)
+	}
+}
+
+// The flag is the seed's: a create never sets it and an update never changes it.
+func TestPlatform_isNotSetOrClearedByARequest(t *testing.T) {
+	db := freshDB(t)
+	api := organizations.NewOrganizationAPI(db)
+	ctx := context.Background()
+
+	in := createIn("admin", "acme")
+	in.Platform = true
+	got, err := api.Create(ctx, in)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if got.Platform {
+		t.Fatal("a create set the platform flag")
+	}
+
+	put(t, db, "hanzo")
+	org, err := orm.TypedQuery[schema.Organization](db).Filter("Name=", "hanzo").First()
+	if err != nil {
+		t.Fatal(err)
+	}
+	org.Platform = true
+	if err := org.UpdateCtx(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := api.Update(ctx, updateIn("admin", "hanzo")); err != nil || !got.Platform {
+		t.Fatalf("an update cleared the platform flag: %v %v", got, err)
+	}
+}
+
+// The seed marks exactly the organizations its file declares, and unmarks the rest.
+func TestSeed_marksTheOrganizationsItDeclares(t *testing.T) {
+	db := freshDB(t)
+	ctx := context.Background()
+	put(t, db, "acme")
+	stale, err := orm.TypedQuery[schema.Organization](db).Filter("Name=", "acme").First()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale.Platform = true
+	if err := stale.UpdateCtx(ctx); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "init_data.json")
+	if err := os.WriteFile(path, []byte(`{"organizations":[{"owner":"admin","name":"hanzo"},{"owner":"admin","name":"lux"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := seed.FromInitData(ctx, db, path); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	for name, want := range map[string]bool{"hanzo": true, "lux": true, "acme": false} {
+		org, err := orm.TypedQuery[schema.Organization](db).Filter("Name=", name).First()
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if org.Platform != want {
+			t.Fatalf("%s platform = %v, want %v", name, org.Platform, want)
+		}
+	}
+}
