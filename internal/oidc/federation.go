@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -286,7 +287,7 @@ func federationCallbackHandler(db orm.DB) zip.Handler {
 		// pinned params, and send the browser to the hosted 2FA page.
 		org, err := store.GetOrganizationByName(ctx, db, user.Owner)
 		if err != nil {
-			return fedErrorRedirect(c, st, "server_error", "")
+			return fedFault(c, st, "organization "+user.Owner+" of "+user.Owner+"/"+user.Name, err)
 		}
 		if factor.Prompt(org, user) {
 			// The organization requires a factor this federated user has not enrolled;
@@ -371,7 +372,7 @@ func federationMint(c *zip.Ctx, db orm.DB, app *schema.Application, user *schema
 func federationChallenge(c *zip.Ctx, db orm.DB, st *schema.FederationState, user *schema.User, p fedResumeParams, org *schema.Organization, now time.Time) error {
 	payload, err := json.Marshal(p)
 	if err != nil {
-		return fedErrorRedirect(c, st, "server_error", "")
+		return fedFault(c, st, "challenge payload", err)
 	}
 	allow := deliver(c, db, user, allowList(user, org, ""), now)
 	if len(allow) == 0 {
@@ -379,7 +380,7 @@ func federationChallenge(c *zip.Ctx, db orm.DB, st *schema.FederationState, user
 	}
 	id, err := MintChallenge(c.Context(), db, KindFederation, user.Owner+"/"+user.Name, string(payload), offeredTypes(allow), now)
 	if err != nil {
-		return fedErrorRedirect(c, st, "server_error", "")
+		return fedFault(c, st, "challenge mint", err)
 	}
 	SetChallenge(c, id)
 	return c.Redirect(302, federationBaseURL(c)+PathMfaVerify)
@@ -390,7 +391,7 @@ func fedMintErrorRedirect(c *zip.Ctx, st *schema.FederationState, err error) err
 	if err == errPKCERequired {
 		return fedErrorRedirect(c, st, "invalid_request", "PKCE is required for public clients")
 	}
-	return fedErrorRedirect(c, st, "server_error", "")
+	return fedFault(c, st, "code mint", err)
 }
 
 // The ways resolving a local identity is REFUSED rather than broken. Each is a
@@ -422,8 +423,14 @@ func fedResolveErrorRedirect(c *zip.Ctx, st *schema.FederationState, err error) 
 		return fedErrorRedirect(c, st, "access_denied", "this application is not open for registration")
 	case errors.Is(err, errNoFederatedEmail):
 		return fedErrorRedirect(c, st, "access_denied", "the provider shared no email address for this account")
+	case errors.Is(err, store.ErrEmailAmbiguous):
+		// The provider proved this address to the person at the browser, so naming
+		// the conflict tells them nothing they do not own. Which row is theirs is
+		// not ours to guess: an operator merges them.
+		log.Printf("federation: resolve account: provider=%s client=%s tx=%s: %v", st.Provider, st.ClientId, fedTx(st), err)
+		return fedErrorRedirect(c, st, "access_denied", "more than one account uses this email address — contact support to merge them")
 	}
-	return fedErrorRedirect(c, st, "server_error", "")
+	return fedFault(c, st, "resolve account", err)
 }
 
 // errSubjectLinked reports that the provider identity just verified is already
@@ -447,7 +454,7 @@ func fedAttachRedirect(c *zip.Ctx, db orm.DB, st *schema.FederationState, prov *
 	case errors.Is(err, errSubjectLinked):
 		return fedErrorRedirect(c, st, "access_denied", "that account is already connected to someone else")
 	default:
-		return fedErrorRedirect(c, st, "server_error", "")
+		return fedFault(c, st, "attach", err)
 	}
 	v := url.Values{}
 	v.Set("linked", prov.Name)
@@ -719,6 +726,22 @@ func fedErrorRedirect(c *zip.Ctx, st *schema.FederationState, code, desc string)
 	setIfPresent(v, "error_description", desc)
 	setIfPresent(v, "state", st.AppState)
 	return c.Redirect(302, joinQuery(st.RedirectUri, v))
+}
+
+// fedFault answers a federated login that failed on our side. The caller still
+// sees an opaque server_error; the log names the step and the cause, keyed by
+// the provider and the transaction, so the next failure is diagnosable.
+func fedFault(c *zip.Ctx, st *schema.FederationState, step string, err error) error {
+	log.Printf("federation: %s: provider=%s client=%s tx=%s: %v", step, st.Provider, st.ClientId, fedTx(st), err)
+	return fedErrorRedirect(c, st, "server_error", "")
+}
+
+// fedTx is a short, non-secret handle on a federation transaction for logs.
+func fedTx(st *schema.FederationState) string {
+	if len(st.Name) > 8 {
+		return st.Name[:8]
+	}
+	return st.Name
 }
 
 // setBindCookie writes the per-transaction anti-forgery cookie: HttpOnly + Secure,
