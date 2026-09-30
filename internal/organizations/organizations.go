@@ -17,6 +17,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 const orgBase = "/v1/iam/organizations"
@@ -143,6 +144,15 @@ func (h *OrganizationAPI) Create(ctx context.Context, in *CreateOrganizationInpu
 	default:
 		return nil, zip.ErrInternal(err.Error())
 	}
+	// A membership names its org by name, and nothing checks that the org exists,
+	// so rows left by a removed org of this name would put their holders in the new
+	// one. The name is not free until they are gone.
+	switch rows, err := store.MembershipsByOrg(ctx, h.DB, org.Name); {
+	case err != nil:
+		return nil, zip.ErrInternal(err.Error())
+	case len(rows) > 0:
+		return nil, zip.ErrConflict("organization name is still held by memberships of a removed organization")
+	}
 
 	entity := orm.New[schema.Organization](h.DB)
 	model := entity.Model // keep orm binding (db handle, key) across the overlay
@@ -155,8 +165,21 @@ func (h *OrganizationAPI) Create(ctx context.Context, in *CreateOrganizationInpu
 	// keys a row by this string, so one (owner, name) is one row by construction
 	// rather than by a check that has to be run first.
 	entity.SetId(org.Owner + "/" + org.Name)
-	if err := entity.CreateCtx(ctx); err != nil {
+	// The lookup above answers the common case; this insert is what decides. It
+	// writes only when no row holds the key, so two creates racing one name leave
+	// one org and one winner, and the loser is told the name is taken instead of
+	// overwriting the winner's row.
+	now := time.Now()
+	entity.CreatedAt, entity.UpdatedAt = now, now
+	if err := orm.SerializeFields(entity); err != nil {
 		return nil, zip.ErrInternal(err.Error())
+	}
+	created, err := h.DB.CreateIfAbsent(ctx, entity.Key(), entity)
+	if err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	}
+	if !created {
+		return nil, zip.ErrConflict("organization already exists")
 	}
 	return entity.Mask(), nil
 }
@@ -299,6 +322,12 @@ func (h *OrganizationAPI) Delete(ctx context.Context, in *DeleteOrganizationInpu
 		return nil, zip.ErrNotFound("organization not found")
 	}
 	if err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	}
+	// The rows that name the org go first and the org row last, so a failure part
+	// way leaves the org in place for a retry rather than rows naming an org that is
+	// gone.
+	if err := store.ForgetOrg(ctx, h.DB, existing.Name); err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
 	if err := existing.DeleteCtx(ctx); err != nil {

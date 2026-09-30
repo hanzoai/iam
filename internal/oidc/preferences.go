@@ -103,6 +103,11 @@ func mergePreferences(existing string, patch []byte) (string, map[string]json.Ra
 		return "", nil, fmt.Errorf("consent is not a preference; use PUT %s to answer", PathConsent)
 	}
 
+	// Terms acceptance is a record of what a person did, written at PUT PathTerms.
+	if _, ok := patchMap[schema.TermsKey]; ok {
+		return "", nil, fmt.Errorf("terms acceptance is not a preference; use PUT %s to accept", PathTerms)
+	}
+
 	// Appearance IS a preference, so it is written here — but as the record it is,
 	// not as opaque JSON. A density no product can render or a type scale that
 	// leaves the page unusable is refused where the caller can be told why, rather

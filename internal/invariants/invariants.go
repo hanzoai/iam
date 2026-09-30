@@ -82,6 +82,7 @@ var Ledger = map[string]Row{
 	// in admin; §5 step 4 removes or proves them.
 	"I18 dynamic-owner": {Rule: "I18 statements that write an account's owner from a run-time value (R7.7)", Mode: Reporting, Known: []string{
 		"internal/bootstrap/bootstrap.go:upsertUser",
+		"internal/oidc/code_signup.go:createWithCode",
 		"internal/oidc/federation.go:provisionFederatedUser",
 		"internal/oidc/provision.go:provision",
 		"internal/oidc/signup.go:signupHandler",

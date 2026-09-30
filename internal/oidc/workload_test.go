@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -698,6 +699,188 @@ func TestLifeOf(t *testing.T) {
 	} {
 		if got := lifeOf(tc.header); got != tc.want {
 			t.Errorf("lifeOf(%q) = %v, want %v", tc.header, got, tc.want)
+		}
+	}
+}
+
+// GitHub Actions ---------------------------------------------------------------
+
+// newGitHub is a GitHub Actions issuer: the cluster fixture, publishing under
+// GitHub's own issuer name.
+func newGitHub(t *testing.T, kid string) *fakeCluster {
+	t.Helper()
+	c := newCluster(t, kid)
+	c.iss = githubIssuer
+	return c
+}
+
+// trustRepos states which repositories speak, beside the issuer set trust wrote.
+func trustRepos(t *testing.T, repos map[string]repository) {
+	t.Helper()
+	raw, err := json.Marshal(repos)
+	if err != nil {
+		t.Fatalf("marshal repositories: %v", err)
+	}
+	t.Setenv(envRepositories, string(raw))
+}
+
+// run signs an Actions ID token for repo at ref, owned by the account ownerID.
+func (c *fakeCluster) run(t *testing.T, kid, repo, ref, ownerID, audience string) string {
+	t.Helper()
+	now := nowFunc()
+	owner, _, _ := strings.Cut(repo, "/")
+	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, assertionClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    c.iss,
+			Subject:   "repo:" + repo + ":ref:" + ref,
+			Audience:  jwt.ClaimStrings{audience},
+			IssuedAt:  jwt.NewNumericDate(now.Add(-time.Minute)),
+			NotBefore: jwt.NewNumericDate(now.Add(-time.Minute)),
+			ExpiresAt: jwt.NewNumericDate(now.Add(5 * time.Minute)),
+		},
+		RepositoryOwner:   owner,
+		RepositoryOwnerID: ownerID,
+		Repository:        repo,
+		Ref:               ref,
+	})
+	tok.Header["kid"] = kid
+	s, err := tok.SignedString(sharedKey(t))
+	if err != nil {
+		t.Fatalf("sign run token: %v", err)
+	}
+	return s
+}
+
+func TestWorkload_mintsForAGitHubRun(t *testing.T) {
+	gh := newGitHub(t, "gh-key-1")
+	gh.trust(t, nil)
+	trustRepos(t, map[string]repository{"hanzoai": {Org: "hanzo", App: "ci", OwnerID: "100"}})
+	app, db := newServer(t)
+	serviceApp(t, db, "hanzo-ci")
+
+	status, tok := present(t, app, gh.run(t, "gh-key-1", "hanzoai/iam", "refs/heads/main", "100", audience()), nil)
+	if status != 200 {
+		t.Fatalf("status = %d; body=%v", status, tok)
+	}
+	claims, err := verifyToken(context.Background(), db, tok["access_token"].(string))
+	if err != nil {
+		t.Fatalf("minted token does not verify: %v", err)
+	}
+	if claims.Owner != "hanzo" || claims.Azp != "hanzo-ci" || claims.Type != schema.Program {
+		t.Errorf("owner/azp/type = %q/%q/%q, want hanzo/hanzo-ci/%q", claims.Owner, claims.Azp, claims.Type, schema.Program)
+	}
+	rows := auditRows(t, db, schema.ActionWorkloadToken)
+	if len(rows) != 1 || rows[0].Object != "repo:hanzoai/iam:ref:refs/heads/main" {
+		t.Fatalf("audit = %+v, want one row naming the run's subject", rows)
+	}
+}
+
+// The most specific entry wins: a ref over its repository, a repository over its
+// account. Each still reaches only the application its entry names.
+func TestWorkload_aGitHubRunSpeaksForItsMostSpecificEntry(t *testing.T) {
+	gh := newGitHub(t, "gh-key-1")
+	gh.trust(t, nil)
+	trustRepos(t, map[string]repository{
+		"hanzo-apps":                          {Org: "hanzo", App: "ci", OwnerID: "200"},
+		"hanzo-apps/network":                  {Org: "hanzo", App: "sites-ci", OwnerID: "200"},
+		"hanzo-apps/network@refs/tags/v1.0.0": {Org: "hanzo", App: "release-ci", OwnerID: "200"},
+	})
+	app, db := newServer(t)
+	for _, id := range []string{"hanzo-ci", "hanzo-sites-ci", "hanzo-release-ci"} {
+		serviceApp(t, db, id)
+	}
+	for _, tc := range []struct{ repo, ref, azp string }{
+		{"hanzo-apps/ai", "refs/heads/main", "hanzo-ci"},
+		{"hanzo-apps/network", "refs/heads/main", "hanzo-sites-ci"},
+		{"hanzo-apps/network", "refs/tags/v1.0.0", "hanzo-release-ci"},
+	} {
+		status, tok := present(t, app, gh.run(t, "gh-key-1", tc.repo, tc.ref, "200", audience()), nil)
+		if status != 200 {
+			t.Fatalf("%s@%s: status = %d; body=%v", tc.repo, tc.ref, status, tok)
+		}
+		claims, err := verifyToken(context.Background(), db, tok["access_token"].(string))
+		if err != nil {
+			t.Fatalf("%s@%s: minted token does not verify: %v", tc.repo, tc.ref, err)
+		}
+		if claims.Azp != tc.azp {
+			t.Errorf("%s@%s: azp = %q, want %q", tc.repo, tc.ref, claims.Azp, tc.azp)
+		}
+	}
+}
+
+// An account name can be given up and registered again by someone else; the
+// account id cannot. A run from an account carrying a configured name but
+// another id mints nothing, and neither does an account nobody configured.
+func TestWorkload_refusesAGitHubRunFromAnotherAccount(t *testing.T) {
+	gh := newGitHub(t, "gh-key-1")
+	gh.trust(t, nil)
+	trustRepos(t, map[string]repository{"hanzoai": {Org: "hanzo", App: "ci", OwnerID: "100"}})
+	app, db := newServer(t)
+	serviceApp(t, db, "hanzo-ci")
+
+	for _, run := range []string{
+		gh.run(t, "gh-key-1", "hanzoai/iam", "refs/heads/main", "999", audience()), // the name, another account
+		gh.run(t, "gh-key-1", "someone/iam", "refs/heads/main", "100", audience()), // an account nobody configured
+	} {
+		status, tok := present(t, app, run, nil)
+		if status != 403 || tok["error"] != "unauthorized_client" {
+			t.Errorf("status/error = %d/%v, want 403 unauthorized_client", status, tok["error"])
+		}
+	}
+	if rows := auditRows(t, db, schema.ActionWorkloadToken); len(rows) != 0 {
+		t.Fatalf("audit rows = %d for refused mints, want 0", len(rows))
+	}
+}
+
+// A run's token names the audience it was asked for. One asked for another
+// relying party cannot be spent here.
+func TestWorkload_refusesAGitHubRunForAnotherAudience(t *testing.T) {
+	gh := newGitHub(t, "gh-key-1")
+	gh.trust(t, nil)
+	trustRepos(t, map[string]repository{"hanzoai": {Org: "hanzo", App: "ci", OwnerID: "100"}})
+	app, db := newServer(t)
+	serviceApp(t, db, "hanzo-ci")
+
+	status, tok := present(t, app, gh.run(t, "gh-key-1", "hanzoai/iam", "refs/heads/main", "100", "https://github.com/hanzoai"), nil)
+	if status != 400 || tok["error"] != "invalid_grant" {
+		t.Fatalf("status/error = %d/%v, want 400 invalid_grant", status, tok["error"])
+	}
+}
+
+// A repository subject from a cluster issuer is read as what a cluster issues —
+// a service account — and names none.
+func TestWorkload_readsARepositoryOnlyFromGitHub(t *testing.T) {
+	c := newCluster(t, "cluster-key-1")
+	c.trust(t, map[string]string{"hanzo:pkg": "hanzo"})
+	trustRepos(t, map[string]repository{"hanzoai": {Org: "hanzo", App: "ci", OwnerID: "100"}})
+	app, db := newServer(t)
+	serviceApp(t, db, "hanzo-ci")
+
+	status, tok := present(t, app, c.run(t, "cluster-key-1", "hanzoai/iam", "refs/heads/main", "100", audience()), nil)
+	if status != 400 || tok["error"] != "invalid_grant" {
+		t.Fatalf("status/error = %d/%v, want 400 invalid_grant", status, tok["error"])
+	}
+}
+
+func TestWorkload_refusesARepositoryConfigItCannotRead(t *testing.T) {
+	gh := newGitHub(t, "gh-key-1")
+	gh.trust(t, nil)
+	app, db := newServer(t)
+	serviceApp(t, db, "hanzo-ci")
+	run := gh.run(t, "gh-key-1", "hanzoai/iam", "refs/heads/main", "100", audience())
+
+	for _, cfg := range []map[string]repository{
+		{"hanzoai": {Org: "hanzo", App: "ci"}},                                 // no account id
+		{"hanzoai": {Org: "hanzo", App: "ci", OwnerID: "hanzoai"}},             // an id that is a name
+		{"hanzoai": {App: "ci", OwnerID: "100"}},                               // no org
+		{"hanzoai/*": {Org: "hanzo", App: "ci", OwnerID: "100"}},               // a glob
+		{"hanzoai@refs/heads/main": {Org: "hanzo", App: "ci", OwnerID: "100"}}, // a ref with no repository
+		{"hanzoai/iam@main": {Org: "hanzo", App: "ci", OwnerID: "100"}},        // a ref that is not one
+	} {
+		trustRepos(t, cfg)
+		status, tok := present(t, app, run, nil)
+		if status != 500 || tok["error"] != "server_error" {
+			t.Errorf("%v: status/error = %d/%v, want 500 server_error", cfg, status, tok["error"])
 		}
 	}
 }

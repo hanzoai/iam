@@ -180,6 +180,45 @@ func ForgetUser(ctx context.Context, db orm.DB, user string) (int, error) {
 	return removed, nil
 }
 
+// ForgetOrg removes the rows that name org and would outlive it: every membership
+// of it, the keys each member held there, and the applications it owns. It is the
+// companion to deleting the org itself. Nothing checks that a membership's org or
+// an application's owner still exists, so a row left behind would hand its holder
+// the next org created under the same name.
+//
+// It is idempotent: forgetting an org that holds nothing removes nothing and is
+// not an error, so a retried or racing delete is safe.
+func ForgetOrg(ctx context.Context, db orm.DB, org string) error {
+	if org == "" {
+		return nil
+	}
+	rows, err := MembershipsByOrg(ctx, db, org)
+	if err != nil {
+		return err
+	}
+	for _, m := range rows {
+		if m == nil {
+			continue
+		}
+		if err := m.DeleteCtx(ctx); err != nil {
+			return err
+		}
+		if err := forgetMemberKeys(ctx, db, m.User, org); err != nil {
+			return err
+		}
+	}
+	apps, err := orm.TypedQuery[schema.Application](db).Filter("Owner=", org).GetAll(ctx)
+	if err != nil && !errors.Is(err, orm.ErrNotFound) {
+		return err
+	}
+	for _, a := range apps {
+		if err := a.DeleteCtx(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // MembershipsByUser returns every org a user may explicitly act in. A caller
 // unions the user's HOME org itself (the token resolver does), so the set is
 // complete even before any team is joined.

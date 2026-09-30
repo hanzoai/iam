@@ -62,6 +62,13 @@ import (
 // registration says it may be spoken for — client_credentials alone only says the
 // app holds a secret. With neither variable set the grant does not exist and the
 // endpoint answers unsupported_grant_type.
+//
+// A GitHub Actions job speaks the same way. GitHub's issuer is one more entry in
+// IAM_CLUSTER_ISSUERS, and the job asks it for an ID token whose audience is this
+// issuer. That token names the repository the run belongs to, and IAM_REPOSITORIES
+// maps the repository to the CI application it speaks for. A pipeline then logs
+// in to KMS with no stored secret: the credential is the run itself, minted per
+// job by GitHub and good for minutes.
 
 const (
 	// grantTypeAssertion is RFC 7523 §2.1's grant type — the assertion IS the
@@ -71,9 +78,25 @@ const (
 	// saSubject is the prefix Kubernetes puts on every ServiceAccount subject.
 	saSubject = "system:serviceaccount:"
 
-	envClusters  = "IAM_CLUSTER_ISSUERS"
-	envWorkloads = "IAM_WORKLOADS"
+	envClusters     = "IAM_CLUSTER_ISSUERS"
+	envWorkloads    = "IAM_WORKLOADS"
+	envRepositories = "IAM_REPOSITORIES"
+
+	// githubIssuer is the `iss` of every GitHub Actions ID token. An assertion
+	// from it names a repository, never a service account, so it is read by
+	// repository and nothing else.
+	githubIssuer = "https://token.actions.githubusercontent.com"
 )
+
+// assertionClaims is what an assertion states: the registered claims every
+// issuer sets, and the repository claims GitHub adds to an Actions ID token.
+type assertionClaims struct {
+	jwt.RegisteredClaims
+	RepositoryOwner   string `json:"repository_owner"`
+	RepositoryOwnerID string `json:"repository_owner_id"`
+	Repository        string `json:"repository"`
+	Ref               string `json:"ref"`
+}
 
 // clusterAlgs is the closed set of algorithms a cluster assertion may be signed
 // under — the asymmetric families kube-apiserver signs ServiceAccount tokens
@@ -100,7 +123,11 @@ func workloadGrant(c *zip.Ctx, db orm.DB) error {
 	if err != nil {
 		return tokenError(c, 500, "server_error", err.Error())
 	}
-	if len(set) == 0 && len(orgs) == 0 {
+	repos, err := repositories()
+	if err != nil {
+		return tokenError(c, 500, "server_error", err.Error())
+	}
+	if len(set) == 0 && len(orgs) == 0 && len(repos) == 0 {
 		return tokenError(c, 400, "unsupported_grant_type", "unsupported grant_type")
 	}
 
@@ -113,21 +140,30 @@ func workloadGrant(c *zip.Ctx, db orm.DB) error {
 	if err != nil {
 		return tokenError(c, 400, "invalid_grant", "the assertion is invalid or expired")
 	}
-	namespace, account := serviceAccount(claims.Subject)
-	if namespace == "" {
-		return tokenError(c, 400, "invalid_grant", "the assertion does not name a service account")
-	}
 
 	// 3) Identity. The configuration names this exact account and the org it
 	//    speaks in, and the account's name is the app's; together they ARE the
 	//    clientId provision.yaml derives, so a workload can only ever reach the
 	//    registration configured for it — and the same name in another namespace
-	//    is another account, which reaches nothing.
-	org := orgs[namespace+":"+account]
-	if org == "" {
-		return tokenError(c, 403, "unauthorized_client", "no organization is configured for the service account "+namespace+":"+account)
+	//    is another account, which reaches nothing. A GitHub run is named by its
+	//    repository instead (repositoryApp), and reaches the one CI application
+	//    configured for it.
+	var org, clientID string
+	if claims.Issuer == githubIssuer {
+		if org, clientID, err = repositoryApp(claims, repos); err != nil {
+			return tokenError(c, 403, "unauthorized_client", err.Error())
+		}
+	} else {
+		namespace, account := serviceAccount(claims.Subject)
+		if namespace == "" {
+			return tokenError(c, 400, "invalid_grant", "the assertion does not name a service account")
+		}
+		org = orgs[namespace+":"+account]
+		if org == "" {
+			return tokenError(c, 403, "unauthorized_client", "no organization is configured for the service account "+namespace+":"+account)
+		}
+		clientID = org + "-" + account
 	}
-	clientID := org + "-" + account
 	app, err := store.GetApplicationByClientId(ctx, db, clientID)
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
@@ -181,8 +217,8 @@ func serviceAccount(sub string) (namespace, name string) {
 // returns its validated claims. Fail-closed by construction: the issuer selects
 // the key source, so an issuer nobody configured has no keys and therefore no
 // verification path at all — there is nothing to relax.
-func verifyAssertion(assertion, audience string, set map[string]*cluster) (*jwt.RegisteredClaims, error) {
-	claims := &jwt.RegisteredClaims{}
+func verifyAssertion(assertion, audience string, set map[string]*cluster) (*assertionClaims, error) {
+	claims := &assertionClaims{}
 	key := func(t *jwt.Token) (any, error) {
 		// ParseWithClaims decodes the claims before it asks for a key, so `iss` is
 		// readable here and is the ONLY thing that chooses where the key comes from.
@@ -481,6 +517,71 @@ func workloads() (map[string]string, error) {
 		}
 	}
 	return orgs, nil
+}
+
+// repository is one IAM_REPOSITORIES entry: the CI application a repository's
+// runs speak for, as the org it belongs to and its name in that org, and the id
+// of the GitHub account that must own the repository.
+type repository struct {
+	Org     string `json:"org"`
+	App     string `json:"app"`
+	OwnerID string `json:"owner_id"`
+}
+
+// repositories reads IAM_REPOSITORIES — which GitHub repositories speak, and
+// for which CI application:
+//
+//	{"hanzoai":             {"org":"hanzo","app":"ci","owner_id":"76520960"},
+//	 "hanzo-apps/network":  {"org":"hanzo","app":"sites-ci","owner_id":"…"},
+//	 "luxfi/node@refs/heads/main": {"org":"lux","app":"ci","owner_id":"…"}}
+//
+// A key is an account, one repository of it, or one ref of that repository,
+// always exact. The account id is required: a GitHub account can be renamed and
+// its old name registered by someone else, and the id is the one claim that
+// cannot follow the name. An entry missing any field refuses the whole map, for
+// the reason workloads gives.
+func repositories() (map[string]repository, error) {
+	raw := strings.TrimSpace(os.Getenv(envRepositories))
+	if raw == "" {
+		return nil, nil
+	}
+	var repos map[string]repository
+	if err := json.Unmarshal([]byte(raw), &repos); err != nil {
+		return nil, fmt.Errorf("%s: invalid JSON: %w", envRepositories, err)
+	}
+	for key, r := range repos {
+		name, ref, _ := strings.Cut(key, "@")
+		owner, repo, hasRepo := strings.Cut(name, "/")
+		bad := owner == "" || strings.ContainsAny(key, " *?") ||
+			(hasRepo && (repo == "" || strings.Contains(repo, "/"))) ||
+			(strings.Contains(key, "@") && (!hasRepo || !strings.HasPrefix(ref, "refs/")))
+		if _, err := strconv.ParseInt(r.OwnerID, 10, 64); bad || err != nil || r.Org == "" || r.App == "" {
+			return nil, fmt.Errorf("%s: %q must map an account, <owner>/<repo> or <owner>/<repo>@<ref> to {org, app, owner_id}", envRepositories, key)
+		}
+	}
+	return repos, nil
+}
+
+// repositoryApp is the org and clientId a GitHub run speaks for: the most
+// specific entry that names it — the ref, then the repository, then the account
+// — provided the account that owns the repository is the one the entry was
+// written for.
+func repositoryApp(claims *assertionClaims, repos map[string]repository) (string, string, error) {
+	owner, repo := claims.RepositoryOwner, claims.Repository
+	if owner == "" || !strings.HasPrefix(repo, owner+"/") || !strings.HasPrefix(claims.Subject, "repo:"+repo+":") {
+		return "", "", errors.New("the assertion does not name a repository")
+	}
+	for _, key := range []string{repo + "@" + claims.Ref, repo, owner} {
+		r, ok := repos[key]
+		if !ok {
+			continue
+		}
+		if r.OwnerID != claims.RepositoryOwnerID {
+			return "", "", fmt.Errorf("%s is configured for GitHub account %s, and this run belongs to account %s", key, r.OwnerID, claims.RepositoryOwnerID)
+		}
+		return r.Org, r.Org + "-" + r.App, nil
+	}
+	return "", "", fmt.Errorf("no CI application is configured for the repository %s", repo)
 }
 
 // grantsSupported is the grant list discovery advertises. Every entry is

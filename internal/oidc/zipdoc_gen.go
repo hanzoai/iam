@@ -183,4 +183,10 @@ func init() {
 			"passwordBody.username":     "email, username OR phone",
 		},
 	})
+	zip.Describe("github.com/hanzoai/iam/internal/oidc PUT /v1/iam/terms", zip.Doc{
+		Description: "Records that the signed-in caller accepted the terms and the\nacceptable use policy, at the versions named. It is how a person who arrived by\na social provider, whose account the callback already made, records the same\nacceptance a code sign-up records at creation. Only the caller's own row is\nreachable.",
+		Fields: map[string]string{
+			"Response.code": "Code is a STABLE machine-readable reason, where the human `msg` is\ndeliberately generic. `msg` is prose for a person and several distinct causes\nlegitimately share one sentence; a caller that must BRANCH on the cause — or\ntell its own user which of them happened — cannot parse prose. Optional, so\nevery existing envelope is byte-identical and no SDK changes.",
+		},
+	})
 }

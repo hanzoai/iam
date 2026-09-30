@@ -46,7 +46,13 @@ type loginForm struct {
 	// INSTEAD of Password. Present means "sign me in with this code"; the two are
 	// alternatives and a request carrying a code never reaches the password check.
 	Code string `json:"code"`
-	Type string `json:"type"` // "code" (PKCE authorize) | "device" (RFC 8628 approval) | "login" (bare session)
+	// Create, with Terms and AUP, asks this endpoint to make the account an
+	// address does not yet have, on the strength of the live Code that proved the
+	// address (code_signup.go). Terms and AUP are the versions the person accepted.
+	Create bool   `json:"create"`
+	Terms  string `json:"terms"`
+	AUP    string `json:"aup"`
+	Type   string `json:"type"` // "code" (PKCE authorize) | "device" (RFC 8628 approval) | "login" (bare session)
 
 	// UserCode is the RFC 8628 code the device displays, transcribed by the human
 	// approving it (type=device).
@@ -214,6 +220,9 @@ func loginHandler(db orm.DB) zip.Handler {
 		// the PKCE tail below are then true of it by construction instead of by a
 		// second implementation that has to be kept in step.
 		if f.Code != "" {
+			if user == nil {
+				return codeSignup(c, db, f)
+			}
 			ok, err := codeLogin(ctx, db, f, user)
 			if err != nil {
 				return httpx.Err(c, err.Error())

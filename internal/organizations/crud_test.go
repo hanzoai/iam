@@ -14,7 +14,9 @@ package organizations_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -289,3 +291,112 @@ func TestList_withoutAPrincipalIsForbidden(t *testing.T) {
 // must discards a handler's typed value so a status-only case reads as one
 // expression. The value is nil on the error paths under test.
 func must[T any](_ *T, err error) error { return err }
+
+// Creates racing one name leave one org and one winner. The lookup before the
+// insert misses for every racer at once, so only an insert that writes when the
+// key is free can decide; a create that upserted let every racer succeed and the
+// last one overwrite the row the first was told it made.
+func TestCreate_racingCreatorsLeaveOneWinner(t *testing.T) {
+	db := freshDB(t)
+	api := organizations.NewOrganizationAPI(db)
+	ctx := context.Background()
+
+	const racers = 8
+	for round := 0; round < 20; round++ {
+		name := fmt.Sprintf("race-%d", round)
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		results := make([]error, racers)
+		for i := range racers {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				<-start
+				in := createIn(policy.AdminOrg, name)
+				in.DisplayName = fmt.Sprintf("racer %d", i)
+				_, results[i] = api.Create(ctx, in)
+			}(i)
+		}
+		close(start)
+		wg.Wait()
+
+		won := -1
+		for i, err := range results {
+			switch {
+			case err == nil && won >= 0:
+				t.Fatalf("%s: racers %d and %d were both told they created it", name, won, i)
+			case err == nil:
+				won = i
+			case code(t, err) != 409:
+				t.Fatalf("%s: racer %d got %v, want 409", name, i, err)
+			}
+		}
+		if won < 0 {
+			t.Fatalf("%s: no racer created the org", name)
+		}
+		got, err := api.Get(ctx, &organizations.GetOrganizationInput{Owner: policy.AdminOrg, Name: name})
+		if err != nil {
+			t.Fatalf("%s: get: %v", name, err)
+		}
+		if want := fmt.Sprintf("racer %d", won); got.DisplayName != want {
+			t.Fatalf("%s: stored row is %q, want the winner's %q", name, got.DisplayName, want)
+		}
+	}
+}
+
+// Memberships of a removed org of the same name hold the name: they would put
+// their holders in the new org the moment it exists.
+func TestCreate_leftoverMembershipsHoldTheName(t *testing.T) {
+	db := freshDB(t)
+	api := organizations.NewOrganizationAPI(db)
+	ctx := context.Background()
+	if _, err := store.EnsureMembership(ctx, db, "acme/mallory", "widgets", store.RoleOwner); err != nil {
+		t.Fatalf("seed membership: %v", err)
+	}
+	if got := code(t, must(api.Create(ctx, createIn(policy.AdminOrg, "widgets")))); got != 409 {
+		t.Fatalf("status=%d, want 409", got)
+	}
+}
+
+// Deleting an org takes the rows that name it: its memberships, the keys members
+// held in it, and the applications it owns. Afterwards the name is free and a new
+// org of that name starts with nobody in it.
+func TestDelete_forgetsTheRowsThatNameTheOrg(t *testing.T) {
+	db := freshDB(t)
+	api := organizations.NewOrganizationAPI(db)
+	ctx := context.Background()
+	put(t, db, "widgets")
+	for _, u := range []string{"acme/bob", "acme/carol"} {
+		if _, err := store.EnsureMembership(ctx, db, u, "widgets", store.RoleMember); err != nil {
+			t.Fatalf("seed membership: %v", err)
+		}
+	}
+	k := orm.New[schema.Key](db)
+	k.Owner, k.Name, k.User = "widgets", "bob-secret", "acme/bob"
+	k.SetId("widgets/bob-secret")
+	if err := k.CreateCtx(ctx); err != nil {
+		t.Fatalf("seed key: %v", err)
+	}
+	a := orm.New[schema.Application](db)
+	a.Owner, a.Name, a.Organization = "widgets", "widgets-agent", "widgets"
+	a.SetId("widgets/widgets-agent")
+	if err := a.CreateCtx(ctx); err != nil {
+		t.Fatalf("seed application: %v", err)
+	}
+
+	if _, err := api.Delete(ctx, &organizations.DeleteOrganizationInput{Owner: policy.AdminOrg, Name: "widgets"}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if rows, err := store.MembershipsByOrg(ctx, db, "widgets"); err != nil || len(rows) != 0 {
+		t.Fatalf("memberships outlived the org: %v %v", rows, err)
+	}
+	if _, err := orm.Get[schema.Key](db, "widgets/bob-secret"); !errors.Is(err, orm.ErrNotFound) {
+		t.Fatalf("member key outlived the org: %v", err)
+	}
+	if _, err := orm.Get[schema.Application](db, "widgets/widgets-agent"); !errors.Is(err, orm.ErrNotFound) {
+		t.Fatalf("owned application outlived the org: %v", err)
+	}
+	if _, err := api.Create(ctx, createIn(policy.AdminOrg, "widgets")); err != nil {
+		t.Fatalf("the name must be free again: %v", err)
+	}
+}

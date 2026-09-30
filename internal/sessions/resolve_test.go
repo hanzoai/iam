@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
@@ -62,7 +63,7 @@ func newHarness(t *testing.T) *harness {
 		return report(c, Open(context.Background(), c.Fiber(), db, c.Query("owner"), c.Query("name"), c.Query("app")))
 	})
 	app.Raw(http.MethodPost, "/set", func(c *zip.Ctx) error {
-		return report(c, Set(context.Background(), c.Fiber(), db, c.Query("owner"), c.Query("name"), c.Query("app")))
+		return report(c, Set(context.Background(), c.Fiber(), db, c.Query("owner"), c.Query("name"), c.Query("app"), time.Now().Unix()))
 	})
 	app.Raw(http.MethodGet, "/current", func(c *zip.Ctx) error {
 		sc, ok := Current(context.Background(), c.Fiber(), db)
@@ -200,7 +201,7 @@ func TestSet_NoSigningCertErrors(t *testing.T) {
 	db := newDB(t) // deliberately NO cert seeded
 	app := zip.New(zip.Config{AppName: "sessions-nocert-test", DisableStartupMessage: true})
 	app.Raw(http.MethodPost, "/set", func(c *zip.Ctx) error {
-		return report(c, Set(context.Background(), c.Fiber(), db, "hanzo", "alice", "cloud"))
+		return report(c, Set(context.Background(), c.Fiber(), db, "hanzo", "alice", "cloud", time.Now().Unix()))
 	})
 	res, err := app.Test(httptest.NewRequest(http.MethodPost, "/set", nil), zip.TestConfig{Timeout: 0, FailOnTimeout: false})
 	if err != nil {
@@ -420,7 +421,7 @@ func TestSet_OnlyFromTheIssuer(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newHarness(t)
 			h.app.Raw(http.MethodGet, "/set", func(c *zip.Ctx) error {
-				return report(c, Set(context.Background(), c.Fiber(), h.db, "hanzo", "mallory", "cloud"))
+				return report(c, Set(context.Background(), c.Fiber(), h.db, "hanzo", "mallory", "cloud", time.Now().Unix()))
 			})
 			res := h.do(t, tc.method, "/set?owner=hanzo&name=mallory&app=cloud", "", tc.headers...)
 			if got := cookieOf(res) != nil; got != tc.writes {

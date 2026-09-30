@@ -614,6 +614,23 @@ request. The JWK decoder is the one `federation_idp.go` already verifies externa
 id_tokens with; a second decoder would be a second opinion about what a published
 key is, and the weaker of the two is the one an attacker picks.
 
+**A GitHub Actions run speaks the same way.** GitHub's issuer is one more entry
+in IAM_CLUSTER_ISSUERS (`{"https://token.actions.githubusercontent.com":
+{"jwks_uri":"https://token.actions.githubusercontent.com/.well-known/jwks"}}`, no
+ca_file: its key set is behind a public CA). The job asks GitHub for an ID token
+whose audience is this issuer (`https://hanzo.id`) and posts it as the assertion.
+IAM_REPOSITORIES maps the run to the CI application it speaks for:
+
+    IAM_REPOSITORIES  {"hanzoai":            {"org":"hanzo","app":"ci","owner_id":"…"},
+                       "hanzo-apps/network": {"org":"hanzo","app":"sites-ci","owner_id":"…"}}
+
+A key is an account, `<owner>/<repo>`, or `<owner>/<repo>@<ref>`, exact, and the
+most specific wins. `owner_id` is required and must equal the token's
+`repository_owner_id`: a GitHub account can be renamed and its old name taken, and
+the id cannot. The clientId is `<org>-<app>`, and the same declared-application
+checks apply. An assertion from GitHub is read by repository only, and one from a
+cluster by service account only.
+
 **The application is DECLARED, never created here.** `<org>-<name>` — the org
 IAM_WORKLOADS gives the account, the name from the account — is the clientId
 `internal/provision` derives, and it must already exist, declare both
@@ -709,6 +726,15 @@ unable to disagree: the record used an exact `Receiver=` compare while the ACCOU
 the same request resolves through `GetUserByPhone`, which normalizes first, so
 "+1 415 555 0134" at send and "+14155550134" at login found the right user and then
 answered "the code is incorrect or has expired".
+
+## Sign-up by code — the code proves the address, the click creates the account
+
+A code sent to an address no account holds is filed with `User == ""` under the application's org. `POST /v1/iam/login` type=code with that code and no resolved user (`codeSignup`, code_signup.go):
+
+- app code sign-in on, sign-up on, `Registers(app, org)`, the request names the app's org, email only — else the same opaque "incorrect or expired" every miss gets.
+- no `create`: `otp.Check` (live, unowned, NOT spent; a miss counts) then `data: "SignupRequired"`. Only someone who proved the address learns it has no account.
+- `create: true` + `terms` + `aup` (version labels): re-check no row holds the address, `otp.Prove` (spends), make a passwordless account (verified, normal-user, never SuperAdmin, `Charter` founds the personal org like `provisionFederatedUser`), record `schema.Terms` (versions, time, method `email-code`, IP), then `afterFirstFactor` — the one minting tail.
+- `PUT /v1/iam/terms` (caller-scoped) records the same for a federated first sign-in, method `signed-in`. The record lives in the preferences blob under `terms`; the preferences merge refuses the key and `Update` carries it from the stored row.
 
 ## internal/otp is the one-time code; internal/mfa/factor is the second factor
 
