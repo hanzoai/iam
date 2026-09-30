@@ -643,3 +643,28 @@ func TestProvision_HeldNameRefused(t *testing.T) {
 		t.Fatalf("org founded over another org's leftovers")
 	}
 }
+
+// TestProvision_HeldNamesAndHiddenDisplayRefused: a first run never founds a held
+// name (a brand, an org funded by name, the estate's own namespaces), and never
+// stores a display name that draws nothing or reorders the text around it.
+func TestProvision_HeldNamesAndHiddenDisplayRefused(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	seedUserIn(t, db, "landing", "eve", "eve@example.com")
+
+	for _, slug := range []string{"osage", "luxfi", "hanzo-inc", "hanzo-community", "zooai"} {
+		_, err := provision(ctx, db, claim{owner: "landing", name: "eve", slug: slug, display: slug})
+		if ft, ok := err.(*fault); !ok || ft.status != 400 {
+			t.Fatalf("slug %q: want 400 held, got %v", slug, err)
+		}
+	}
+	for _, display := range []string{"Acme\u202eeVIL", "\u3164", "\u2800", "Ac\u2028me"} {
+		_, err := provision(ctx, db, claim{owner: "landing", name: "eve", slug: "acme", display: display})
+		if ft, ok := err.(*fault); !ok || ft.status != 400 {
+			t.Fatalf("display %q: want 400, got %v", display, err)
+		}
+	}
+	if org, _ := store.GetOrganizationByName(ctx, db, "acme"); org != nil {
+		t.Fatal("an org was founded with a hidden display name")
+	}
+}

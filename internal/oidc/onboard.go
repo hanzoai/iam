@@ -12,6 +12,7 @@ import (
 
 	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/sessions"
+	"github.com/hanzoai/iam/pkg/schema"
 )
 
 // POST /v1/iam/onboard — first-run org onboarding. A signed-in user with no org of
@@ -52,14 +53,11 @@ const (
 	maxOrgSlug = 55
 )
 
-// The IAM SYSTEM owners a customer org may never become — creating one would collide
-// with a signing-cert owner (admin/built-in) or a system principal (app) — are the
-// ONE policy.IsReservedOrg set, shared with signup and federated provisioning so the
-// reserved set never drifts between surfaces. admin is here for a second reason: it is
-// the reserved SuperAdmin org, and a self-service signup must never provision into it
-// (provision, do not promote). Brand/staff orgs (hanzo/lux/zoo/pars in the console
-// list) are NOT reserved here (iam is white-label): an existing one is refused by the
-// create-conflict check.
+// The names a customer org may never take are ONE list, policy.IsHeldOrg: the
+// system owners (admin/built-in are signing-cert owners, app owns system
+// principals, and admin is the SuperAdmin org), the brands, the orgs funded by
+// name, and the estate's own namespaces. Onboarding, provisioning, the seed and
+// cloud all read it, so the set cannot drift between surfaces.
 
 // onboardForm is the request body: a name for the org, and whether the org is the
 // caller's OWN. Neither implies the other — a name with no `personal` founds a
@@ -164,8 +162,12 @@ func provisionAndRespond(c *zip.Ctx, db orm.DB, owner, name, slug, display strin
 	if len(slug) < minOrgSlug {
 		return onboardErr(c, 400, "use at least 2 letters or numbers")
 	}
-	if policy.IsReservedOrg(slug) {
+	if policy.IsHeldOrg(slug) {
 		return onboardErr(c, 400, "\""+slug+"\" is reserved. choose a different name")
+	}
+	display, err := schema.OrgDisplayName(display)
+	if err != nil {
+		return onboardErr(c, 400, err.Error())
 	}
 	if display == "" {
 		display = slug

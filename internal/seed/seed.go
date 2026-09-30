@@ -258,15 +258,16 @@ func markPlatform(ctx context.Context, db orm.DB, platform map[string]bool) erro
 }
 
 // markPlatformOrgs makes the platform's own organizations exactly the ones this
-// file declares, on every run, the way markPlatform does for applications: each
-// declared row is marked and every other row is unmarked.
+// file declares plus the held names (policy.IsHeldOrg) that exist, on every run,
+// the way markPlatform does for applications: each is marked and every other row
+// is unmarked.
 func markPlatformOrgs(ctx context.Context, db orm.DB, declared map[string]bool) error {
 	orgs, err := orm.TypedQuery[schema.Organization](db).GetAll(ctx)
 	if err != nil && !errors.Is(err, orm.ErrNotFound) {
 		return fmt.Errorf("seed: list organizations: %w", err)
 	}
 	for _, org := range orgs {
-		want := declared[org.Owner+"/"+org.Name]
+		want := declared[org.Owner+"/"+org.Name] || (org.Owner == policy.AdminOrg && policy.IsHeldOrg(org.Name))
 		if org.Platform == want {
 			continue
 		}

@@ -141,3 +141,45 @@ func TestSeed_marksTheOrganizationsItDeclares(t *testing.T) {
 		}
 	}
 }
+
+// A held name that exists is the platform's own whether or not the seed file
+// declares it, so its admins cannot remove it either.
+func TestSeed_marksHeldOrganizations(t *testing.T) {
+	db := freshDB(t)
+	ctx := context.Background()
+	put(t, db, "osage")
+	path := filepath.Join(t.TempDir(), "init_data.json")
+	if err := os.WriteFile(path, []byte(`{"organizations":[{"owner":"admin","name":"hanzo"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := seed.FromInitData(ctx, db, path); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	org, err := orm.TypedQuery[schema.Organization](db).Filter("Name=", "osage").First()
+	if err != nil || !org.Platform {
+		t.Fatalf("osage platform = %v (%v), want true", org != nil && org.Platform, err)
+	}
+}
+
+// The display-name rule holds on every write that stores one.
+func TestDisplayName_isRefusedOnEveryWrite(t *testing.T) {
+	db := freshDB(t)
+	api := organizations.NewOrganizationAPI(db)
+	ctx := context.Background()
+	put(t, db, "acme")
+	bad := "Acme\u202eeVIL"
+
+	in := createIn("admin", "fresh")
+	in.DisplayName = bad
+	if got := code(t, must(api.Create(ctx, in))); got != 400 {
+		t.Fatalf("create: status=%d, want 400", got)
+	}
+	up := updateIn("admin", "acme")
+	up.DisplayName = bad
+	if got := code(t, must(api.Update(ctx, up))); got != 400 {
+		t.Fatalf("update: status=%d, want 400", got)
+	}
+	if got := code(t, must(api.SetProfile(ctx, &organizations.SetProfileInput{Owner: "admin", Name: "acme", DisplayName: &bad}))); got != 400 {
+		t.Fatalf("set profile: status=%d, want 400", got)
+	}
+}

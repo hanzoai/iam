@@ -162,15 +162,23 @@ func ensure(db orm.DB) zip.Handler {
 		if err := account(ctx, in.User); err != nil {
 			return httpx.Err(c, err.Error())
 		}
-		if in.Role == store.RoleOwner {
-			switch over, err := store.OwnsTooMany(ctx, db, in.User, in.Org); {
-			case err != nil:
-				return httpx.Err(c, err.Error())
-			case over:
-				return httpx.Err(c, fmt.Sprintf("an account owns at most %d organizations", store.MaxOwnedOrgs))
+		// The count and the write are one transaction, so ownerships recorded in
+		// parallel cannot each see room for themselves.
+		var added bool
+		err := db.RunInTransaction(ctx, func(tx orm.DB) error {
+			if in.Role == store.RoleOwner {
+				over, err := store.OwnsTooMany(ctx, tx, in.User, in.Org)
+				if err != nil {
+					return err
+				}
+				if over {
+					return fmt.Errorf("an account owns at most %d organizations", store.MaxOwnedOrgs)
+				}
 			}
-		}
-		added, err := store.EnsureMembership(ctx, db, in.User, in.Org, in.Role)
+			var err error
+			added, err = store.EnsureMembership(ctx, tx, in.User, in.Org, in.Role)
+			return err
+		})
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}

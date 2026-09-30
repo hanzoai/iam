@@ -138,6 +138,11 @@ func (h *OrganizationAPI) Create(ctx context.Context, in *CreateOrganizationInpu
 	if org.Owner != policy.AdminOrg {
 		return nil, zip.ErrBadRequest("an organization is filed under the " + policy.AdminOrg + " owner")
 	}
+	display, err := schema.OrgDisplayName(org.DisplayName)
+	if err != nil {
+		return nil, zip.ErrBadRequest(err.Error())
+	}
+	org.DisplayName = display
 	switch _, err := h.find(org.Owner, org.Name); {
 	case err == nil:
 		return nil, zip.ErrConflict("organization already exists")
@@ -206,6 +211,11 @@ func (h *OrganizationAPI) Update(ctx context.Context, in *UpdateOrganizationInpu
 	if desired.Owner == "" || desired.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
 	}
+	display, err := schema.OrgDisplayName(desired.DisplayName)
+	if err != nil {
+		return nil, zip.ErrBadRequest(err.Error())
+	}
+	desired.DisplayName = display
 	existing, err := h.find(desired.Owner, desired.Name)
 	if errors.Is(err, orm.ErrNotFound) {
 		return nil, zip.ErrNotFound("organization not found")
@@ -290,7 +300,11 @@ func (h *OrganizationAPI) SetProfile(ctx context.Context, in *SetProfileInput) (
 		return nil, zip.ErrInternal(err.Error())
 	}
 	if in.DisplayName != nil {
-		org.DisplayName = *in.DisplayName
+		display, err := schema.OrgDisplayName(*in.DisplayName)
+		if err != nil {
+			return nil, zip.ErrBadRequest(err.Error())
+		}
+		org.DisplayName = display
 	}
 	if in.WebsiteUrl != nil {
 		org.WebsiteUrl = *in.WebsiteUrl
