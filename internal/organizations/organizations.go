@@ -146,14 +146,15 @@ func (h *OrganizationAPI) Create(ctx context.Context, in *CreateOrganizationInpu
 	default:
 		return nil, zip.ErrInternal(err.Error())
 	}
-	// Memberships, accounts and keys name their org by name, and nothing checks
-	// that the org exists, so rows a removed org of this name left behind would
-	// come with the new one. The name is not free until they are gone.
+	// Accounts, memberships, keys, invitations and the rest name their org by name,
+	// and nothing checks that the org exists, so rows a removed org of this name
+	// left behind would come with the new one. The name is not free until they are
+	// gone.
 	switch held, err := store.OrgHeld(ctx, h.DB, org.Name); {
 	case err != nil:
 		return nil, zip.ErrInternal(err.Error())
 	case held:
-		return nil, zip.ErrConflict("organization name is still held by the members, accounts or keys of a removed organization")
+		return nil, zip.ErrConflict("organization name is still held by rows of a removed organization")
 	}
 
 	entity := orm.New[schema.Organization](h.DB)
@@ -335,6 +336,14 @@ func (h *OrganizationAPI) Delete(ctx context.Context, in *DeleteOrganizationInpu
 		return nil, zip.ErrInternal(err.Error())
 	case len(accounts) > 0:
 		return nil, zip.ErrConflict(fmt.Sprintf("the organization still holds %d accounts; move or delete them first", len(accounts)))
+	}
+	// Nor while one of the platform's own applications serves it: the seed would
+	// restore that application pointing at whoever takes the name next.
+	switch apps, err := store.PlatformAppsServing(ctx, h.DB, existing.Name); {
+	case err != nil:
+		return nil, zip.ErrInternal(err.Error())
+	case len(apps) > 0:
+		return nil, zip.ErrConflict(fmt.Sprintf("the platform application %s/%s serves this organization; a SuperAdmin re-points it first", apps[0].Owner, apps[0].Name))
 	}
 	// The rows that name the org go first and the org row last, so a failure part
 	// way leaves the org in place for a retry rather than rows naming an org that is

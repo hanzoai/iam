@@ -570,7 +570,7 @@ const pwFloorMinLength = 8
 // options, which may only ever make the policy STRICTER.
 //
 // The floor exists because the option set alone is a policy an org can hold
-// EMPTY. store.CreateOrganization mints a self-serve org with no PasswordOptions,
+// EMPTY. A self-serve org is created with no PasswordOptions,
 // so "no options" — which used to mean "any non-empty password" — was reachable
 // by an anonymous caller: a self-serve signup was accepted with the single byte
 // "a", and that account then logged in. Enforcing the floor here rather than

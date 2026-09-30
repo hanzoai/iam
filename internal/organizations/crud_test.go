@@ -465,3 +465,91 @@ func TestCreate_nameHeldByAnAccountOrAKey(t *testing.T) {
 		}
 	}
 }
+
+// seedRow files one row of T under id, with fill setting its fields.
+func seedRow[T any, P interface {
+	*T
+	SetId(string)
+	CreateCtx(context.Context) error
+}](t *testing.T, db orm.DB, id string, fill func(P)) {
+	t.Helper()
+	row := P(orm.New[T](db))
+	fill(row)
+	row.SetId(id)
+	if err := row.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed %s: %v", id, err)
+	}
+}
+
+// Every row that names a removed org goes with it: an invitation would admit its
+// holder to the next org of that name, and an application serving it from another
+// owner would mint tokens for that org. The same list decides what holds a name.
+func TestDelete_forgetsEveryRowThatNamesTheOrg(t *testing.T) {
+	db := freshDB(t)
+	api := organizations.NewOrganizationAPI(db)
+	ctx := context.Background()
+	put(t, db, "widgets")
+	seedRow(t, db, "widgets/join-1", func(r *schema.Invitation) { r.Owner, r.Name = "widgets", "join-1" })
+	seedRow(t, db, "admin/widgets-portal", func(r *schema.Application) {
+		r.Owner, r.Name, r.Organization = "admin", "widgets-portal", "widgets"
+	})
+	seedRow(t, db, "widgets/editor", func(r *schema.Role) { r.Owner, r.Name = "widgets", "editor" })
+	seedRow(t, db, "widgets/read", func(r *schema.Permission) { r.Owner, r.Name = "widgets", "read" })
+	seedRow(t, db, "widgets/okta", func(r *schema.Provider) { r.Owner, r.Name = "widgets", "okta" })
+	seedRow(t, db, "widgets/site", func(r *schema.Project) { r.Owner, r.Name, r.Organization = "widgets", "site", "widgets" })
+	seedRow(t, db, "widgets/main", func(r *schema.Workspace) { r.Owner, r.Name, r.Organization = "widgets", "main", "widgets" })
+
+	if held, err := store.OrgHeld(ctx, db, "widgets"); err != nil || !held {
+		t.Fatalf("the rows must hold the name: held=%v err=%v", held, err)
+	}
+	if _, err := api.Delete(ctx, &organizations.DeleteOrganizationInput{Owner: policy.AdminOrg, Name: "widgets"}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if held, err := store.OrgHeld(ctx, db, "widgets"); err != nil || held {
+		t.Fatalf("rows outlived the org: held=%v err=%v", held, err)
+	}
+	if _, err := api.Create(ctx, createIn(policy.AdminOrg, "widgets")); err != nil {
+		t.Fatalf("the name must be free again: %v", err)
+	}
+}
+
+// A name an invitation or a serving application still points to is held.
+func TestCreate_nameHeldByAnInvitationOrAServingApp(t *testing.T) {
+	db := freshDB(t)
+	api := organizations.NewOrganizationAPI(db)
+	ctx := context.Background()
+	seedRow(t, db, "ghost/join-1", func(r *schema.Invitation) { r.Owner, r.Name = "ghost", "join-1" })
+	seedRow(t, db, "admin/spectre-portal", func(r *schema.Application) {
+		r.Owner, r.Name, r.Organization = "admin", "spectre-portal", "spectre"
+	})
+	for _, name := range []string{"ghost", "spectre"} {
+		if got := code(t, must(api.Create(ctx, createIn(policy.AdminOrg, name)))); got != 409 {
+			t.Fatalf("%s: status=%d, want 409", name, got)
+		}
+	}
+}
+
+// One of the platform's own applications serving the org holds it: the seed would
+// restore that application pointing at whoever takes the name next, so a
+// SuperAdmin re-points it before the org can go. Nothing is removed on refusal.
+func TestDelete_refusedWhileAPlatformAppServesIt(t *testing.T) {
+	db := freshDB(t)
+	api := organizations.NewOrganizationAPI(db)
+	ctx := context.Background()
+	put(t, db, "maxpower")
+	seedRow(t, db, "admin/maxpower-console", func(r *schema.Application) {
+		r.Owner, r.Name, r.Organization, r.Platform = "admin", "maxpower-console", "maxpower", true
+	})
+	seedRow(t, db, "maxpower/join-1", func(r *schema.Invitation) { r.Owner, r.Name = "maxpower", "join-1" })
+
+	err := must(api.Delete(ctx, &organizations.DeleteOrganizationInput{Owner: policy.AdminOrg, Name: "maxpower"}))
+	if got := code(t, err); got != 409 {
+		t.Fatalf("status=%d, want 409", got)
+	}
+	if a, _ := orm.Get[schema.Application](db, "admin/maxpower-console"); a == nil {
+		t.Fatal("the platform application was removed")
+	}
+	if i, _ := orm.Get[schema.Invitation](db, "maxpower/join-1"); i == nil {
+		t.Fatal("a refused delete removed rows")
+	}
+}

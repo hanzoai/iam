@@ -234,28 +234,92 @@ func isOrgCredential(u *schema.User, org string) bool {
 	return u.Name == OrgCredential(org) && u.Type == schema.ServiceAccount
 }
 
-// OrgHeld reports whether any membership, account or key still names org. Each
-// is a row a new org of that name would inherit: a membership seats its holder,
-// an account lives in it, and a key authenticates into it.
+// deletable is any stored row.
+type deletable interface{ DeleteCtx(context.Context) error }
+
+// orgRow is one place a row names an organization by its name: a kind and the
+// field that holds the name.
+type orgRow struct {
+	kind  string
+	field string
+	rows  func(ctx context.Context, db orm.DB, org string) ([]deletable, error)
+}
+
+// where reads every T whose field equals org.
+func where[T any, P interface {
+	*T
+	deletable
+}](kind, field string) orgRow {
+	return orgRow{kind: kind, field: field, rows: func(ctx context.Context, db orm.DB, org string) ([]deletable, error) {
+		got, err := orm.TypedQuery[T](db).Filter(field+"=", org).GetAll(ctx)
+		if err != nil && !errors.Is(err, orm.ErrNotFound) {
+			return nil, err
+		}
+		out := make([]deletable, 0, len(got))
+		for _, r := range got {
+			out = append(out, P(r))
+		}
+		return out, nil
+	}}
+}
+
+// orgRows is every row that names an organization, other than accounts, which
+// OrgAccounts answers for. Nothing checks that the org such a row names still
+// exists, so each would carry into a new org of the same name: a membership seats
+// its holder, a key authenticates, an invitation admits, a role or permission
+// grants, a provider signs people in, a project or workspace holds data, and an
+// application mints tokens for it. OrgHeld and ForgetOrg walk this one list.
+var orgRows = []orgRow{
+	where[schema.Membership]("memberships", "Org"),
+	where[schema.Key]("keys", "Owner"),
+	where[schema.Invitation]("invitations", "Owner"),
+	where[schema.Role]("roles", "Owner"),
+	where[schema.Permission]("permissions", "Owner"),
+	where[schema.Provider]("providers", "Owner"),
+	where[schema.Project]("projects", "Owner"),
+	where[schema.Project]("projects", "Organization"),
+	where[schema.Workspace]("workspaces", "Owner"),
+	where[schema.Workspace]("workspaces", "Organization"),
+	where[schema.Application]("applications", "Owner"),
+	where[schema.Application]("applications", "Organization"),
+}
+
+// OrgHeld reports whether any row still names org: an account filed under it or
+// anything in orgRows. Each is a row a new org of that name would inherit.
 func OrgHeld(ctx context.Context, db orm.DB, org string) (bool, error) {
-	if rows, err := MembershipsByOrg(ctx, db, org); err != nil || len(rows) > 0 {
-		return len(rows) > 0, err
-	}
 	if _, err := orm.TypedQuery[schema.User](db).Filter("Owner=", org).First(); !errors.Is(err, orm.ErrNotFound) {
 		return err == nil, err
 	}
-	if _, err := orm.TypedQuery[schema.Key](db).Filter("Owner=", org).First(); !errors.Is(err, orm.ErrNotFound) {
-		return err == nil, err
+	for _, r := range orgRows {
+		rows, err := r.rows(ctx, db, org)
+		if err != nil || len(rows) > 0 {
+			return len(rows) > 0, err
+		}
 	}
 	return false, nil
 }
 
-// ForgetOrg removes the rows that name org and would outlive it: every membership
-// of it, every key it owns (members' keys and its own credential's alike), the
-// applications it owns, and its own credential account. It is the companion to
-// deleting the org itself, run only once OrgAccounts is empty. Nothing checks that
-// the org a row names still exists, so a row left behind would hand its holder the
-// next org created under the same name.
+// PlatformAppsServing lists the platform's own applications (seed-declared, filed
+// under the reserved admin org) that serve org. They are not the org's to remove:
+// the seed would restore them pointing at whatever org next takes the name. While
+// any remains, the org is not removable; a SuperAdmin re-points or retires it.
+func PlatformAppsServing(ctx context.Context, db orm.DB, org string) ([]*schema.Application, error) {
+	apps, err := orm.TypedQuery[schema.Application](db).Filter("Organization=", org).GetAll(ctx)
+	if err != nil && !errors.Is(err, orm.ErrNotFound) {
+		return nil, err
+	}
+	out := apps[:0]
+	for _, a := range apps {
+		if a != nil && a.Platform {
+			out = append(out, a)
+		}
+	}
+	return out, nil
+}
+
+// ForgetOrg removes every row in orgRows that names org, and the org's own
+// credential account. It is the companion to deleting the org itself, run only
+// once OrgAccounts and PlatformAppsServing are empty.
 //
 // It is idempotent: forgetting an org that holds nothing removes nothing and is
 // not an error, so a retried or racing delete is safe.
@@ -263,34 +327,15 @@ func ForgetOrg(ctx context.Context, db orm.DB, org string) error {
 	if org == "" {
 		return nil
 	}
-	rows, err := MembershipsByOrg(ctx, db, org)
-	if err != nil {
-		return err
-	}
-	for _, m := range rows {
-		if m == nil {
-			continue
-		}
-		if err := m.DeleteCtx(ctx); err != nil {
+	for _, r := range orgRows {
+		rows, err := r.rows(ctx, db, org)
+		if err != nil {
 			return err
 		}
-	}
-	keys, err := orm.TypedQuery[schema.Key](db).Filter("Owner=", org).GetAll(ctx)
-	if err != nil && !errors.Is(err, orm.ErrNotFound) {
-		return err
-	}
-	for _, k := range keys {
-		if err := k.DeleteCtx(ctx); err != nil {
-			return err
-		}
-	}
-	apps, err := orm.TypedQuery[schema.Application](db).Filter("Owner=", org).GetAll(ctx)
-	if err != nil && !errors.Is(err, orm.ErrNotFound) {
-		return err
-	}
-	for _, a := range apps {
-		if err := a.DeleteCtx(ctx); err != nil {
-			return err
+		for _, row := range rows {
+			if err := row.DeleteCtx(ctx); err != nil && !errors.Is(err, orm.ErrNotFound) {
+				return err
+			}
 		}
 	}
 	users, err := orm.TypedQuery[schema.User](db).Filter("Owner=", org).GetAll(ctx)

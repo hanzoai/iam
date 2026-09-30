@@ -265,7 +265,7 @@ func TestSignup_SelfServeCannotMintReservedOrg(t *testing.T) {
 
 // ── the password floor ───────────────────────────────────────────────────────
 // An organization that declares NO PasswordOptions must still get a real policy.
-// This is the hole that was live: store.CreateOrganization mints a self-serve org
+// This is the hole that was live: a self-serve org is created
 // with an empty option set, an empty set used to mean "any non-empty password",
 // and an anonymous caller registered a production account with the password "a"
 // and then logged in with it.
