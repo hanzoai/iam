@@ -180,6 +180,30 @@ func ForgetUser(ctx context.Context, db orm.DB, user string) (int, error) {
 	return removed, nil
 }
 
+// MaxOwnedOrgs is how many organizations one account may own. Each is a name taken
+// from everyone else, so ownership is bounded where it is recorded.
+const MaxOwnedOrgs = 50
+
+// OwnsTooMany reports whether making user an owner of org would take them past
+// MaxOwnedOrgs. Re-recording an ownership they already hold never does.
+func OwnsTooMany(ctx context.Context, db orm.DB, user, org string) (bool, error) {
+	rows, err := MembershipsByUser(ctx, db, user)
+	if err != nil {
+		return false, err
+	}
+	owned := 0
+	for _, m := range rows {
+		if m == nil || m.Role != RoleOwner || m.Workspace != "" || m.Project != "" {
+			continue
+		}
+		if m.Org == org {
+			return false, nil
+		}
+		owned++
+	}
+	return owned >= MaxOwnedOrgs, nil
+}
+
 // OrgCredential is the name of an org's own metered credential: the service
 // account provisioning mints beside the org ("<org>-default").
 func OrgCredential(org string) string { return org + "-default" }

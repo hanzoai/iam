@@ -5,6 +5,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -200,5 +201,29 @@ func TestBackfillMemberships(t *testing.T) {
 	// Idempotent: a second backfill creates nothing.
 	if created, _ := BackfillMemberships(ctx, db); created != 0 {
 		t.Fatalf("second backfill created %d, want 0", created)
+	}
+}
+
+// An account owns at most MaxOwnedOrgs organizations. Re-recording one it already
+// owns is not a new one, and other roles never count.
+func TestOwnsTooMany(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+	for i := range MaxOwnedOrgs {
+		if _, err := EnsureMembership(ctx, db, "acme/bob", fmt.Sprintf("org-%d", i), RoleOwner); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := EnsureMembership(ctx, db, "acme/bob", "team", RoleMember); err != nil {
+		t.Fatal(err)
+	}
+	if over, err := OwnsTooMany(ctx, db, "acme/bob", "one-more"); err != nil || !over {
+		t.Fatalf("owner of %d orgs asking for another: over=%v err=%v, want over", MaxOwnedOrgs, over, err)
+	}
+	if over, _ := OwnsTooMany(ctx, db, "acme/bob", "org-3"); over {
+		t.Fatal("re-recording an owned org counted as a new one")
+	}
+	if over, _ := OwnsTooMany(ctx, db, "acme/carol", "one-more"); over {
+		t.Fatal("an account that owns nothing is over the quota")
 	}
 }

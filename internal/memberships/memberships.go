@@ -30,6 +30,7 @@ package memberships
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -160,6 +161,14 @@ func ensure(db orm.DB) zip.Handler {
 		}
 		if err := account(ctx, in.User); err != nil {
 			return httpx.Err(c, err.Error())
+		}
+		if in.Role == store.RoleOwner {
+			switch over, err := store.OwnsTooMany(ctx, db, in.User, in.Org); {
+			case err != nil:
+				return httpx.Err(c, err.Error())
+			case over:
+				return httpx.Err(c, fmt.Sprintf("an account owns at most %d organizations", store.MaxOwnedOrgs))
+			}
 		}
 		added, err := store.EnsureMembership(ctx, db, in.User, in.Org, in.Role)
 		if err != nil {
