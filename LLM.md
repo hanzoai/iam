@@ -614,6 +614,23 @@ request. The JWK decoder is the one `federation_idp.go` already verifies externa
 id_tokens with; a second decoder would be a second opinion about what a published
 key is, and the weaker of the two is the one an attacker picks.
 
+**A GitHub Actions run speaks the same way.** GitHub's issuer is one more entry
+in IAM_CLUSTER_ISSUERS (`{"https://token.actions.githubusercontent.com":
+{"jwks_uri":"https://token.actions.githubusercontent.com/.well-known/jwks"}}`, no
+ca_file: its key set is behind a public CA). The job asks GitHub for an ID token
+whose audience is this issuer (`https://hanzo.id`) and posts it as the assertion.
+IAM_REPOSITORIES maps the run to the CI application it speaks for:
+
+    IAM_REPOSITORIES  {"hanzoai":            {"org":"hanzo","app":"ci","owner_id":"…"},
+                       "hanzo-apps/network": {"org":"hanzo","app":"sites-ci","owner_id":"…"}}
+
+A key is an account, `<owner>/<repo>`, or `<owner>/<repo>@<ref>`, exact, and the
+most specific wins. `owner_id` is required and must equal the token's
+`repository_owner_id`: a GitHub account can be renamed and its old name taken, and
+the id cannot. The clientId is `<org>-<app>`, and the same declared-application
+checks apply. An assertion from GitHub is read by repository only, and one from a
+cluster by service account only.
+
 **The application is DECLARED, never created here.** `<org>-<name>` — the org
 IAM_WORKLOADS gives the account, the name from the account — is the clientId
 `internal/provision` derives, and it must already exist, declare both
