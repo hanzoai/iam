@@ -18,6 +18,7 @@ import (
 
 	"github.com/hanzoai/iam/internal/routes"
 	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/pkg/store"
 
 	"github.com/hanzoai/iam/internal/testhttp"
 )
@@ -120,6 +121,55 @@ func TestProvisionEndpoint_ServiceToken(t *testing.T) {
 	}
 	if _, ok := m2["accessSecret"]; ok {
 		t.Fatalf("replay must NOT re-reveal the secret")
+	}
+}
+
+// The provision response hands back the founder's own default key: the accessKey
+// is the publishable half of <slug>/default, the accessSecret (first mint only)
+// authenticates as the founder in the org, and a replay names the same key.
+func TestProvisionEndpoint_ReturnsTheFoundersDefaultKey(t *testing.T) {
+	app, db := bootApp(t)
+	ctx := context.Background()
+	u := orm.New[schema.User](db)
+	u.Owner, u.Name, u.Type = "landing", "dave", "normal-user"
+	u.Email, u.EmailVerified = "dave@example.com", true
+	u.SetId("landing/dave")
+	if err := u.CreateCtx(ctx); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	st, m := postProvision(t, app, "svc-secret-value", `{"owner":"landing","name":"dave","personal":true}`)
+	if st != 200 {
+		t.Fatalf("provision: status=%d body=%v", st, m)
+	}
+	k, err := orm.Get[schema.Key](db, "dave/default")
+	if err != nil {
+		t.Fatalf("no default key at dave/default: %v", err)
+	}
+	if k.User != "dave/dave" || k.DisplayName != "Default" {
+		t.Fatalf("dave/default is %q held by %q, want \"Default\" held by dave/dave", k.DisplayName, k.User)
+	}
+	if m["accessKey"] != k.AccessKey {
+		t.Fatalf("accessKey = %v, want the default key's %q", m["accessKey"], k.AccessKey)
+	}
+	secret, _ := m["accessSecret"].(string)
+	h, err := store.HolderByAccessKey(ctx, db, secret)
+	if err != nil {
+		t.Fatalf("accessSecret does not authenticate: %s", store.Reason(err))
+	}
+	if h.User.Owner != "dave" || h.User.Name != "dave" || h.Org != "dave" {
+		t.Fatalf("accessSecret speaks for %s/%s in %s, want dave/dave in dave", h.User.Owner, h.User.Name, h.Org)
+	}
+
+	st, m = postProvision(t, app, "svc-secret-value", `{"owner":"dave","name":"dave","personal":true}`)
+	if st != 200 {
+		t.Fatalf("replay: status=%d body=%v", st, m)
+	}
+	if m["accessKey"] != k.AccessKey {
+		t.Fatalf("replay accessKey = %v, want the same key's %q", m["accessKey"], k.AccessKey)
+	}
+	if _, ok := m["accessSecret"]; ok {
+		t.Fatal("replay re-revealed the secret")
 	}
 }
 

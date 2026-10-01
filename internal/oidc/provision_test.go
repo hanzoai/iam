@@ -5,7 +5,9 @@ package oidc
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -40,6 +42,47 @@ func countKeys(t *testing.T, db orm.DB, owner string) int {
 		t.Fatalf("count keys: %v", err)
 	}
 	return len(ks)
+}
+
+// founderKey asserts that org holds no account standing between its founder and
+// their key — no "<org>-default" user and no service account at all — and exactly
+// ONE API key: the founder's default, the row <org>/default labelled "Default",
+// held by founder ("<org>/<name>"), with a pk- publishable half and the secret
+// kept only as a digest. It returns that key.
+func founderKey(t *testing.T, db orm.DB, org, founder string) *schema.Key {
+	t.Helper()
+	ctx := context.Background()
+	if u, _ := store.GetUserByName(ctx, db, org, org+"-default"); u != nil {
+		t.Fatalf("an account %s/%s stands between the founder and their key", u.Owner, u.Name)
+	}
+	machines, err := orm.TypedQuery[schema.User](db).Filter("Owner=", org).Filter("Type=", schema.ServiceAccount).GetAll(ctx)
+	if err != nil && !errors.Is(err, orm.ErrNotFound) {
+		t.Fatalf("read service accounts: %v", err)
+	}
+	if len(machines) != 0 {
+		t.Fatalf("org %s holds %d service account(s), want none", org, len(machines))
+	}
+	ks, err := orm.TypedQuery[schema.Key](db).Filter("Owner=", org).GetAll(ctx)
+	if err != nil && !errors.Is(err, orm.ErrNotFound) {
+		t.Fatalf("read keys: %v", err)
+	}
+	if len(ks) != 1 {
+		t.Fatalf("org %s holds %d key(s), want exactly the founder's default", org, len(ks))
+	}
+	k := ks[0]
+	if k.Name != "default" || k.DisplayName != "Default" || k.User != founder {
+		t.Fatalf("key %s/%s %q held by %q, want %s/default \"Default\" held by %s", k.Owner, k.Name, k.DisplayName, k.User, org, founder)
+	}
+	if schema.ClassOf(k.Scope) == schema.KeyScopePublish {
+		t.Fatalf("the default key is publish-scoped (%q), want a secret key", k.Scope)
+	}
+	if !strings.HasPrefix(k.AccessKey, "pk-") {
+		t.Fatalf("publishable half = %q, want a pk-", k.AccessKey)
+	}
+	if k.AccessSecret != "" || k.AccessSecretDigest == "" {
+		t.Fatalf("the key must keep a secret digest and no plaintext: secret=%q digest=%q", k.AccessSecret, k.AccessSecretDigest)
+	}
+	return k
 }
 
 func countOrgs(t *testing.T, db orm.DB, name string) int {
@@ -196,6 +239,46 @@ func TestProvision_PersonalHappyPath(t *testing.T) {
 	if sa.AccessKey != "" || sa.AccessSecret != "" || sa.AccessSecretHash != "" {
 		t.Fatalf("the account row carries credential material nothing resolves: %+v", sa)
 	}
+}
+
+// The org a signup founds carries ONE API key and the person who founded it holds
+// it. The secret it reveals once authenticates as the founder, in the org, and a
+// replay names the same key without revealing the secret again or minting another.
+func TestProvision_FounderHoldsTheDefaultKey(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	seedUserIn(t, db, "landing", "dave", "dave@example.com")
+
+	out, err := provision(ctx, db, claim{owner: "landing", name: "dave", slug: "dave", display: "Dave", personal: true})
+	if err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+	if !out.keyCreated || !strings.HasPrefix(out.accessSecret, "sk-") {
+		t.Fatalf("the first provision must mint the key and reveal its sk- once: %+v", out)
+	}
+	k := founderKey(t, db, "dave", "dave/dave")
+	if out.accessKey != k.AccessKey {
+		t.Fatalf("returned accessKey %q, the key holds %q", out.accessKey, k.AccessKey)
+	}
+	if k.AccessSecretDigest != schema.DigestSecret(out.accessSecret) {
+		t.Fatal("the key does not hold the digest of the secret it revealed")
+	}
+	h, err := store.HolderByAccessKey(ctx, db, out.accessSecret)
+	if err != nil {
+		t.Fatalf("the secret does not authenticate: %s", store.Reason(err))
+	}
+	if h.User.Owner != "dave" || h.User.Name != "dave" || h.Org != "dave" {
+		t.Fatalf("the secret speaks for %s/%s in %s, want dave/dave in dave", h.User.Owner, h.User.Name, h.Org)
+	}
+
+	again, err := provision(ctx, db, claim{owner: "dave", name: "dave", slug: "dave", display: "Dave", personal: true})
+	if err != nil {
+		t.Fatalf("replay: %v", err)
+	}
+	if again.keyCreated || again.accessSecret != "" || again.accessKey != out.accessKey {
+		t.Fatalf("replay = %+v, want the same accessKey %q, no secret and no new key", again, out.accessKey)
+	}
+	founderKey(t, db, "dave", "dave/dave")
 }
 
 // TestProvision_Idempotent: re-driving the SAME signup converges to ONE org + ONE

@@ -72,6 +72,23 @@ func TestSignup_FoundsItsOwnOrg(t *testing.T) {
 	}
 }
 
+// A founding signup (Charter) gives the person the org's one API key, held by
+// them in the org it founded, with no account standing between them and it.
+func TestSignup_FounderHoldsTheDefaultKey(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-cloud", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, orgChoice: "create"})
+	seedOrg(t, db, "hanzo")
+
+	status, env := signupReq(t, app, map[string]string{
+		"application": "hanzo-cloud", "organization": "hanzo",
+		"password": "correct horse battery staple", "email": "stranger@example.com",
+	})
+	if status != 200 || env["status"] != "ok" {
+		t.Fatalf("signup failed: status=%d env=%v", status, env)
+	}
+	founderKey(t, db, "stranger", "stranger/stranger")
+}
+
 // Two people whose addresses yield the same handle both get an org of their own.
 // The slug is derived, so the second one cannot simply take the first one's.
 func TestSignup_SecondPersonGetsTheirOwnOrgToo(t *testing.T) {
