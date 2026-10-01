@@ -58,3 +58,25 @@ func TestAPersonsKeyIsTheirOwn(t *testing.T) {
 		t.Fatalf("hanzo/default = %+v, %v; want \"Default\" held by hanzo/alice", k, err)
 	}
 }
+
+// An edit through the router that leaves the holder out — the shape a display-name
+// change sends — keeps the holder; naming another holder is refused.
+func TestAPersonsKeyEditKeepsItsHolder(t *testing.T) {
+	h := newHarness(t)
+	boss := h.person(t, "hanzo/boss")
+	if status, body := h.send(t, boss, "POST", "/v1/iam/keys", `{"owner":"hanzo","name":"mine"}`); status != 200 {
+		t.Fatalf("create: %d %s", status, body)
+	}
+	if status, body := h.send(t, boss, "PUT", "/v1/iam/keys/hanzo/mine", `{"owner":"hanzo","name":"mine","displayName":"renamed"}`); status != 200 {
+		t.Fatalf("a display-name edit was refused: %d %s", status, body)
+	}
+	if k, err := orm.Get[schema.Key](h.db, "hanzo/mine"); err != nil || k.User != "hanzo/boss" || k.DisplayName != "renamed" {
+		t.Fatalf("hanzo/mine = %+v, %v; want \"renamed\" held by hanzo/boss", k, err)
+	}
+	if status, body := h.send(t, boss, "PUT", "/v1/iam/keys/hanzo/mine", `{"owner":"hanzo","name":"mine","user":"alice"}`); status != 403 {
+		t.Fatalf("a person repointed their key at alice: %d %s", status, body)
+	}
+	if k, err := orm.Get[schema.Key](h.db, "hanzo/mine"); err != nil || k.User != "hanzo/boss" {
+		t.Fatalf("the refused repoint moved the key: %+v %v", k, err)
+	}
+}

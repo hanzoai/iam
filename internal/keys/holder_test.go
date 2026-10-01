@@ -158,8 +158,9 @@ func TestCreate_AnAppMintsForThePersonItNames(t *testing.T) {
 
 // A key names its holder for as long as it exists when a person edits it: the
 // secret is in the holder's hands, so repointing it would hand them whoever it
-// named next. A person's create-then-repoint is therefore refused like a create
-// that names someone else, and an edit that keeps the holder goes through.
+// named next. A body naming another holder is refused like a create that names
+// someone else; an edit that leaves the holder out, or names the one it has,
+// keeps it.
 func TestUpdate_APersonCannotRepointAKey(t *testing.T) {
 	db := memDB(t)
 	ctx := context.Background()
@@ -171,7 +172,7 @@ func TestUpdate_APersonCannotRepointAKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	for _, to := range []string{"acme/ada", "ada", ""} {
+	for _, to := range []string{"acme/ada", "ada", "acme/boss/x"} {
 		_, err := update(db)(boss, &schema.Key{Owner: "acme", Name: "mine", User: to})
 		if err == nil {
 			t.Fatalf("a person repointed their key at %q", to)
@@ -180,8 +181,18 @@ func TestUpdate_APersonCannotRepointAKey(t *testing.T) {
 			t.Fatalf("repoint to %q: status=%d, want 403", to, got)
 		}
 	}
-	if _, err := update(db)(boss, &schema.Key{Owner: "acme", Name: "mine", User: k.User, DisplayName: "renamed"}); err != nil {
-		t.Fatalf("an edit that keeps the holder was refused: %v", err)
+	for _, keep := range []string{"", k.User, "boss"} {
+		got, err := update(db)(boss, &schema.Key{Owner: "acme", Name: "mine", User: keep, DisplayName: "renamed"})
+		if err != nil {
+			t.Fatalf("an edit with user %q was refused: %v", keep, err)
+		}
+		if got.User != "acme/boss" || got.DisplayName != "renamed" {
+			t.Fatalf("edit with user %q = holder %q name %q, want acme/boss \"renamed\"", keep, got.User, got.DisplayName)
+		}
+	}
+	stored, err := orm.Get[schema.Key](db, "acme/mine")
+	if err != nil || stored.User != "acme/boss" {
+		t.Fatalf("stored key = %+v, %v; want holder acme/boss", stored, err)
 	}
 	speaksFor(t, db, k.AccessSecret, "acme", "boss", "acme")
 }

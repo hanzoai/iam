@@ -215,8 +215,13 @@ func update(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 		}
 		// A person edits a key and never who it speaks for, the same rule create holds
 		// them to: repointing it would hand its secret's holder whoever it named next.
-		if _, ok := person(ctx); ok && in.User != k.User {
-			return nil, zip.ErrForbidden("a key names its holder for as long as it exists; create a new key instead")
+		// Leaving the holder out, or naming the one it has, keeps it; naming anyone
+		// else is refused.
+		if _, ok := person(ctx); ok {
+			if in.User != "" && qualify(k.Owner, in.User) != qualify(k.Owner, k.User) {
+				return nil, zip.ErrForbidden("a key names its holder for as long as it exists; create a new key instead")
+			}
+			in.User = k.User
 		}
 		if err := holdable(ctx, db, k.Owner, in.User, k.Scope); err != nil {
 			return nil, err
@@ -298,14 +303,19 @@ func holder(ctx context.Context, owner, user string) (string, error) {
 	if user == "" {
 		return me, nil
 	}
-	o, n, qualified := strings.Cut(user, "/")
-	if !qualified {
-		o, n = owner, user
-	}
-	if o+"/"+n != me {
+	if qualify(owner, user) != me {
 		return "", zip.ErrForbidden("a key you create speaks for you; only a SuperAdmin names another holder")
 	}
 	return me, nil
+}
+
+// qualify spells a key's holder as "<org>/<name>": a bare name is an account of
+// the key's owner, as the resolver reads it (store.keyUserRef).
+func qualify(owner, user string) string {
+	if strings.Contains(user, "/") {
+		return user
+	}
+	return owner + "/" + user
 }
 
 // application gates the application a key names. A token minted with the key

@@ -40,12 +40,12 @@ import (
 // PathOnboard is the canonical first-run onboarding endpoint.
 const PathOnboard = "/v1/iam/onboard"
 
-// Org slug bounds mirror the console's org policy (MAX_ORG_SLUG in
-// src/lib/org-policy.ts): an IAM org name is varchar(100); keep the slug short +
-// readable.
+// Org slug bounds are the organization-name bound internal/organizations holds
+// every org to (2 to 55 characters), so an org founded here is one every org
+// surface accepts.
 const (
 	minOrgSlug = 2
-	maxOrgSlug = 60
+	maxOrgSlug = 55
 )
 
 // The names a customer org may never take are ONE list, policy.IsHeldOrg: the

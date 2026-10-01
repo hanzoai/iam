@@ -6,16 +6,19 @@ package oidc_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	ormdb "github.com/hanzoai/orm/db"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/organizations"
 	"github.com/hanzoai/iam/internal/routes"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
@@ -171,6 +174,49 @@ func TestProvisionEndpoint_ReturnsTheFoundersDefaultKey(t *testing.T) {
 	if _, ok := m["accessSecret"]; ok {
 		t.Fatal("replay re-revealed the secret")
 	}
+}
+
+// Every org name provisioning founds is one the organizations surface accepts, so
+// the first org and an additional one obey one bound: a slug over it is cut to
+// it, never founded at a length the organizations API refuses.
+func TestProvisionEndpoint_OrgNamesKeepOneBound(t *testing.T) {
+	app, db := bootApp(t)
+	ctx := context.Background()
+	registry := organizations.NewOrganizationAPI(freshStore(t))
+	for i, n := range []int{55, 58, 60} {
+		name := fmt.Sprintf("u%d", i)
+		u := orm.New[schema.User](db)
+		u.Owner, u.Name, u.Type = "landing", name, "normal-user"
+		u.SetId("landing/" + name)
+		if err := u.CreateCtx(ctx); err != nil {
+			t.Fatalf("seed user: %v", err)
+		}
+		slug := strings.Repeat(string(rune('a'+i)), n)
+		st, m := postProvision(t, app, "svc-secret-value", `{"owner":"landing","name":"`+name+`","orgSlug":"`+slug+`"}`)
+		if st != 200 {
+			t.Fatalf("%d-character slug: status=%d body=%v", n, st, m)
+		}
+		org, _ := m["org"].(string)
+		in := &organizations.CreateOrganizationInput{}
+		in.Owner, in.Name = policy.AdminOrg, org
+		if _, err := registry.Create(ctx, in); err != nil {
+			t.Fatalf("%d-character slug founded %q (%d characters), which the organizations API refuses: %v", n, org, len(org), err)
+		}
+	}
+}
+
+// freshStore opens an empty store of its own.
+func freshStore(t *testing.T) orm.DB {
+	t.Helper()
+	db, err := orm.OpenSQLite(&ormdb.SQLiteDBConfig{
+		Path:   filepath.Join(t.TempDir(), "registry.db"),
+		Config: ormdb.SQLiteConfig{BusyTimeout: 5000, JournalMode: "WAL"},
+	})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	return db
 }
 
 // TestProvisionEndpoint_HonorsResolvedSlug proves the endpoint provisions into the
