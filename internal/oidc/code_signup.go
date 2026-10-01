@@ -34,10 +34,11 @@ const SignupRequired = "SignupRequired"
 // the caller.
 const PathTerms = "/v1/iam/terms"
 
-// Accepted is the method a code sign-up records. A signed-in acceptance records
-// methodSignedIn.
+// Accepted is the method a code sign-up records. A password sign-up records
+// methodPassword, and a signed-in acceptance methodSignedIn.
 const (
 	methodEmailCode = "email-code"
+	methodPassword  = "password"
 	methodSignedIn  = "signed-in"
 )
 

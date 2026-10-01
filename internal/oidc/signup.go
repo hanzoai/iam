@@ -75,6 +75,12 @@ type signupForm struct {
 	// explicit answer. A non-empty value that is not a known answer is refused
 	// outright rather than coerced.
 	Training string `json:"training"`
+
+	// Terms and AUP are the versions of the Terms of Service and the Acceptable
+	// Use Policy the person agreed to on the signup screen, recorded with the
+	// account as a code sign-up records them. Both, or neither.
+	Terms string `json:"terms"`
+	AUP   string `json:"aup"`
 }
 
 // signupHandler creates an account from the sign-up form and applies the
@@ -101,6 +107,19 @@ func signupHandler(db orm.DB) zip.Handler {
 		consent := schema.Consent{Insights: true, Training: schema.Answer(f.Training)}
 		if !consent.Training.Valid() {
 			return httpx.Err(c, "training must be one of: \"\", granted, refused")
+		}
+		var accepted *schema.Terms
+		if f.Terms != "" || f.AUP != "" {
+			if !termsVersion.MatchString(f.Terms) || !termsVersion.MatchString(f.AUP) {
+				return httpx.Err(c, "the terms and the acceptable use policy must be accepted")
+			}
+			accepted = &schema.Terms{
+				Terms:  f.Terms,
+				AUP:    f.AUP,
+				Time:   nowFunc().UTC().Format("2006-01-02T15:04:05Z07:00"),
+				Method: methodPassword,
+				IP:     httpx.ClientIP(c),
+			}
 		}
 
 		// Resolve the application (by clientId when present, else by name under the
@@ -349,6 +368,7 @@ func signupHandler(db orm.DB) zip.Handler {
 			// this is the one caller entitled to state an answer, and being
 			// in-process is what distinguishes it from a request that claims to be.
 			Consent: &consent,
+			Terms:   accepted,
 		})
 		if err != nil {
 			return httpx.Err(c, err.Error())

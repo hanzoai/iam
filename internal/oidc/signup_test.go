@@ -377,3 +377,55 @@ func TestSignup_ForeignTenantRefusalKeepsTheLegitimatePaths(t *testing.T) {
 		}
 	})
 }
+
+// A password signup records the terms the screen had the person agree to, as a
+// code signup does; one half of the pair is refused, and an account is not made.
+func TestSignup_RecordsTheAcceptedTerms(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true})
+	seedOrg(t, db, "hanzo")
+	body := func(name string) map[string]string {
+		return map[string]string{
+			"application":  "conf",
+			"organization": "hanzo",
+			"username":     name,
+			"password":     "correct horse battery staple",
+			"email":        name + "@hanzo.ai",
+			"terms":        "terms-2026-09-30",
+			"aup":          "aup-2026-09-30",
+		}
+	}
+
+	if status, env := signupReq(t, app, body("agreed")); status != 200 || env["status"] != "ok" {
+		t.Fatalf("status=%d env=%v, want 200 ok", status, env)
+	}
+	u, err := store.GetUserByName(tctx(), db, "hanzo", "agreed")
+	if err != nil || u == nil {
+		t.Fatalf("the account is missing: %v", err)
+	}
+	tm, ok := u.TermsAccepted()
+	if !ok || tm.Terms != "terms-2026-09-30" || tm.AUP != "aup-2026-09-30" || tm.Method != methodPassword || tm.Time == "" {
+		t.Fatalf("acceptance not recorded: %+v ok=%v", tm, ok)
+	}
+
+	half := body("half")
+	delete(half, "aup")
+	if _, env := signupReq(t, app, half); env["status"] != "error" {
+		t.Fatalf("half the terms made an account: %v", env)
+	}
+	if u, _ := store.GetUserByName(tctx(), db, "hanzo", "half"); u != nil {
+		t.Fatal("an account was made with half the terms")
+	}
+
+	none := body("silent")
+	delete(none, "terms")
+	delete(none, "aup")
+	if status, env := signupReq(t, app, none); status != 200 || env["status"] != "ok" {
+		t.Fatalf("no terms: status=%d env=%v, want 200 ok", status, env)
+	}
+	if u, _ := store.GetUserByName(tctx(), db, "hanzo", "silent"); u == nil {
+		t.Fatal("a signup naming no terms was refused")
+	} else if _, ok := u.TermsAccepted(); ok {
+		t.Fatal("terms recorded that nobody stated")
+	}
+}

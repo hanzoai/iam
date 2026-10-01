@@ -85,6 +85,14 @@ func init() {
 			"Response.code": "Code is a STABLE machine-readable reason, where the human `msg` is\ndeliberately generic. `msg` is prose for a person and several distinct causes\nlegitimately share one sentence; a caller that must BRANCH on the cause — or\ntell its own user which of them happened — cannot parse prose. Optional, so\nevery existing envelope is byte-identical and no SDK changes.",
 		},
 	})
+	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/auth/identifier", zip.Doc{
+		Description: "Answers whether an account holds an email address at an\napplication, and whether that account signs in with a password. Only an\napplication that registers strangers answers, since its signup says as much\nalready. The address is resolved exactly as sign-in resolves it, so the screen\nand the sign-in cannot disagree. A client asking faster than a person types is\nrefused with 429.",
+		Fields: map[string]string{
+			"Response.code":             "Code is a STABLE machine-readable reason, where the human `msg` is\ndeliberately generic. `msg` is prose for a person and several distinct causes\nlegitimately share one sentence; a caller that must BRANCH on the cause — or\ntell its own user which of them happened — cannot parse prose. Optional, so\nevery existing envelope is byte-identical and no SDK changes.",
+			"identifierBody.clientId":   "ClientId is the application's OAuth client id.",
+			"identifierBody.identifier": "Identifier is the email address the person typed.",
+		},
+	})
 	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/invitations/accept", zip.Doc{
 		Description: "Joins the caller to an organization through an invitation, for\na person who already has an account. Signing up through the invitation is the\nother way in (signupHandler); this one spends the same seat under the same rules.\n\nOnly the caller joins, as a member and never more; the request names nobody\nelse. An invitation pinned to an address admits only the account holding that\naddress, and only with a code IAM sent to it for this join — the account's own\nverified flag is not enough, because a tenant's identity provider can set it. An\ninvitation pinned to a phone number or a username admits no other org's account\nthis way. Joining an org the caller already belongs to succeeds and spends\nnothing. Every refusal is recorded, and an account refused acceptLimit times in\nacceptWindow is refused before anything is looked at.",
 		Fields: map[string]string{

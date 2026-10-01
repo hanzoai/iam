@@ -43,6 +43,10 @@ func routeFrontDoor(r *zip.Group, db orm.DB) {
 		zip.WithStatus(200, 400), zip.WithTags("auth"))
 	r.Get(PathAuthMethods, authMethods(db),
 		zip.WithStatus(200, 400), zip.WithTags("auth"))
+	// Whether an account holds an address, asked before the screen asks for a
+	// credential: identifier-first sign-in (identifier.go).
+	r.Post(PathAuthIdentifier, authIdentifier(db),
+		zip.WithStatus(200, 400, 429), zip.WithTags("auth"))
 	// The account read is anonymous-safe (returns {status:"error"} unauthenticated)
 	// and a security contract — the gateway admin-guard reads its `owner`.
 	r.Raw(http.MethodGet, PathAccount, getAccount(db))

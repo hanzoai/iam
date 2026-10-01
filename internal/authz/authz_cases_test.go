@@ -217,6 +217,7 @@ func TestPublicRoutesNeedNoBearer(t *testing.T) {
 		{"POST", "/v1/iam/oauth/token"},
 		{"GET", "/v1/iam/get-app-login"},
 		{"GET", "/v1/iam/auth/methods"},
+		{"POST", "/v1/iam/auth/identifier"},
 		{"POST", "/v1/iam/oauth/logout"},
 		// The native session/identity surface — each self-resolves the caller
 		// (session cookie, else bearer) and answers anonymously (200 {status:error}
