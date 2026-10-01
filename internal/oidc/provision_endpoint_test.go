@@ -66,8 +66,8 @@ func postProvision(t *testing.T, app *zip.App, token, body string) (int, map[str
 
 // TestProvisionEndpoint_ServiceToken proves the ONE service-token provisioning op
 // the cloud onboarding orchestrator calls: it authenticates by the unified service
-// token, provisions the named user's tenant idempotently (org + hashed credential +
-// hashed credential), and a replay converges without a duplicate or a re-revealed
+// token, provisions the named user's tenant idempotently (org + the founder's
+// default key), and a replay converges without a duplicate or a re-revealed
 // secret. No trial credit is granted — usage is pre-paid.
 func TestProvisionEndpoint_ServiceToken(t *testing.T) {
 	app, db := bootApp(t)
@@ -101,7 +101,7 @@ func TestProvisionEndpoint_ServiceToken(t *testing.T) {
 		t.Fatalf("org=%v, want dave", m["org"])
 	}
 	if ak, _ := m["accessKey"].(string); !strings.HasPrefix(ak, "pk-") {
-		t.Fatalf("accessKey not a service-account key: %v", m["accessKey"])
+		t.Fatalf("accessKey is not a publishable key: %v", m["accessKey"])
 	}
 	if _, ok := m["accessSecret"]; !ok {
 		t.Fatalf("first mint must reveal the secret once")

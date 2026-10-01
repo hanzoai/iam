@@ -37,8 +37,8 @@ func seedUserIn(t *testing.T, db orm.DB, owner, name, email string) {
 // retry converges to exactly ONE, never a duplicate.
 func countKeys(t *testing.T, db orm.DB, owner string) int {
 	t.Helper()
-	ks, err := orm.TypedQuery[schema.User](db).Filter("Owner=", owner).Filter("Type=", "service-account").GetAll(context.Background())
-	if err != nil {
+	ks, err := orm.TypedQuery[schema.Key](db).Filter("Owner=", owner).GetAll(context.Background())
+	if err != nil && !errors.Is(err, orm.ErrNotFound) {
 		t.Fatalf("count keys: %v", err)
 	}
 	return len(ks)
@@ -195,50 +195,8 @@ func TestProvision_PersonalHappyPath(t *testing.T) {
 	if stale, _ := store.GetUserByName(ctx, db, "landing", "dave"); stale != nil {
 		t.Fatalf("stale identity landing/dave still present")
 	}
-	// The credential belongs to an org-scoped (metered) service account.
-	sa, err := store.GetUserByName(ctx, db, "dave", "dave-default")
-	if err != nil || sa == nil || sa.Type != "service-account" {
-		t.Fatalf("credential not an org service account: %+v err=%v", sa, err)
-	}
-	if sa.Owner != "dave" {
-		t.Fatalf("credential not org-scoped (metered): owner=%q", sa.Owner)
-	}
-
-	// AND IT WORKS. The secret a signup reveals is revealed once, on the one screen
-	// that ever shows it, so the only assertion worth making about it is the one the
-	// tenant makes: present it and be recognised. This used to check that the account's
-	// User row carried an argon2id hash of the secret — a row nothing resolves a
-	// credential from — so a signup could hand out a live-looking sk- that every call
-	// answered as an unrecognised key, and this test stayed green.
-	if out.accessSecret == "" {
-		t.Fatalf("first mint must reveal the plaintext secret once")
-	}
-	holder, _, err := store.UserAndScopeByAccessKey(ctx, db, out.accessSecret)
-	if err != nil {
-		t.Fatalf("the credential a signup hands its tenant does not authenticate: %s", store.Reason(err))
-	}
-	if holder.Owner != "dave" || holder.Name != "dave-default" {
-		t.Fatalf("the credential authenticated %s/%s, want dave/dave-default", holder.Owner, holder.Name)
-	}
-
-	// It lives in the key row the resolvers read, holding a digest and no secret,
-	// and the account's own row carries no credential material at all.
-	k, err := orm.Get[schema.Key](db, "dave/dave-default-key")
-	if err != nil {
-		t.Fatalf("no key row holds the signup credential: %v", err)
-	}
-	if k.AccessKey != out.accessKey {
-		t.Fatalf("returned accessKey %q != stored %q", out.accessKey, k.AccessKey)
-	}
-	if k.AccessSecret != "" {
-		t.Fatalf("secret must NOT be stored plaintext at rest, got %q", k.AccessSecret)
-	}
-	if k.AccessSecretDigest != schema.DigestSecret(out.accessSecret) {
-		t.Fatal("the row must hold the digest the resolver looks the secret up by")
-	}
-	if sa.AccessKey != "" || sa.AccessSecret != "" || sa.AccessSecretHash != "" {
-		t.Fatalf("the account row carries credential material nothing resolves: %+v", sa)
-	}
+	// The org's one key is the founder's.
+	founderKey(t, db, "dave", "dave/dave")
 }
 
 // The org a signup founds carries ONE API key and the person who founded it holds
@@ -657,14 +615,10 @@ func TestProvision_ConcurrentSameCallerConverges(t *testing.T) {
 	}
 }
 
-// A tenant whose account exists WITHOUT the credential row it presents converges
-// to a credential that works. Every tenant provisioned before the credential moved
-// to that row is in exactly this state — an account, and a secret that resolves to
-// nobody — so the converge has to reach them, not just tenants signing up next.
-//
-// It is also what makes the two ensures independent: the account answering for the
-// credential is how a missing credential stayed missing through every replay.
-func TestProvision_ConvergesAnAccountThatHoldsNoCredential(t *testing.T) {
+// A founder whose default key is gone — revoked, or a write that never landed —
+// gets it back on the next converge, and the key issued then authenticates as
+// them. A further replay is a replay: the same key, and no second reveal.
+func TestProvision_ConvergesAFounderWhoHoldsNoKey(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()
 	seedUserIn(t, db, "landing", "erin", "erin@example.com")
@@ -672,13 +626,12 @@ func TestProvision_ConvergesAnAccountThatHoldsNoCredential(t *testing.T) {
 	if _, err := provision(ctx, db, claim{owner: "landing", name: "erin", slug: "erin", display: "Erin"}); err != nil {
 		t.Fatalf("provision: %v", err)
 	}
-	// Put the tenant back in the pre-fix state: the account, and no credential row.
-	k, err := orm.Get[schema.Key](db, "erin/erin-default-key")
+	k, err := orm.Get[schema.Key](db, "erin/default")
 	if err != nil {
-		t.Fatalf("read the credential row: %v", err)
+		t.Fatalf("read the default key: %v", err)
 	}
 	if err := k.DeleteCtx(ctx); err != nil {
-		t.Fatalf("drop the credential row: %v", err)
+		t.Fatalf("drop the default key: %v", err)
 	}
 
 	out, err := provision(ctx, db, claim{owner: "erin", name: "erin", slug: "erin", display: "Erin"})
@@ -686,26 +639,26 @@ func TestProvision_ConvergesAnAccountThatHoldsNoCredential(t *testing.T) {
 		t.Fatalf("replay: %v", err)
 	}
 	if !out.keyCreated || out.accessSecret == "" {
-		t.Fatalf("the replay did not issue the missing credential: %+v", out)
+		t.Fatalf("the replay did not issue the missing key: %+v", out)
 	}
-	holder, _, err := store.UserAndScopeByAccessKey(ctx, db, out.accessSecret)
+	founderKey(t, db, "erin", "erin/erin")
+	h, err := store.HolderByAccessKey(ctx, db, out.accessSecret)
 	if err != nil {
-		t.Fatalf("the converged credential does not authenticate: %s", store.Reason(err))
+		t.Fatalf("the converged key does not authenticate: %s", store.Reason(err))
 	}
-	if holder.Owner != "erin" || holder.Name != "erin-default" {
-		t.Fatalf("it authenticated %s/%s, want erin/erin-default", holder.Owner, holder.Name)
+	if h.User.Owner != "erin" || h.User.Name != "erin" || h.Org != "erin" {
+		t.Fatalf("it speaks for %s/%s in %s, want erin/erin in erin", h.User.Owner, h.User.Name, h.Org)
 	}
 
-	// And a further replay is a replay: the same key, and no second reveal.
 	again, err := provision(ctx, db, claim{owner: "erin", name: "erin", slug: "erin", display: "Erin"})
 	if err != nil {
 		t.Fatalf("second replay: %v", err)
 	}
 	if again.keyCreated || again.accessSecret != "" {
-		t.Fatalf("a replay re-issued the credential: %+v", again)
+		t.Fatalf("a replay re-issued the key: %+v", again)
 	}
 	if again.accessKey != out.accessKey {
-		t.Fatalf("replay named %q, want the credential already held %q", again.accessKey, out.accessKey)
+		t.Fatalf("replay named %q, want the key already held %q", again.accessKey, out.accessKey)
 	}
 }
 

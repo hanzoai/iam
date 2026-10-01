@@ -16,28 +16,21 @@ import (
 	"github.com/hanzoai/iam/pkg/store"
 )
 
-// credentialType is the User.Type discriminator for the tenant's default API
-// credential — a service account. It MUST match the serviceaccounts package's own
-// discriminator; oidc cannot import that package (authz→oidc would cycle), so the
-// value is stated here and the two are kept in step by that contract.
-const credentialType = "service-account"
-
 // provision idempotently converges a self-service signup to ONE tenant: an
-// organization, its founding user as that org's own admin, and ONE org-scoped API
-// key. It is the single provisioning primitive the onboarding endpoint drives —
-// every step is an ENSURE (converge), never a bare CREATE (conflict):
+// organization, its founding user as that org's own admin, and ONE API key the
+// founder holds in that org. It is the single provisioning primitive the onboarding
+// endpoint drives — every step is an ENSURE (converge), never a bare CREATE
+// (conflict):
 //
 //   - org:  query by name, create when absent, stamping the caller as Founder.
 //   - user: the caller is moved into <slug> as its admin; already-there is a no-op.
 //           The caller's own new org, NOT the reserved admin org — provision, do
 //           not promote (the reserved-slug gate forbids admin/built-in/app).
-//   - account: the org's own service account "<slug>-default", so the gateway meters
-//           every request under the org and a provisioned tenant is NEVER unmetered.
-//   - key:  the credential that account presents, at "<slug>/<slug>-default-key" —
-//           the row a presented secret is resolved through. Ensured apart from the
-//           account, because the two are separate rows and a tenant can hold one
-//           without the other. A second call returns the SAME key, never a second
-//           one, and never re-reveals the secret.
+//   - key:  the founder's default key, the row "<slug>/default" labelled "Default",
+//           held by "<slug>/<name>" and filed in the org, so a request made with it
+//           speaks for the founder and is metered under the org. Ensured by that
+//           row: a second call returns the SAME key, never a second one, and never
+//           re-reveals the secret.
 //
 // RETRY / PARTIAL-FAILURE convergence is backend-portable — it does NOT depend on a
 // transaction rolling back (production runs a store where each write autocommits
@@ -207,61 +200,25 @@ func provision(ctx context.Context, db orm.DB, cl claim) (provisioned, error) {
 		}
 		out.movedFrom = wasOwner
 
-		// Ensure ONE org-scoped, metered credential — a service account whose secret
-		// is stored as a DIGEST (never plaintext) and revealed exactly once, on mint.
-		// Org-scoped (Owner=slug), so the gateway meters every request under the org;
-		// the tenant can never call unmetered. Idempotent: a replay returns the
-		// credential's publishable half, never a second one and never the secret
-		// again.
-		// A credential is a user row, so its name obeys THE username rule like any
-		// other principal's. The slug is already lowercase and bounded to leave room
-		// for the suffix (maxOrgSlug), so this refuses nothing that onboarding can
-		// legitimately reach — it states the invariant the derivation relies on.
-		saName, err := schema.Username(cl.slug + "-default")
-		if err != nil {
-			return &fault{400, err.Error()}
-		}
-		sa, err := store.GetUserByName(ctx, tx, cl.slug, saName)
-		if err != nil {
-			return &fault{500, "server_error"}
-		}
-		if sa == nil {
-			sa = orm.New[schema.User](tx)
-			sa.Owner, sa.Name = cl.slug, saName
-			sa.Type, sa.DisplayName = credentialType, "Default API key"
-			sa.CreatedTime = provisionNow()
-			sa.SetId(cl.slug + "/" + saName)
-			if err := sa.CreateCtx(ctx); err != nil {
-				return &fault{500, "server_error"}
-			}
-		}
-
-		// The account and the credential it presents are ensured SEPARATELY, because
-		// they are two rows and a tenant can hold one without the other. The account
-		// used to answer for both: a tenant whose account existed was taken to hold a
-		// working credential, and the credential itself went onto the account's own
-		// User row — a row nothing resolves a secret from. Asking the row a presented
-		// secret is actually RESOLVED through is what makes the converge true, and it
-		// carries every tenant already in that state to a credential that works.
-		//
-		// keys.MintAccountKey is the one call every account credential is issued by,
-		// so a rotation later replaces this exact row rather than leaving a second
-		// live one beside it.
-		k, err := orm.Get[schema.Key](tx, cl.slug+"/"+saName+"-key")
+		// Ensure the founder's ONE default key — filed in the org (Owner=slug), so the
+		// gateway meters every request under it, and held by the founder, so it speaks
+		// for the person who founded the org and for no account standing in between.
+		// Its secret is stored as a DIGEST (never plaintext) and revealed exactly once,
+		// on the mint that issues it. Idempotent on the row: a replay returns the key's
+		// publishable half, never a second key and never the secret again.
+		k, err := orm.Get[schema.Key](tx, cl.slug+"/"+keys.DefaultKeyName)
 		if err != nil && !errors.Is(err, orm.ErrNotFound) {
 			return &fault{500, "server_error"}
 		}
 		keyCreated := errors.Is(err, orm.ErrNotFound)
 		if keyCreated {
-			accessKey, secret, mErr := keys.MintAccountKey(ctx, tx, cl.slug, saName)
+			accessKey, secret, mErr := keys.Issue(ctx, tx, cl.slug, cl.slug+"/"+user.Name, keys.DefaultKeyName, keys.DefaultKeyLabel)
 			if mErr != nil {
 				return &fault{500, "server_error"}
 			}
 			out.accessKey = accessKey
 			out.accessSecret = secret // shown once, on the mint that issues it
 		} else {
-			// A replay names the publishable half of the credential the account
-			// already holds, and never re-reveals the secret.
 			out.accessKey = k.AccessKey
 		}
 

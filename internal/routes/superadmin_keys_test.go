@@ -53,6 +53,7 @@ func TestNoSecretKeyIsWrittenForASuperAdmin(t *testing.T) {
 		}{
 			{"hanzo/boss", boss, `{"owner":"hanzo","name":"k1","user":"admin/z"}`},
 			{"hanzo/boss", boss, `{"owner":"hanzo","name":"k2","user":"admin/Z"}`},
+			{"hanzo/boss", boss, `{"owner":"hanzo","name":"k3","user":"alice"}`},
 			{"admin/root", root, `{"owner":"hanzo","name":"k5","user":"admin/z"}`},
 			{"admin/root", root, `{"owner":"admin","name":"k6","user":"root"}`},
 			{"admin/root", root, `{"owner":"admin","name":"k6","user":"nobody-yet"}`},
@@ -65,16 +66,17 @@ func TestNoSecretKeyIsWrittenForASuperAdmin(t *testing.T) {
 			}
 		}
 
-		// Everyone else is written as before, and a publishable key, which names an
-		// org and no principal, is written whoever minted it.
+		// Everyone else is written for whoever a SuperAdmin or a minting application
+		// names (an org's admin names only themselves), and a publishable key, which
+		// names an org and no principal, is written whoever minted it.
 		for _, r := range []struct {
 			who  string
 			c    caller
 			body string
 		}{
-			{"hanzo/boss", boss, `{"owner":"hanzo","name":"alice-key","user":"alice"}`},
+			{"admin/root", root, `{"owner":"hanzo","name":"alice-key","user":"alice"}`},
 			{"hanzo-visor", visor, `{"owner":"orgb","name":"alice-member","user":"hanzo/alice"}`},
-			{"hanzo/boss", boss, `{"owner":"hanzo","name":"z-key","user":"z"}`},
+			{"admin/root", root, `{"owner":"hanzo","name":"z-key","user":"z"}`},
 			{"hanzo-visor", visor, `{"owner":"orgb","name":"z-member","user":"hanzo/z"}`},
 			{"admin/root", root, `{"owner":"admin","name":"beacon","user":"z","scope":"publish"}`},
 		} {

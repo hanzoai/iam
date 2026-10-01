@@ -40,17 +40,12 @@ import (
 // PathOnboard is the canonical first-run onboarding endpoint.
 const PathOnboard = "/v1/iam/onboard"
 
-// Org slug bounds mirror the console's onboarding policy (src/lib/server/onboarding.ts):
-// an IAM org name is varchar(100); keep the slug short + readable.
-//
-// The upper bound also has to leave room for what gets DERIVED from the slug:
-// onboarding mints a default credential named `<slug>-default`, and that is a user
-// row, so it must satisfy schema.Username's 63-character bound. 55 + len("-default")
-// is 63 exactly — a slug that fits here yields a credential name that fits there, by
-// construction rather than by a check that would fail at the end of onboarding.
+// Org slug bounds mirror the console's org policy (MAX_ORG_SLUG in
+// src/lib/org-policy.ts): an IAM org name is varchar(100); keep the slug short +
+// readable.
 const (
 	minOrgSlug = 2
-	maxOrgSlug = 55
+	maxOrgSlug = 60
 )
 
 // The names a customer org may never take are ONE list, policy.IsHeldOrg: the

@@ -128,11 +128,20 @@ func get(db orm.DB) zip.TypedHandler[Ref, schema.Key] {
 //
 // A name already used in your organization is refused rather than reissued, so
 // creating twice never silently invalidates a key that is in production.
+//
+// A key you create is yours: it names you as its holder and speaks for you in the
+// organization it is filed in. Naming anyone else as its holder is refused; a
+// SuperAdmin names the person a key is for.
 func create(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 	return func(ctx context.Context, in *schema.Key) (*schema.Key, error) {
 		if in.Owner == "" || in.Name == "" {
 			return nil, zip.ErrBadRequest("owner and name are required")
 		}
+		user, err := holder(ctx, in.Owner, in.User)
+		if err != nil {
+			return nil, err
+		}
+		in.User = user
 		if err := holdable(ctx, db, in.Owner, in.User, in.Scope); err != nil {
 			return nil, err
 		}
@@ -204,6 +213,11 @@ func update(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 		if o, _, ok := strings.Cut(k.User, "/"); ok && o != k.Owner && in.User != k.User {
 			return nil, zip.ErrBadRequest("a member's key names its member for as long as it exists")
 		}
+		// A person edits a key and never who it speaks for, the same rule create holds
+		// them to: repointing it would hand its secret's holder whoever it named next.
+		if _, ok := person(ctx); ok && in.User != k.User {
+			return nil, zip.ErrForbidden("a key names its holder for as long as it exists; create a new key instead")
+		}
 		if err := holdable(ctx, db, k.Owner, in.User, k.Scope); err != nil {
 			return nil, err
 		}
@@ -249,24 +263,51 @@ func del(db orm.DB) zip.TypedHandler[Ref, DeleteResponse] {
 	}
 }
 
-// holdable rejects a Key whose User names someone the key's org does not admit —
-// the write-side half of the F1 credential-forgery gate (store.holderOwningKey is
-// the authoritative half). Key.User and the credential halves are caller-supplied,
-// and the key write is authorized only on (Owner, Name), so a "/"-qualified User
-// naming "admin/z" or a victim tenant would otherwise persist and let a presented
-// sk- resolve to that identity. A bare username or an empty User resolves within
-// the key's own owner and is fine.
-//
-// No secret key speaks for a SuperAdmin, whoever writes it (ErrSuperAdminKey).
-// scope is the key's access class as it will be stored; a publishable key names
-// an org and no principal, so it is not asked.
-//
-// A MEMBER of the key's org whose home is elsewhere may hold a key there, because
-// that is how a person works for an org they were added to. Such a row is written
-// only by a caller that mints on a person's behalf — a confidential app, which the
-// Guard admitted to keys only by the key-mint capability, or a SuperAdmin — and
-// never by a tenant admin, who could otherwise mint a credential that speaks as
-// any of the org's members. And only while the membership exists.
+// person reports whether the caller writes keys for itself — a principal that is
+// neither a confidential client nor a SuperAdmin, both of which mint on a
+// person's behalf — and returns it.
+func person(ctx context.Context) (*principal.Principal, bool) {
+	p, ok := principal.From(ctx)
+	return p, ok && p != nil && p.App == nil && !p.Sudo
+}
+
+// self is the account a principal is, "<org>/<name>", or "" for one with no
+// account behind it.
+func self(p *principal.Principal) string {
+	if p == nil || p.Org == "" || p.User == "" {
+		return ""
+	}
+	return p.Org + "/" + p.User
+}
+
+// holder is the account a key created by the caller names. A person's key names
+// the person: an empty user is the caller, the caller named either way — bare
+// within the key's owner, or "<org>/<name>" — is the caller, and anyone else is
+// refused. A confidential client or a SuperAdmin names the holder it mints for,
+// which holdable then judges; so does a write with no principal, which the
+// authorization hook never admits to a route.
+func holder(ctx context.Context, owner, user string) (string, error) {
+	p, ok := person(ctx)
+	if !ok {
+		return user, nil
+	}
+	me := self(p)
+	if me == "" {
+		return "", zip.ErrForbidden("a key speaks for the account that creates it, and this caller has none")
+	}
+	if user == "" {
+		return me, nil
+	}
+	o, n, qualified := strings.Cut(user, "/")
+	if !qualified {
+		o, n = owner, user
+	}
+	if o+"/"+n != me {
+		return "", zip.ErrForbidden("a key you create speaks for you; only a SuperAdmin names another holder")
+	}
+	return me, nil
+}
+
 // application gates the application a key names. A token minted with the key
 // names that application as its client (azp), so a key may name only an
 // application of its own org — never another tenant's, and never one of the
@@ -292,6 +333,25 @@ func application(ctx context.Context, db orm.DB, owner, ref string) error {
 	return nil
 }
 
+// holdable rejects a Key whose User names someone the key's org does not admit —
+// the write-side half of the F1 credential-forgery gate (store.holderOwningKey is
+// the authoritative half). Key.User and the credential halves are caller-supplied,
+// and the key write is authorized only on (Owner, Name), so a "/"-qualified User
+// naming "admin/z" or a victim tenant would otherwise persist and let a presented
+// sk- resolve to that identity. A bare username or an empty User resolves within
+// the key's own owner and is fine.
+//
+// No secret key speaks for a SuperAdmin, whoever writes it (ErrSuperAdminKey).
+// scope is the key's access class as it will be stored; a publishable key names
+// an org and no principal, so it is not asked.
+//
+// A MEMBER of the key's org whose home is elsewhere may hold a key there, because
+// that is how a person works for an org they were added to. Such a row is written
+// only by a caller that mints on a person's behalf — a confidential app, which the
+// Guard admitted to keys only by the key-mint capability, or a SuperAdmin — or by
+// that member for themselves, and never by a tenant admin for anyone else, who
+// could otherwise mint a credential that speaks as any of the org's members. And
+// only while the membership exists.
 func holdable(ctx context.Context, db orm.DB, owner, user, scope string) error {
 	if err := operatorFree(owner, user, scope); err != nil {
 		return err
@@ -301,7 +361,7 @@ func holdable(ctx context.Context, db orm.DB, owner, user, scope string) error {
 		return nil
 	}
 	p, found := principal.From(ctx)
-	if !found || (p.App == nil && !p.Sudo) {
+	if !found || p == nil || (p.App == nil && !p.Sudo && user != self(p)) {
 		return zip.ErrBadRequest("key user must belong to the key's owner")
 	}
 	member, err := store.MemberKey(ctx, db, user, owner)
@@ -499,33 +559,37 @@ func MintUserKey(ctx context.Context, db orm.DB, owner, user, scope string) (str
 	return presented, nil
 }
 
-// MintAccountKey (re)mints the credential a SERVICE ACCOUNT presents and returns
-// both halves — the pk- its holder is known by and the sk- it authenticates with,
-// revealed once. Every caller that credentials an account goes through here, so a
-// tenant's first credential and every rotation after it land on ONE row: two
-// spellings of that row would leave the credential a signup handed out live
-// forever, unrevokable, beside the one a rotation says replaced it.
+// DefaultKeyName and DefaultKeyLabel name the API key an organization's founder
+// is issued when the org is founded: the row <org>/default, labelled "Default",
+// held by the founder.
+const (
+	DefaultKeyName  = "default"
+	DefaultKeyLabel = "Default"
+)
+
+// Issue (re)mints the secret key filed in owner at name, held by user
+// ("<org>/<name>") and labelled label, and returns both halves — the pk- its
+// holder is known by and the sk- it authenticates with, revealed once. The row
+// keeps the secret's digest and never the secret. Re-issuing the same (owner,
+// name) replaces that row, so a rotation leaves no second live credential beside
+// the one it replaced.
 //
-// The row is what the resolvers read. The account's own User row holds no
-// credential material at all — nothing resolves a secret from there, so a value
-// written to it authenticates nobody however carefully it was hashed.
-//
-// An account in the admin org is minted no key (ErrSuperAdminKey): the resolver
-// would refuse it, and a platform machine proves itself as an application for a
-// short-lived token instead.
-func MintAccountKey(ctx context.Context, db orm.DB, owner, account string) (access, secret string, err error) {
-	if strings.TrimSpace(owner) == "" || strings.TrimSpace(account) == "" {
-		return "", "", fmt.Errorf("keys: owner and account are required")
+// No key is issued that would speak for an account in the admin org
+// (ErrSuperAdminKey): the resolver would refuse it, and a SuperAdmin or platform
+// machine signs in for a short-lived token instead.
+func Issue(ctx context.Context, db orm.DB, owner, user, name, label string) (access, secret string, err error) {
+	if strings.TrimSpace(owner) == "" || strings.TrimSpace(user) == "" || strings.TrimSpace(name) == "" {
+		return "", "", fmt.Errorf("keys: owner, user and name are required")
 	}
-	if store.SuperAdminKey(&schema.Key{Owner: owner, User: owner + "/" + account}) {
+	if store.SuperAdminKey(&schema.Key{Owner: owner, User: user}) {
 		return "", "", ErrSuperAdminKey
 	}
 	access, secret = Mint("pk", ""), Mint("sk", "")
 	err = write(ctx, db, row{
 		owner:  owner,
-		name:   account + "-key",
-		user:   owner + "/" + account,
-		label:  "Service account key",
+		name:   name,
+		user:   user,
+		label:  label,
 		access: access,
 		secret: secret,
 		now:    time.Now().UTC().Format(time.RFC3339),
@@ -534,6 +598,20 @@ func MintAccountKey(ctx context.Context, db orm.DB, owner, account string) (acce
 		return "", "", err
 	}
 	return access, secret, nil
+}
+
+// MintAccountKey (re)mints the credential a SERVICE ACCOUNT presents, at
+// <owner>/<account>-key, and returns both halves (Issue). A service account's
+// first credential and every rotation after it land on that ONE row.
+//
+// The row is what the resolvers read. The account's own User row holds no
+// credential material at all — nothing resolves a secret from there, so a value
+// written to it authenticates nobody however carefully it was hashed.
+func MintAccountKey(ctx context.Context, db orm.DB, owner, account string) (access, secret string, err error) {
+	if strings.TrimSpace(owner) == "" || strings.TrimSpace(account) == "" {
+		return "", "", fmt.Errorf("keys: owner and account are required")
+	}
+	return Issue(ctx, db, owner, owner+"/"+account, account+"-key", "Service account key")
 }
 
 // row is one credential as a mint states it: who holds it, what it reaches, and

@@ -174,9 +174,8 @@ func TestSignup_ShortNameStillGetsAnOrg(t *testing.T) {
 	}
 }
 
-// A long address still gets an org. The org's own credential is named after the
-// slug, so a slug at the bound leaves no room for that name — and the person
-// would be refused at the end of their signup over a name they never chose.
+// A long address still gets an org, and its slug stays within the bound every
+// org slug obeys.
 func TestSignup_LongNameStillGetsAnOrg(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-cloud", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, orgChoice: "create"})
@@ -193,12 +192,8 @@ func TestSignup_LongNameStillGetsAnOrg(t *testing.T) {
 		}
 		data, _ := env["data"].(map[string]any)
 		slug, _ := data["owner"].(string)
-		if len(slug) > maxOrgSlug {
-			t.Fatalf("slug %q is %d characters, over the %d bound", slug, len(slug), maxOrgSlug)
-		}
-		// The org's default credential is a user row, so its name must be legal too.
-		if _, err := schema.Username(slug + "-default"); err != nil {
-			t.Fatalf("slug %q yields an illegal credential name: %v", slug, err)
+		if slug == "" || slug == "hanzo" || len(slug) > maxOrgSlug {
+			t.Fatalf("slug %q: want an org of its own within the %d-character bound", slug, maxOrgSlug)
 		}
 	}
 }

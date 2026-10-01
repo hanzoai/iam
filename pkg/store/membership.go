@@ -235,15 +235,10 @@ func FoundTooMany(ctx context.Context, db orm.DB, founder string) (bool, error) 
 	return len(orgs)+len(dead) >= MaxFoundedOrgs, nil
 }
 
-// OrgCredential is the name of an org's own metered credential: the service
-// account provisioning mints beside the org ("<org>-default").
-func OrgCredential(org string) string { return org + "-default" }
-
-// OrgAccounts lists the accounts that live in org (User.Owner == org), other than
-// the org's own credential. An org is not removable while any remain: deleting the
-// org row would free its name with its people still filed under it, and whoever
-// created the next org of that name would find them already inside, admins
-// included.
+// OrgAccounts lists the accounts that live in org (User.Owner == org). An org is
+// not removable while any remain: deleting the org row would free its name with
+// its people still filed under it, and whoever created the next org of that name
+// would find them already inside, admins included.
 func OrgAccounts(ctx context.Context, db orm.DB, org string) ([]*schema.User, error) {
 	if org == "" {
 		return nil, nil
@@ -254,15 +249,11 @@ func OrgAccounts(ctx context.Context, db orm.DB, org string) ([]*schema.User, er
 	}
 	out := users[:0]
 	for _, u := range users {
-		if u != nil && !isOrgCredential(u, org) {
+		if u != nil {
 			out = append(out, u)
 		}
 	}
 	return out, nil
-}
-
-func isOrgCredential(u *schema.User, org string) bool {
-	return u.Name == OrgCredential(org) && u.Type == schema.ServiceAccount
 }
 
 // deletable is any stored row.
@@ -380,9 +371,9 @@ func PlatformAppsServing(ctx context.Context, db orm.DB, org string) ([]*schema.
 	return out, nil
 }
 
-// ForgetOrg removes every row in orgRows that names org, and the org's own
-// credential account. It is the companion to deleting the org itself, run only
-// once OrgAccounts and PlatformAppsServing are empty.
+// ForgetOrg removes every row in orgRows that names org. It is the companion to
+// deleting the org itself, run only once OrgAccounts and PlatformAppsServing are
+// empty.
 //
 // It is idempotent: forgetting an org that holds nothing removes nothing and is
 // not an error, so a retried or racing delete is safe.
@@ -400,17 +391,6 @@ func ForgetOrg(ctx context.Context, db orm.DB, org string) error {
 		}
 		for _, row := range rows {
 			if err := row.DeleteCtx(ctx); err != nil && !errors.Is(err, orm.ErrNotFound) {
-				return err
-			}
-		}
-	}
-	users, err := orm.TypedQuery[schema.User](db).Filter("Owner=", org).GetAll(ctx)
-	if err != nil && !errors.Is(err, orm.ErrNotFound) {
-		return err
-	}
-	for _, u := range users {
-		if u != nil && isOrgCredential(u, org) {
-			if err := u.DeleteCtx(ctx); err != nil {
 				return err
 			}
 		}

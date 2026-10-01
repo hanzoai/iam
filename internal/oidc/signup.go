@@ -435,11 +435,10 @@ func charter(ctx context.Context, db orm.DB, user *schema.User) (string, error) 
 // found derives the account's org name, founds it and moves the account in.
 func found(ctx context.Context, db orm.DB, user *schema.User) (string, error) {
 	// personalOrgSlug caps its derivation at maxOrgSlug, and the walk appends to
-	// what it returns, so the base is trimmed to leave the suffix room. A slug over
-	// that bound cannot be founded at all: provision derives the org's credential
-	// name from it, and that name has a bound of its own — so an account whose
-	// address is merely long would otherwise be refused at the end of its signup,
-	// for a rule about a name it never chose.
+	// what it returns, so the base is trimmed to leave the suffix room. orgSlugFree
+	// refuses a slug over that bound, so an account whose address is merely long
+	// would otherwise walk past every candidate and be refused at the end of its
+	// signup, for a rule about a name it never chose.
 	base := personalOrgSlug(user.Name)
 	if room := maxOrgSlug - len(strconv.Itoa(nameAttempts)); len(base) > room {
 		base = base[:room]
