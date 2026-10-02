@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
@@ -356,6 +357,15 @@ type Sender = otp.Sender
 // transport reaches a person. A host that cannot say that binds nothing, and every
 // screen keeps offering only the methods that work.
 func BindSender(s Sender) { otp.BindSender(s) }
+
+// SetIdentifierAdmit installs the count the identifier lookup spends its questions
+// on, in place of each process's own: a host running several replicas installs one
+// they share, so a client is held to one limit between them. f is handed the client
+// and the per-client and overall bounds, and charges what it admits. Call it before
+// serving; a host that never calls it keeps the per-process count.
+func SetIdentifierAdmit(f func(client string, limit, ceiling int, window time.Duration) bool) {
+	oidc.Admit = f
+}
 
 // DeliveryConfigured reports whether a verification code can actually reach a
 // person, so a host can assert on its own wiring. It answers from the bound

@@ -52,7 +52,8 @@ type identity struct {
 // A client is an address the edge reports, and an edge can be lied to, so the
 // whole process also answers at most identifierCeiling in a window: past it the
 // screen falls back to a code, which serves a new address and a known one alike.
-// Each replica counts for itself, so N replicas answer up to N times either bound.
+// Each replica counts for itself, so N replicas answer up to N times either bound,
+// unless the host installs a count its replicas share (Admit).
 const (
 	identifierLimit   = 20
 	identifierCeiling = 10_000
@@ -74,6 +75,22 @@ var tallies = struct {
 	all   tally
 	swept time.Time
 }{by: map[netip.Addr]*tally{}}
+
+// Admit, when set, decides in place of this process's own count. A host whose
+// replicas share a store installs one (server.SetIdentifierAdmit), so between them
+// they answer identifierLimit per client and identifierCeiling in all, once. It is
+// handed the client and both bounds, and charges what it admits. It is set before
+// the server serves and never changed.
+var Admit func(client string, limit, ceiling int, window time.Duration) bool
+
+// admitted spends one question from client on the host's count when it installed
+// one, else on this process's.
+func admitted(client netip.Addr, now time.Time) bool {
+	if f := Admit; f != nil {
+		return f(client.String(), identifierLimit, identifierCeiling, identifierWindow)
+	}
+	return admit(client, now)
+}
 
 // admit spends one of client's questions, and one of the process's, in the window
 // now falls in, or refuses.
@@ -142,7 +159,7 @@ func authIdentifier(db orm.DB) zip.TypedHandler[identifierBody, httpx.Answer] {
 		if in.ClientId == "" || !strings.Contains(address, "@") {
 			return httpx.Bad(400, "clientId and an email address are required", ""), nil
 		}
-		if !admit(in.client(), nowFunc()) {
+		if !admitted(in.client(), nowFunc()) {
 			return httpx.Bad(429, "too many addresses looked up; try again in a few minutes", ""), nil
 		}
 		app, err := store.GetApplicationByClientId(ctx, db, in.ClientId)

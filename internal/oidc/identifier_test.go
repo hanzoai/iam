@@ -216,3 +216,22 @@ func TestIdentifierBoundsEveryClientTogether(t *testing.T) {
 		t.Fatalf("the sweep left %d clients, want 1", len(tallies.by))
 	}
 }
+
+// A host that shares a count across replicas decides in place of the process: it is
+// asked with the client and both bounds, and its answer is the answer.
+func TestAHostCountDecidesInPlaceOfTheProcess(t *testing.T) {
+	var asked []string
+	Admit = func(client string, limit, ceiling int, window time.Duration) bool {
+		asked = append(asked, fmt.Sprintf("%s %d %d %v", client, limit, ceiling, window))
+		return len(asked) == 1
+	}
+	t.Cleanup(func() { Admit = nil })
+	ip := netip.MustParseAddr("198.51.100.7")
+	if !admitted(ip, time.Now()) || admitted(ip, time.Now()) {
+		t.Fatal("the host's answers were not the answers")
+	}
+	want := fmt.Sprintf("198.51.100.7 %d %d %v", identifierLimit, identifierCeiling, identifierWindow)
+	if len(asked) != 2 || asked[0] != want {
+		t.Fatalf("asked %q, want %q twice", asked, want)
+	}
+}
