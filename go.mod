@@ -29,8 +29,8 @@ require (
 	github.com/google/uuid v1.6.1-0.20241114170450-2d3c2a9cc518
 	github.com/hanzoai/account v0.2.1
 	github.com/hanzoai/authz v1.10.44
-	github.com/hanzoai/orm v0.6.31
-	github.com/jackc/pgx/v5 v5.9.2
+	github.com/hanzoai/orm v0.6.39
+	github.com/jackc/pgx/v5 v5.11.0
 	github.com/luxfi/crypto v1.20.2
 	github.com/luxwallet/connect/go v0.1.4
 	github.com/pquerna/otp v1.5.0
@@ -93,7 +93,7 @@ require (
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/zap-proto/go v1.8.3 // indirect
-	github.com/zap-proto/http v0.3.5 // indirect
+	github.com/zap-proto/http v0.3.11 // indirect
 	github.com/zap-proto/mcp v1.0.5 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/mock v0.6.0 // indirect
