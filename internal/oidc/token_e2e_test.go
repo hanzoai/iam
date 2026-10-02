@@ -8,6 +8,7 @@ import (
 	"crypto/rsa"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,6 +27,9 @@ import (
 func openTestDB(t *testing.T) orm.DB {
 	t.Helper()
 	_ = schema.Kinds() // force the schema package init() (kind registration)
+	if addr := os.Getenv("IAM_SQL_ADDR"); addr != "" {
+		return sqlScratchDB(t, strings.TrimPrefix(addr, "sql://"))
+	}
 	dir := t.TempDir()
 	db, err := orm.OpenSQLite(&ormdb.SQLiteDBConfig{
 		Path:   filepath.Join(dir, "iamtest.db"),
