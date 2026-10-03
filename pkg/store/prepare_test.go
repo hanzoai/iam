@@ -6,9 +6,11 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -88,9 +90,9 @@ func TestPrepareMakesAHalfKeyedStoreWhole(t *testing.T) {
 		t.Fatalf("before Prepare, jo: %v, %v; want three/jo alone (the bug)", u, err)
 	}
 
-	n, err := Prepare(ctx, db)
-	if err != nil || n != 2 {
-		t.Fatalf("Prepare wrote %d, %v; want Alice and two/jo's membership", n, err)
+	p, err := Prepare(ctx, db)
+	if err != nil || p.Keyed != 2 || len(p.Skipped) != 0 {
+		t.Fatalf("Prepare keyed %d, skipped %v, %v; want Alice and two/jo's membership", p.Keyed, p.Skipped, err)
 	}
 	if u, err := GetUserByName(ctx, db, "acme", "ALICE"); err != nil || u == nil || u.Name != "Alice" {
 		t.Fatalf("ALICE after Prepare: %v, %v", u, err)
@@ -101,8 +103,8 @@ func TestPrepareMakesAHalfKeyedStoreWhole(t *testing.T) {
 	if _, err := MemberByIdentifier(ctx, db, "shared", "jo"); !errors.Is(err, ErrMemberAmbiguous) {
 		t.Fatalf("jo after Prepare: %v; want ErrMemberAmbiguous", err)
 	}
-	if n, err := Prepare(ctx, db); err != nil || n != 0 {
-		t.Fatalf("a second Prepare wrote %d, %v; want nothing", n, err)
+	if p, err := Prepare(ctx, db); err != nil || p.Keyed != 0 {
+		t.Fatalf("a second Prepare keyed %d, %v; want nothing", p.Keyed, err)
 	}
 }
 
@@ -119,9 +121,9 @@ func TestPrepareKeysPastOnePage(t *testing.T) {
 	}
 	unkey(t, path, `1 = 1`)
 
-	n, err := Prepare(ctx, db)
-	if want := users + preparePage + 3; err != nil || n != want {
-		t.Fatalf("Prepare wrote %d, %v; want every user and membership, %d", n, err, want)
+	p, err := Prepare(ctx, db)
+	if want := users + preparePage + 3; err != nil || p.Keyed != want {
+		t.Fatalf("Prepare keyed %d, %v; want every user and membership, %d", p.Keyed, err, want)
 	}
 	for _, i := range []int{0, preparePage, 2*preparePage + 1, users - 1} {
 		name := fmt.Sprintf("USER%04d", i)
@@ -146,8 +148,8 @@ func TestPrepareKeysAgainAfterARollback(t *testing.T) {
 	unkey(t, path, `id = 'acme/Dana'`) // the rolled-back binary saved Dana
 	putUser(t, db, "acme", "Erin", "")
 	unkey(t, path, `id = 'acme/Erin'`) // and created Erin
-	if n, err := Prepare(ctx, db); err != nil || n != 2 {
-		t.Fatalf("Prepare after the roll forward wrote %d, %v; want Dana and Erin", n, err)
+	if p, err := Prepare(ctx, db); err != nil || p.Keyed != 2 {
+		t.Fatalf("Prepare after the roll forward keyed %d, %v; want Dana and Erin", p.Keyed, err)
 	}
 	for _, name := range []string{"DANA", "ERIN"} {
 		if u, err := GetUserByName(ctx, db, "acme", name); err != nil || u == nil {
@@ -218,5 +220,79 @@ func TestOpenPreparesTheStore(t *testing.T) {
 	defer db.Close()
 	if u, err := GetUserByName(context.Background(), db, "acme", "GAIL"); err != nil || u == nil {
 		t.Fatalf("GAIL after Open: %v, %v", u, err)
+	}
+}
+
+// putRaw stores a document as it is, the way an older or foreign writer might.
+func putRaw(t *testing.T, db orm.DB, kind, id, doc string) {
+	t.Helper()
+	if _, err := db.Put(context.Background(), db.NewKey(kind, id, 0, nil), json.RawMessage(doc)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func rawDoc(t *testing.T, db orm.DB, kind, id string) map[string]any {
+	t.Helper()
+	var raw json.RawMessage
+	if err := db.Get(context.Background(), db.NewKey(kind, id, 0, nil), &raw); err != nil {
+		t.Fatalf("read %s: %v", id, err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+// One row this binary cannot decode whole never stops the open. A user whose other
+// fields would fail a typed decode is keyed from its name; one whose name cannot be
+// read is skipped, reported and left exactly as it was; the rest are keyed.
+func TestPrepareSurvivesARowItCannotRead(t *testing.T) {
+	db, _ := fileDB(t)
+	ctx := context.Background()
+	putRaw(t, db, "users", "acme/Bad", `{"owner":"acme","name":"Bad","isAdmin":"yes","createdTime":"2025-01-01T00:00:00Z"}`)
+	putRaw(t, db, "users", "acme/nameless", `{"owner":"acme","name":5}`)
+	putRaw(t, db, "users", "acme/Good", `{"owner":"acme","name":"Good"}`)
+
+	p, err := Prepare(ctx, db)
+	if err != nil {
+		t.Fatalf("Prepare failed the open over one row: %v", err)
+	}
+	if p.Keyed != 2 || len(p.Skipped) != 1 || p.Skipped[0].ID != "acme/nameless" || !strings.Contains(p.Skipped[0].Why, "not a string") {
+		t.Fatalf("keyed %d, skipped %+v; want Bad and Good keyed, nameless skipped", p.Keyed, p.Skipped)
+	}
+	bad := rawDoc(t, db, "users", "acme/Bad")
+	if bad["nameKey"] != schema.Fold("Bad") || bad["isAdmin"] != "yes" || bad["createdTime"] != "2025-01-01T00:00:00Z" {
+		t.Fatalf("the bad row after Prepare: %v; want its key added and every other field as stored", bad)
+	}
+	if _, ok := bad["updatedAt"]; ok {
+		t.Fatalf("Prepare stamped the row: %v", bad)
+	}
+	if n := rawDoc(t, db, "users", "acme/nameless"); n["nameKey"] != nil || n["name"] != float64(5) {
+		t.Fatalf("the skipped row was changed: %v", n)
+	}
+	if _, err := Open("sqlite", t.TempDir()+"/iam.db", ""); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+}
+
+// A keyed row's timestamps are the ones it was stored with.
+func TestPrepareKeepsTheTimestamps(t *testing.T) {
+	db, path := fileDB(t)
+	ctx := context.Background()
+	putUser(t, db, "acme", "Hal", "")
+	unkey(t, path, `1 = 1`)
+	before := rawDoc(t, db, "users", "acme/Hal")
+	if _, err := Prepare(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	after := rawDoc(t, db, "users", "acme/Hal")
+	for _, f := range []string{"createdAt", "updatedAt", "createdTime", "updatedTime"} {
+		if before[f] != after[f] {
+			t.Fatalf("%s moved from %v to %v", f, before[f], after[f])
+		}
+	}
+	if after["nameKey"] != schema.Fold("Hal") {
+		t.Fatalf("not keyed: %v", after)
 	}
 }

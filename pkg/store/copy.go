@@ -26,9 +26,10 @@ import (
 // target records the source no longer has, so the last pass, run with writes
 // frozen, leaves the target an exact copy. Verify then compares every record.
 
-// copyPage is how many records one read takes. Records are read in id order with
-// a keyset filter (id > the last one seen), never by offset, so a write that
-// lands mid-copy cannot shift a page and skip a record.
+// copyPage is how many records one read takes. Records are read in key order from
+// the last key seen (orm After), never by offset, so a write that lands mid-copy
+// cannot shift a page and skip a record. The key is the storage key, which a user's
+// document does not carry: its "id" is the user's UUID, or nothing.
 const copyPage = 5000
 
 // CopyReport is what one kind's copy did.
@@ -148,12 +149,8 @@ func each(ctx context.Context, db orm.DB, kind string, fn func(id string, doc js
 	}
 	walked, last := 0, ""
 	for {
-		q := db.Query(kind).Order("id").Limit(copyPage)
-		if last != "" {
-			q = q.Filter("id>", last)
-		}
 		var docs []json.RawMessage
-		keys, err := q.GetAll(ctx, &docs)
+		keys, err := db.Query(kind).After(last).Limit(copyPage).GetAll(ctx, &docs)
 		if err != nil {
 			return fmt.Errorf("read after %q: %w", last, err)
 		}
@@ -173,20 +170,25 @@ func each(ctx context.Context, db orm.DB, kind string, fn func(id string, doc js
 		}
 	}
 	if walked != total {
-		return fmt.Errorf("%d of %d records were reached by id: the rest carry no id in their document", walked, total)
+		return fmt.Errorf("%d of %d records were reached in key order", walked, total)
 	}
 	return nil
 }
 
 // copyHash is the identity of a document: its JSON decoded and encoded again with
 // object keys sorted and numbers kept as written, so the same record hashes the
-// same whichever store wrote it out.
+// same whichever store wrote it out. A NameKey is left out: it is derived from the
+// name (Prepare), so a record keyed in one store and not yet in the other is the
+// same record.
 func copyHash(doc json.RawMessage) [32]byte {
 	dec := json.NewDecoder(bytes.NewReader(doc))
 	dec.UseNumber()
 	var v any
 	if err := dec.Decode(&v); err != nil {
 		return sha256.Sum256(doc)
+	}
+	if m, ok := v.(map[string]any); ok {
+		delete(m, "nameKey")
 	}
 	canon, err := json.Marshal(v)
 	if err != nil {

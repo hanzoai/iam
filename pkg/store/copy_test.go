@@ -5,6 +5,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"testing"
@@ -142,4 +143,74 @@ func TestCopyToSQL(t *testing.T) {
 		}
 	})
 	copyRoundTrip(t, memDB(t), dst)
+}
+
+// More users than one page, half carrying a UUID id of their own and half carrying
+// none: the walk is by storage key, so every one is copied and the two stores
+// verify the same. The id a user's document carries is not its key, so a walk that
+// sorted by it and resumed from the key lost its place at the first page.
+func TestCopyPastOnePageWithAndWithoutUUIDs(t *testing.T) {
+	src, dst := memDB(t), memDB(t)
+	ctx := context.Background()
+	const n = copyPage + 7
+	for i := 0; i < n; i++ {
+		u := orm.New[schema.User](src)
+		u.Owner, u.Name = "acme", fmt.Sprintf("u%05d", i)
+		if i%2 == 0 {
+			// A UUID-shaped id that sorts against the storage key in no useful way.
+			u.Id = fmt.Sprintf("%08x-0000-4000-8000-%012d", (n-i)*7919, i)
+		}
+		u.SetId("acme/" + u.Name)
+		if err := u.CreateCtx(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reports, err := Copy(ctx, src, dst, false)
+	if err != nil {
+		t.Fatalf("copy: %v", err)
+	}
+	for _, r := range reports {
+		if r.Kind == "users" && (r.Source != n || r.Written != n) {
+			t.Fatalf("users: %+v; want %d read and written", r, n)
+		}
+	}
+	diffs, err := Verify(ctx, src, dst)
+	if err != nil || len(diffs) != 0 {
+		t.Fatalf("verify: %d diffs (%v), %v", len(diffs), firstDiffs(diffs), err)
+	}
+	if again, err := Copy(ctx, src, dst, false); err != nil || total(again, func(r CopyReport) int { return r.Written }) != 0 {
+		t.Fatalf("a second copy wrote %d, %v", total(again, func(r CopyReport) int { return r.Written }), err)
+	}
+}
+
+// A record keyed in one store and not yet in the other is the same record.
+func TestVerifyIgnoresTheDerivedNameKey(t *testing.T) {
+	src, dst := memDB(t), memDB(t)
+	ctx := context.Background()
+	copySeedUser(t, src, "acme", "Ivy", "")
+	if _, err := Copy(ctx, src, dst, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := dst.Put(ctx, dst.NewKey("users", "acme/Ivy", 0, nil), json.RawMessage(`{"owner":"acme","name":"Ivy","email":""}`)); err != nil {
+		t.Fatal(err)
+	}
+	var raw json.RawMessage
+	_ = src.Get(ctx, src.NewKey("users", "acme/Ivy", 0, nil), &raw)
+	var m map[string]any
+	_ = json.Unmarshal(raw, &m)
+	delete(m, "nameKey")
+	plain, _ := json.Marshal(m)
+	if _, err := dst.Put(ctx, dst.NewKey("users", "acme/Ivy", 0, nil), json.RawMessage(plain)); err != nil {
+		t.Fatal(err)
+	}
+	if diffs, err := Verify(ctx, src, dst); err != nil || len(diffs) != 0 {
+		t.Fatalf("an unkeyed copy of a keyed record differs: %v, %v", diffs, err)
+	}
+}
+
+func firstDiffs(d []Diff) []Diff {
+	if len(d) > 3 {
+		return d[:3]
+	}
+	return d
 }
