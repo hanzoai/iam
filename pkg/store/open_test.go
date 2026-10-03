@@ -9,9 +9,10 @@ import (
 )
 
 // TestOpenBackends covers backend selection and that the ZAP address is an
-// explicit input, not read from the environment: Open is a pure function of its
+// explicit input, not read from the environment: open is a pure function of its
 // (backend, path, addr) arguments. The sql/datastore backends connect lazily,
-// so Open returns a usable handle without a live hanzoai/sql to dial.
+// so open returns a usable handle without a live hanzoai/sql to dial; Open then
+// prepares the store, which does dial (TestOpenPreparesTheStore).
 func TestOpenBackends(t *testing.T) {
 	db, err := Open("sqlite", filepath.Join(t.TempDir(), "iam.db"), "")
 	if err != nil {
@@ -32,9 +33,9 @@ func TestOpenBackends(t *testing.T) {
 		{"datastore", "datastore://127.0.0.1:19655"},
 		{"datastore", ""},
 	} {
-		db, err := Open(tc.backend, "", tc.addr)
+		db, err := open(tc.backend, "", tc.addr)
 		if err != nil {
-			t.Fatalf("Open(%q,%q): %v", tc.backend, tc.addr, err)
+			t.Fatalf("open(%q,%q): %v", tc.backend, tc.addr, err)
 		}
 		_ = db.Close()
 	}

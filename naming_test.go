@@ -4,6 +4,7 @@
 package main
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -47,7 +48,7 @@ func TestNoNewVerbNounAddresses(t *testing.T) {
 		"resolve": true, "exit": true, "impersonate": true,
 	}
 
-	db, err := server.OpenSQLite(":memory:")
+	db, err := server.OpenSQLite(filepath.Join(t.TempDir(), "iam.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

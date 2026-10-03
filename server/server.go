@@ -21,7 +21,6 @@ import (
 
 	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
-	ormdb "github.com/hanzoai/orm/db"
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/feature"
@@ -137,13 +136,11 @@ func unavailable(c *zip.Ctx) error {
 	})
 }
 
-// OpenSQLite opens an embedded SQLite store for iam at path (WAL). The host may
-// instead pass its own orm.DB (e.g. hanzoai/sql over ZAP) to Route.
+// OpenSQLite opens an embedded SQLite store for iam at path (WAL), prepared to
+// serve (store.Open). A host may instead pass its own orm.DB (e.g. hanzoai/sql over
+// ZAP) to Route; one it opened itself it must first pass to store.Prepare.
 func OpenSQLite(path string) (orm.DB, error) {
-	return orm.OpenSQLite(&ormdb.SQLiteDBConfig{
-		Path:   path,
-		Config: ormdb.SQLiteConfig{BusyTimeout: 5000, JournalMode: "WAL"},
-	})
+	return store.Open("sqlite", path, "")
 }
 
 // Seed bootstraps the config (orgs/apps/providers/certs) from an init_data.json

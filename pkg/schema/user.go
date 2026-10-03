@@ -57,9 +57,12 @@ type User struct {
 	UpdatedTime string `json:"updatedTime"`
 	DeletedTime string `json:"deletedTime,omitempty"`
 
-	// NameKey is Fold(Name), derived on every save (BeforeCreate, BeforeUpdate):
-	// the indexed key a case-insensitive username lookup reads (store.GetUserByName).
-	NameKey string `json:"nameKey,omitempty" orm:"index"`
+	// NameKey is Fold(Name), derived on every save (BeforeCreate, BeforeUpdate) and
+	// on every open for a row saved without it (store.Prepare): the indexed key a
+	// case-insensitive username lookup reads (store.GetUserByName). It is always
+	// written, empty or not, so a row that has been keyed is never mistaken for one
+	// that has not.
+	NameKey Folded `json:"nameKey" orm:"index"`
 
 	ExternalId string `json:"externalId,omitempty" orm:"index"`
 	Type       string `json:"type,omitempty"`
@@ -419,12 +422,12 @@ func (u *User) Picture() string {
 // BeforeCreate and BeforeUpdate derive NameKey from Name on every save the model
 // makes, so the stored key always folds the name it is stored beside.
 func (u *User) BeforeCreate() error {
-	u.NameKey = Fold(u.Name)
+	u.NameKey = Folded(Fold(u.Name))
 	return nil
 }
 
 // BeforeUpdate is BeforeCreate for a save of an existing user.
 func (u *User) BeforeUpdate(*User) error {
-	u.NameKey = Fold(u.Name)
+	u.NameKey = Folded(Fold(u.Name))
 	return nil
 }

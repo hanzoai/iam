@@ -4,6 +4,7 @@
 package schema
 
 import (
+	"encoding/json"
 	"strings"
 	"unicode"
 )
@@ -25,4 +26,17 @@ func Fold(s string) string {
 		}
 		return least
 	}, s)
+}
+
+// Folded is a name's Fold, stored beside the name so a case-insensitive lookup is
+// an indexed equality. It is derived, never accepted: a save writes it from the
+// name, and the published schema says so (JSONSchema).
+type Folded string
+
+// MarshalJSON writes the key as the string it is.
+func (f Folded) MarshalJSON() ([]byte, error) { return json.Marshal(string(f)) }
+
+// JSONSchema states the key's wire shape: a string a client reads and never sets.
+func (Folded) JSONSchema() map[string]any {
+	return map[string]any{"type": "string", "readOnly": true}
 }

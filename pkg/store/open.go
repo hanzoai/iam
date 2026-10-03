@@ -31,13 +31,11 @@ func Open(backend, path, addr string) (orm.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Rows stored before NameKey existed get it once per store. Not fatal: until it
-	// lands, a case-insensitive lookup misses only those old rows, and the next open
-	// tries again, because the store records the migration only when it is done.
-	if n, err := BackfillNameKeys(context.Background(), db); err != nil {
-		fmt.Fprintf(os.Stderr, "iam: name key backfill incomplete, a case-insensitive lookup may miss older rows: %v\n", err)
-	} else if n > 0 {
-		fmt.Fprintf(os.Stderr, "iam: wrote the name key on %d stored row(s)\n", n)
+	// A store is served only once it is prepared (Prepare): a case-insensitive
+	// lookup that cannot see every row would let a name be registered twice.
+	if _, err := Prepare(context.Background(), db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("prepare the identity store: %w", err)
 	}
 	return db, nil
 }

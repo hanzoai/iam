@@ -29,7 +29,7 @@ require (
 	github.com/google/uuid v1.6.1-0.20241114170450-2d3c2a9cc518
 	github.com/hanzoai/account v0.2.1
 	github.com/hanzoai/authz v1.10.44
-	github.com/hanzoai/orm v0.6.40
+	github.com/hanzoai/orm v0.6.42
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/luxfi/crypto v1.20.2
 	github.com/luxwallet/connect/go v0.1.4

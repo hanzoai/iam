@@ -36,9 +36,10 @@ type Membership struct {
 	User string `json:"user" orm:"index"` // the user id, "<homeOrg>/<username>"
 	Team string `json:"team" orm:"index"` // the team name, owner-scoped by Org
 
-	// NameKey is Fold of User's username half, derived on every save: the indexed
-	// key that finds an org's member by name (store.MemberByIdentifier).
-	NameKey string `json:"nameKey,omitempty" orm:"index"`
+	// NameKey is Fold of User's username half, derived on every save and on every
+	// open for a row saved without it (store.Prepare): the indexed key that finds an
+	// org's member by name (store.MemberByIdentifier). Always written.
+	NameKey Folded `json:"nameKey" orm:"index"`
 
 	// The SCOPE. Org is the tenant and is always set. Workspace narrows the grant
 	// to one workspace inside it; Project narrows it further, and requires
@@ -109,7 +110,7 @@ func (m *Membership) BeforeUpdate(*Membership) error {
 }
 
 // MemberKey is the NameKey of a membership held by the user id "<home>/<name>".
-func MemberKey(user string) string {
+func MemberKey(user string) Folded {
 	_, name, _ := strings.Cut(user, "/")
-	return Fold(name)
+	return Folded(Fold(name))
 }
