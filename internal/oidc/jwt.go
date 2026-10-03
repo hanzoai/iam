@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	policy "github.com/hanzoai/authz"
 
 	"github.com/hanzoai/iam/pkg/schema"
 )
@@ -135,11 +136,7 @@ type Claims struct {
 	// disagree about who belongs where — a second list assembled from a second
 	// query is how a consumer comes to grant on stale membership.
 	//
-	// It lists MEMBERSHIP, so "admin" among a person's groups says they belong to
-	// the reserved org, not that they are a SuperAdmin: a brand org's person added
-	// to it appears here too. SuperAdmin is the person's own org being "admin",
-	// which is the FIRST entry of `orgs` (authz.Claims.Sudo). A relying party that
-	// grants platform authority on `groups` grants it by membership.
+	// A reserved org appears here only for a SuperAdmin.
 	Groups []string `json:"groups,omitempty"`
 	// Wallets is the chain-qualified addresses this person has PROVED control
 	// of — each one the result of a CAIP-122 challenge IAM minted, bound to its
@@ -210,6 +207,8 @@ type Signer struct {
 	kid    string // JWKS key id — the Cert name
 	alg    string // JOSE alg — "RS256" | "ES256" | … | "MLDSA65"
 	issuer string
+	// trail records a SuperAdmin token; a Signer without one refuses to sign it.
+	trail func(Claims) error
 }
 
 // NewSignerFromCert builds a Signer from a Cert, selecting the algorithm from
@@ -296,24 +295,21 @@ func (s *Signer) claims(id Identity, owner string, aud jwt.ClaimStrings, azp, sc
 		Azp:               azp,
 		TokenType:         kind,
 		Orgs:              id.Orgs,
-		Groups:            groupsOf(id.Orgs),
+		Groups:            groupsOf(id.Orgs, Claims{Type: id.Type, Orgs: id.Orgs}.sudo()),
 		Assumed:           id.Assumed,
 		Wallets:           id.Wallets,
 		DID:               id.DID,
 	}, nil
 }
 
-// groupsOf flattens the membership set to the names a groups claim carries.
-// Nil in, nil out, so a machine token omits the claim exactly as it omits orgs.
-func groupsOf(orgs []schema.OrgRef) []string {
-	if len(orgs) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(orgs))
+// groupsOf is the membership set's org names, reserved orgs only for a SuperAdmin.
+func groupsOf(orgs []schema.OrgRef, sudo bool) []string {
+	var out []string
 	for _, o := range orgs {
-		if o.Org != "" {
-			out = append(out, o.Org)
+		if o.Org == "" || (policy.IsReservedOrg(o.Org) && !sudo) {
+			continue
 		}
+		out = append(out, o.Org)
 	}
 	return out
 }
@@ -396,12 +392,38 @@ func (s *Signer) SignID(app *schema.Application, id Identity, scope, nonce strin
 
 // signClaims is the single choke point that turns a claim set into a signed
 // compact JWS under this signer's fixed (method, key, kid).
+// A SuperAdmin token is returned only once its trail record is written.
 func (s *Signer) signClaims(claims Claims) (string, error) {
+	sudo := claims.sudo()
+	if sudo && s.trail == nil {
+		return "", errNoTrail
+	}
 	tok := jwt.NewWithClaims(s.method, claims)
 	if s.kid != "" {
 		tok.Header["kid"] = s.kid
 	}
-	return tok.SignedString(s.key)
+	signed, err := tok.SignedString(s.key)
+	if err != nil {
+		return "", err
+	}
+	if sudo {
+		if err := s.trail(claims); err != nil {
+			return "", err
+		}
+	}
+	return signed, nil
+}
+
+// errNoTrail refuses a SuperAdmin token from a signer with no trail.
+var errNoTrail = errors.New("jwt: a SuperAdmin token is signed only where its record is written")
+
+// sudo is authz.Claims.Sudo over these claims.
+func (c Claims) sudo() bool {
+	p := policy.Claims{Type: c.Type}
+	for _, o := range c.Orgs {
+		p.Orgs = append(p.Orgs, policy.Membership{Org: o.Org, Role: policy.Role(o.Role)})
+	}
+	return p.Sudo()
 }
 
 // PublicKey returns the signer's RSA public key, or nil for a non-RSA signer

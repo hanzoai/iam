@@ -238,43 +238,32 @@ func TestBillingAccountForOnlyAdminsSpendThePool(t *testing.T) {
 	}
 }
 
-// A federated app reads a groups claim as STRINGS, so the membership set has to
-// appear under that name as flat org names — `orgs` carries a role per org and
-// stringifies to `map[Org:admin Role:admin]`, which matches nothing.
-//
-// The case that matters is the operator anchored in a BRAND org: the reserved
-// org is in their membership set and never their home org, so a consumer that
-// maps groups→admin must see `admin` here. Reading the home org instead denies
-// every operator who also does ordinary work.
-func TestSign_GroupsCarriesMembershipNotTheHomeOrg(t *testing.T) {
+// groups names a reserved org for a SuperAdmin only.
+func TestSign_GroupsNameAReservedOrgForASuperAdminOnly(t *testing.T) {
 	s := NewRSASigner(testKey(t), "cert-hanzo", "https://iam.hanzo.ai")
+	s.trail = func(Claims) error { return nil }
 	now := time.Unix(1_800_000_000, 0)
-	id := Identity{Id: "hanzo/z", Email: "z@hanzo.ai", Name: "z", Orgs: []schema.OrgRef{
-		{Org: "hanzo", Role: store.RoleAdmin}, // home org, first
-		{Org: "admin", Role: store.RoleAdmin}, // the operator grant
-		{Org: "lux", Role: store.RoleAdmin},
-	}}
-	tokenStr, err := s.Sign(testApp(), id, "openid profile", "", time.Hour, now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var got Claims
-	if _, _, err := jwt.NewParser().ParseUnverified(tokenStr, &got); err != nil {
-		t.Fatal(err)
-	}
-	want := []string{"hanzo", "admin", "lux"}
-	if strings.Join(got.Groups, ",") != strings.Join(want, ",") {
-		t.Fatalf("groups = %v, want %v", got.Groups, want)
-	}
-	// The whole point: a consumer mapping groups→admin admits this identity.
-	var reserved bool
-	for _, g := range got.Groups {
-		if g == "admin" {
-			reserved = true
+	groups := func(orgs ...string) []string {
+		t.Helper()
+		id := Identity{Id: "u-1", Name: "z"}
+		for _, o := range orgs {
+			id.Orgs = append(id.Orgs, schema.OrgRef{Org: o, Role: store.RoleAdmin})
 		}
+		tokenStr, err := s.Sign(testApp(), id, "openid profile", "", time.Hour, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got Claims
+		if _, _, err := jwt.NewParser().ParseUnverified(tokenStr, &got); err != nil {
+			t.Fatal(err)
+		}
+		return got.Groups
 	}
-	if !reserved {
-		t.Error("the reserved org is absent from groups, so a federated app cannot see the operator")
+	if got := groups("hanzo", "admin", "lux", "built-in"); strings.Join(got, ",") != "hanzo,lux" {
+		t.Fatalf("brand operator groups = %v, want hanzo,lux", got)
+	}
+	if got := groups("admin", "hanzo"); strings.Join(got, ",") != "admin,hanzo" {
+		t.Fatalf("SuperAdmin groups = %v, want admin,hanzo", got)
 	}
 }
 

@@ -364,13 +364,27 @@ func TestAssume_isRecorded(t *testing.T) {
 	if refused.StatusCode != 403 {
 		t.Fatalf("refusal recorded status=%d, want 403", refused.StatusCode)
 	}
+
+	// Each re-scoped token is itself a SuperAdmin token, on the token trail.
+	tokens := map[string]*schema.AuditLog{}
+	for _, row := range rows {
+		if row.Action == schema.ActionSuperAdminToken {
+			tokens[row.RequestUri] = row
+		}
+	}
+	for _, uri := range []string{assume, release} {
+		row := tokens[uri]
+		if row == nil || row.User != "admin/z" || row.ClientIp != "203.0.113.7" || row.Owner != policy.AdminOrg {
+			t.Fatalf("token minted at %s recorded as %+v", uri, row)
+		}
+	}
 }
 
 // The trail is the platform's own record, so the generic audit-log CRUD cannot
 // create, alter or remove one — otherwise the org admin whose act it records
 // could trim it.
 func TestAssume_trailIsReserved(t *testing.T) {
-	for _, action := range []string{schema.ActionAssumeOrg, schema.ActionReleaseOrg} {
+	for _, action := range []string{schema.ActionAssumeOrg, schema.ActionReleaseOrg, schema.ActionSuperAdminToken} {
 		if !schema.PlatformWritten(action) {
 			t.Fatalf("%s must be a reserved action, or the trail can be forged", action)
 		}

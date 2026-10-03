@@ -6,6 +6,7 @@ package oidc
 import (
 	"context"
 	"crypto/subtle"
+	"errors"
 	"strings"
 
 	"github.com/hanzoai/orm"
@@ -66,7 +67,7 @@ func refreshTokenGrant(c *zip.Ctx, db orm.DB) error {
 	if clientID != "" && subtle.ConstantTimeCompare([]byte(clientID), []byte(app.ClientId)) != 1 {
 		return tokenError(c, 400, "invalid_grant", "client mismatch")
 	}
-	if app.ClientSecret != "" && (clientSecret != "" || !tok.PublicGrant) && !app.Proves(clientSecret) {
+	if app.ClientSecret != "" && (clientSecret != "" || !tok.PublicGrant || !app.Relaxes()) && !app.Proves(clientSecret) {
 		return tokenErrorClient(c, "client authentication failed")
 	}
 
@@ -89,52 +90,62 @@ func refreshTokenGrant(c *zip.Ctx, db orm.DB) error {
 		scope = req
 	}
 
-	// Rotate: consume the presented token, then mint a successor in the same
-	// family. The successor is a new row so the consumed one remains as a
-	// tripwire for replay until the family is revoked or expires.
-	tok.RefreshConsumed = true
-	if err := store.SaveToken(ctx, db, tok); err != nil {
-		return tokenError(c, 500, "server_error", "")
-	}
+	// Rotate in one transaction: re-read and consume the presented token, mint
+	// its successor, persist it. A failed mint consumes nothing.
 	nameSeed, err := newOpaqueToken()
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}
-	nu := &schema.Token{
-		Owner:        tok.Owner,
-		Application:  tok.Application,
-		Organization: tok.Organization,
-		User:         tok.User,
-		Scope:        scope,
-		Nonce:        tok.Nonce,
-		Resource:     tok.Resource,
-		RedirectUri:  tok.RedirectUri,
-		// The successor is the SAME grant, so it carries the same establishment
-		// fact. Dropping it would make only the FIRST refresh work and the second
-		// 401 — a session that dies an hour late instead of on time.
-		PublicGrant: tok.PublicGrant,
+	var resp tokenResponse
+	err = db.RunInTransaction(ctx, func(tx orm.DB) error {
+		cur, err := store.GetTokenByRefreshHash(ctx, tx, tok.RefreshTokenHash)
+		if err != nil {
+			return err
+		}
+		if cur == nil || cur.RefreshConsumed {
+			return errReplay
+		}
+		cur.RefreshConsumed = true
+		if err := store.SaveToken(ctx, tx, cur); err != nil {
+			return err
+		}
+		nu := &schema.Token{
+			Owner:        tok.Owner,
+			Application:  tok.Application,
+			Organization: tok.Organization,
+			User:         tok.User,
+			Scope:        scope,
+			Nonce:        tok.Nonce,
+			Resource:     tok.Resource,
+			RedirectUri:  tok.RedirectUri,
+			// The successor is the same grant.
+			PublicGrant: tok.PublicGrant,
+			Device:      tok.Device,
+		}
+		nu.Name = "rt-" + nameSeed[:24]
+		// issueTokens re-resolves the inherited subject.
+		r, err := issueTokens(ctx, tx, c, app, nu, tok.RefreshFamily, now)
+		if err != nil {
+			return err
+		}
+		if err := store.PersistToken(ctx, tx, nu); err != nil {
+			return err
+		}
+		resp = r
+		return nil
+	})
+	if errors.Is(err, errReplay) {
+		revokeRefreshFamily(ctx, db, tok.RefreshFamily)
+		return tokenError(c, 400, "invalid_grant", "refresh token replay detected")
 	}
-	nu.Name = "rt-" + nameSeed[:24]
-	// issueTokens re-resolves nu.User against the user table, so THIS is where a
-	// rotation revalidates the subject it inherited. It matters here more than at
-	// any other grant: the User key above is copied from the predecessor, frozen at
-	// the establishment that minted the family, and a user can be deleted, banned,
-	// or re-keyed underneath it afterwards. Without the re-read, a family outlives
-	// the identity it was granted to and every rotation renews that.
-	//
-	// A dead subject needs no revocation of its own: the presented token was
-	// already consumed above and the successor is only persisted below, so the
-	// family ends here — and a replay of the consumed one still trips the reuse
-	// detector.
-	resp, err := issueTokens(ctx, db, c, app, nu, tok.RefreshFamily, now)
 	if err != nil {
 		return mintError(c, err)
 	}
-	if err := store.PersistToken(ctx, db, nu); err != nil {
-		return tokenError(c, 500, "server_error", "")
-	}
 	return c.JSON(200, resp)
 }
+
+// errReplay is a rotation that found its presented token already consumed.
+var errReplay = errors.New("oidc: refresh token already rotated")
 
 // revokeRefreshFamily deletes every token row in a rotation family — the
 // containment response when a rotated refresh token is replayed.

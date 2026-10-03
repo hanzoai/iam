@@ -541,7 +541,7 @@ func idTokenFor(t *testing.T, db orm.DB, org, name, clientID string, ttl time.Du
 	if err != nil || a == nil {
 		t.Fatalf("resolve app %s: %v", clientID, err)
 	}
-	signer, err := signerFor(ctx, db, a, "https://hanzo.id")
+	signer, err := signerFor(ctx, db, a, "https://hanzo.id", origin{})
 	if err != nil {
 		t.Fatalf("signer for %s: %v", clientID, err)
 	}

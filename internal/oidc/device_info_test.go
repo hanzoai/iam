@@ -145,6 +145,38 @@ func TestDeviceInfo_TenantBoundary(t *testing.T) {
 	}
 }
 
+// A SuperAdmin's session neither reads nor approves another app's device code.
+func TestDeviceInfo_SuperAdminSessionApprovesNothing(t *testing.T) {
+	app, db := newServer(t)
+	console := seedApp(t, db, appOpts{clientID: "console", secret: "s3cret", redirectURIs: []string{testRedirect}})
+	console.Organization = "admin"
+	if err := console.Update(); err != nil {
+		t.Fatalf("move the console into the admin org: %v", err)
+	}
+	seedUserInOrg(t, db, "admin", "root", "root@hanzo.ai", "pw")
+	seedDeviceApp(t, db, "hanzo-cli")
+	userCode := mintDeviceCode(t, app, "hanzo-cli")
+
+	resp, body := do(t, app, formReq("POST", PathLogin, url.Values{
+		"organization": {"admin"}, "application": {"console"},
+		"username": {"root"}, "password": {"pw"}, "type": {"login"},
+	}))
+	if resp.StatusCode != 200 || decode(t, body)["status"] != "ok" {
+		t.Fatalf("SuperAdmin sign-in failed: %s", body)
+	}
+	cookie := cookieKV(resp.Header.Get("Set-Cookie"))
+
+	if env := deviceInfoGet(t, app, userCode, cookie); env["status"] != "error" {
+		t.Fatalf("a SuperAdmin must not be shown a code to approve: %v", env)
+	}
+	req := jsonReq("POST", PathLogin, map[string]string{"type": "device", "userCode": userCode})
+	req.Header.Set("Cookie", cookie)
+	_, body = do(t, app, req)
+	if m := decode(t, body); m["status"] != "error" {
+		t.Fatalf("a SuperAdmin session approved a device: %v", m)
+	}
+}
+
 // approveFor approves a pending user_code as the signed-in browser.
 func approveFor(t *testing.T, app *zip.App, userCode, cookie string) {
 	t.Helper()

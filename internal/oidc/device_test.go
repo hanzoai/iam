@@ -299,15 +299,12 @@ func TestDevice_ConfidentialClientAuth(t *testing.T) {
 	}
 }
 
-// Tenant boundary: a user in org B must not approve a device sign-in bound to an
-// app in org A. A SuperAdmin — a member of the reserved admin org — may, because
-// that is the identity an operator signs a CLI into any brand with.
+// A device code is approved under its application's tenant rule, never by or into a reserved org.
 func TestDevice_ApprovalTenantBoundary(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		org  string // approver's org; the device app lives in "hanzo"
-		// operator grants a membership in the reserved org. It makes nobody a
-		// SuperAdmin: only a person whose own org is the reserved one crosses.
+		// operator grants a membership in the reserved org.
 		operator bool
 		// orgChoice is the device app's OrgChoiceMode. "create" is an application
 		// whose accounts work in orgs of their own — the self-service CLI a
@@ -318,7 +315,8 @@ func TestDevice_ApprovalTenantBoundary(t *testing.T) {
 	}{
 		{"same org approves", "hanzo", false, "", true},
 		{"foreign org refused", "lux", false, "", false},
-		{"superadmin crosses tenants", "admin", false, "", true},
+		{"a superadmin is refused", "admin", false, "", false},
+		{"a superadmin is refused by an app serving any org", "admin", false, "create", false},
 		{"an admin-org membership held from a brand org does not cross", "lux", true, "", false},
 		{"an app serving any org admits a personal org", "alice", false, "create", true},
 		{"an app serving any org still refuses a reserved org", "built-in", false, "create", false},
@@ -359,18 +357,118 @@ func TestDevice_ApprovalTenantBoundary(t *testing.T) {
 			if row.User != tc.org+"/eve" {
 				t.Fatalf("row.User = %q, want %q", row.User, tc.org+"/eve")
 			}
-			// A SuperAdmin approving into another org is on the SuperAdmin trail;
-			// an approval inside one's own org, or through an app that serves any
-			// org, is not a platform act.
-			want := 0
-			if tc.org == policy.AdminOrg {
-				want = 1
-			}
-			n, err := store.Recorded(tctx(), db, schema.ActionSuperAdmin, time.Now().Add(-time.Hour), "User", tc.org+"/eve")
-			if err != nil || n != want {
-				t.Fatalf("SuperAdmin trail rows = %d (%v), want %d", n, err, want)
-			}
 		})
+	}
+}
+
+// A reserved org's application issues no device code and redeems none.
+func TestDevice_ReservedOrgAppIssuesNoCode(t *testing.T) {
+	app, db := newServer(t)
+	cli := seedApp(t, db, appOpts{clientID: "admin-cli", grants: deviceGrants})
+	_, da := requestDevice(t, app, "admin-cli", "openid")
+	deviceCode := da["device_code"].(string)
+	row, _ := store.GetTokenByCode(tctx(), db, deviceCode)
+	row.User = "hanzo/alice"
+	if err := store.SaveToken(tctx(), db, row); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	seedUserInOrg(t, db, "hanzo", "alice", "alice@hanzo.ai", "pw")
+
+	cli.Organization = policy.AdminOrg
+	if err := cli.UpdateCtx(tctx()); err != nil {
+		t.Fatalf("move the app into the admin org: %v", err)
+	}
+
+	resp, m := requestDevice(t, app, "admin-cli", "openid")
+	if resp.StatusCode != 400 || m["error"] != "unauthorized_client" || m["device_code"] != nil {
+		t.Fatalf("device request for an admin-org app: %d %v, want 400 unauthorized_client", resp.StatusCode, m)
+	}
+	resp, m = pollDevice(t, app, "admin-cli", deviceCode)
+	if resp.StatusCode != 400 || m["error"] != "unauthorized_client" || m["access_token"] != nil {
+		t.Fatalf("poll for an admin-org app: %d %v, want 400 unauthorized_client", resp.StatusCode, m)
+	}
+}
+
+// A stored SuperAdmin approval mints nothing and spends the code.
+func TestDevice_StoredSuperAdminApprovalMintsNothing(t *testing.T) {
+	app, db := newServer(t)
+	seedDeviceApp(t, db, "hanzo-app")
+	seedUserInOrg(t, db, policy.AdminOrg, "root", "root@hanzo.ai", "pw")
+
+	_, da := requestDevice(t, app, "hanzo-app", "openid")
+	deviceCode := da["device_code"].(string)
+	row, _ := store.GetTokenByCode(tctx(), db, deviceCode)
+	row.User = policy.AdminOrg + "/root"
+	if err := store.SaveToken(tctx(), db, row); err != nil {
+		t.Fatalf("store the old approval: %v", err)
+	}
+
+	resp, m := pollDevice(t, app, "hanzo-app", deviceCode)
+	if resp.StatusCode != 400 || m["error"] != "access_denied" || m["access_token"] != nil {
+		t.Fatalf("poll of a SuperAdmin approval: %d %v, want 400 access_denied", resp.StatusCode, m)
+	}
+	if resp, m := pollDevice(t, app, "hanzo-app", deviceCode); resp.StatusCode != 400 || m["error"] != "expired_token" {
+		t.Fatalf("the refused code must be spent: %d %v", resp.StatusCode, m)
+	}
+}
+
+// A device token's owner is the client's org and it names no reserved org, first mint and refresh.
+func TestDevice_TokenNamesNoReservedOrg(t *testing.T) {
+	app, db := newServer(t)
+	seedDeviceApp(t, db, "hanzo-app")
+	if _, err := store.EnsureMembership(tctx(), db, "hanzo/alice", policy.AdminOrg, store.RoleAdmin); err != nil {
+		t.Fatalf("grant the admin-org membership: %v", err)
+	}
+
+	_, da := requestDevice(t, app, "hanzo-app", "openid")
+	deviceCode, userCode := da["device_code"].(string), da["user_code"].(string)
+	if m := approveAs(t, app, "hanzo", "alice", userCode); m["status"] != "ok" {
+		t.Fatalf("approval failed: %v", m)
+	}
+	_, m := pollDevice(t, app, "hanzo-app", deviceCode)
+	check := func(stage string, m map[string]any) {
+		t.Helper()
+		for _, kind := range []string{"access_token", "id_token"} {
+			tok, _ := m[kind].(string)
+			claims, err := verifyToken(tctx(), db, tok)
+			if err != nil {
+				t.Fatalf("%s %s does not verify: %v (%v)", stage, kind, err, m)
+			}
+			if claims.Owner != "hanzo" {
+				t.Errorf("%s %s owner = %q, want the client's org hanzo", stage, kind, claims.Owner)
+			}
+			if len(claims.Orgs) == 0 || claims.Orgs[0].Org != "hanzo" {
+				t.Errorf("%s %s orgs = %v, want hanzo first", stage, kind, claims.Orgs)
+			}
+			for _, o := range claims.Orgs {
+				if policy.IsReservedOrg(o.Org) {
+					t.Errorf("%s %s names reserved org %q in orgs %v", stage, kind, o.Org, claims.Orgs)
+				}
+			}
+			for _, g := range claims.Groups {
+				if policy.IsReservedOrg(g) {
+					t.Errorf("%s %s names reserved org %q in groups %v", stage, kind, g, claims.Groups)
+				}
+			}
+		}
+	}
+	check("device", m)
+
+	resp, body := do(t, app, formReq("POST", PathToken, url.Values{
+		"grant_type":    {"refresh_token"},
+		"client_id":     {"hanzo-app"},
+		"refresh_token": {m["refresh_token"].(string)},
+	}))
+	r := decode(t, body)
+	if resp.StatusCode != 200 {
+		t.Fatalf("refresh: %d %v", resp.StatusCode, r)
+	}
+	check("refresh", r)
+
+	// The code flow keeps the membership.
+	id, err := userClaims(tctx(), db, "hanzo/alice")
+	if err != nil || len(id.Orgs) < 2 {
+		t.Fatalf("alice's membership set = %v (%v), want her admin-org membership kept", id.Orgs, err)
 	}
 }
 
@@ -703,5 +801,38 @@ func TestDevice_ApproveWithoutSessionIsRefused(t *testing.T) {
 	resp, m := pollDevice(t, app, "hanzo-app", deviceCode)
 	if resp.StatusCode == 200 {
 		t.Fatalf("an unapproved device must not mint: %v", m)
+	}
+}
+
+// A SuperAdmin family on a tenant app renews nothing; a tenant's does.
+func TestDevice_StoredSuperAdminFamilyRenewsNothing(t *testing.T) {
+	app, db := newServer(t)
+	seedDeviceApp(t, db, "hanzo-app")
+	seedUserInOrg(t, db, policy.AdminOrg, "root", "root@hanzo.ai", "pw")
+	for _, tc := range []struct {
+		user string
+		want int
+	}{{"admin/root", 400}, {"hanzo/alice", 200}} {
+		refresh := "legacy-refresh-" + tc.user
+		row := &schema.Token{
+			Owner: "admin", Name: "dc-" + randHex(8), Application: "hanzo-app",
+			Organization: "hanzo", User: tc.user, Scope: "openid", TokenType: "Bearer",
+			RefreshTokenHash: hashToken(refresh), RefreshExpireIn: time.Now().Add(time.Hour).Unix(),
+			PublicGrant: true,
+		}
+		row.RefreshFamily = row.Owner + "/" + row.Name
+		if err := store.PersistToken(tctx(), db, row); err != nil {
+			t.Fatalf("store the family: %v", err)
+		}
+		resp, body := do(t, app, formReq("POST", PathToken, url.Values{
+			"grant_type": {"refresh_token"}, "client_id": {"hanzo-app"}, "refresh_token": {refresh},
+		}))
+		m := decode(t, body)
+		if resp.StatusCode != tc.want {
+			t.Fatalf("%s refresh: %d %v, want %d", tc.user, resp.StatusCode, m, tc.want)
+		}
+		if tc.want == 400 && (m["error"] != "invalid_grant" || m["access_token"] != nil) {
+			t.Fatalf("%s refresh answered %v", tc.user, m)
+		}
 	}
 }

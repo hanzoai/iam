@@ -17,8 +17,10 @@ package schema
 
 import (
 	"crypto/subtle"
+	"errors"
 	"net/url"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 )
 
@@ -279,7 +281,14 @@ func (a *Application) GetId() string {
 //
 // A set, not a comparison, because the failure was a comparison that looked
 // complete. Adding a mode now means adding it here, where the reading of it is.
+//
+// An application of a reserved org serves that org alone.
 func (a *Application) ServesAnyOrg() bool {
+	return a.others() && !policy.IsReservedOrg(a.Organization)
+}
+
+// others reports whether the application is shared or offers an org choice.
+func (a *Application) others() bool {
 	if a.IsShared {
 		return true
 	}
@@ -288,6 +297,22 @@ func (a *Application) ServesAnyOrg() bool {
 		return false
 	}
 	return true
+}
+
+// ErrUnconfined refuses a reserved org's application that serves other orgs.
+var ErrUnconfined = errors.New("an application of a reserved organization serves that organization alone: it cannot be shared or offer an org choice")
+
+// BeforeCreate refuses to store a reserved org's application that serves other orgs.
+func (a *Application) BeforeCreate() error {
+	if a.others() && policy.IsReservedOrg(a.Organization) {
+		return ErrUnconfined
+	}
+	return nil
+}
+
+// BeforeUpdate applies BeforeCreate's rule to every update.
+func (a *Application) BeforeUpdate(*Application) error {
+	return a.BeforeCreate()
 }
 
 // orgChoiceNone is the admin console's spelling of "offer no org picker" — the
@@ -358,6 +383,16 @@ func isLoopbackLiteral(u *url.URL) bool {
 // identified without proof, is the endpoint's question, not this one.
 func (a *Application) Proves(secret string) bool {
 	return a.ClientSecret == "" || subtle.ConstantTimeCompare([]byte(secret), []byte(a.ClientSecret)) == 1
+}
+
+// Attended reports whether a grant needs a credential proved in the sign-in, never a session.
+func (a *Application) Attended() bool {
+	return policy.IsReservedOrg(a.Organization) || !a.EnableSigninSession
+}
+
+// Relaxes reports whether a code or refresh may be redeemed by PKCE alone while a secret is held.
+func (a *Application) Relaxes() bool {
+	return !policy.IsReservedOrg(a.Organization)
 }
 
 // IsPasswordEnabled reports whether password sign-in is available: the explicit

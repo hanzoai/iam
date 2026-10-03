@@ -29,6 +29,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -299,7 +300,7 @@ func upsertApplication(db orm.DB) zip.TypedHandler[registration, reply] {
 			existing.RefreshExpireInHours = ttl(in.RefreshExpireInHours, existing.RefreshExpireInHours)
 			existing.EnablePassword = true
 			if err := existing.UpdateCtx(ctx); err != nil {
-				return refuse(500, "server_error"), nil
+				return unwritten(err), nil
 			}
 		} else {
 			// A name another owner holds is refused: this row would outrank it wherever
@@ -344,7 +345,7 @@ func upsertApplication(db orm.DB) zip.TypedHandler[registration, reply] {
 			a.Model = model
 			a.SetId("admin/" + in.Name)
 			if err := a.CreateCtx(ctx); err != nil {
-				return refuse(500, "server_error"), nil
+				return unwritten(err), nil
 			}
 		}
 		return done(action, &credential{
@@ -352,6 +353,14 @@ func upsertApplication(db orm.DB) zip.TypedHandler[registration, reply] {
 			Name: in.Name, Organization: in.Organization,
 		}), nil
 	}
+}
+
+// unwritten maps a store error to its upsert reply.
+func unwritten(err error) *reply {
+	if errors.Is(err, schema.ErrUnconfined) {
+		return refuse(400, err.Error())
+	}
+	return refuse(500, "server_error")
 }
 
 // person is the user an operator declares, plus the service credential it

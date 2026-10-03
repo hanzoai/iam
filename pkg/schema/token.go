@@ -81,4 +81,7 @@ type Token struct {
 	// the access token's expiry). Carried across rotation, so the second refresh
 	// behaves like the first.
 	PublicGrant bool `json:"publicGrant,omitempty" url:"-"`
+
+	// Device marks a grant established by an RFC 8628 approval; its tokens name no reserved org.
+	Device bool `json:"device,omitempty" url:"-"`
 }

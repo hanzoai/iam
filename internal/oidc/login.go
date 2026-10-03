@@ -76,6 +76,9 @@ type loginForm struct {
 	RecoveryCode      string `json:"recoveryCode"`
 	EnableMfaRemember bool   `json:"enableMfaRemember"`
 	Challenge         string `json:"challenge"`
+
+	// session is set by the handler, never bound: a session proved the person.
+	session bool
 }
 
 // routeLogin registers POST /v1/iam/login.
@@ -166,6 +169,7 @@ func loginHandler(db orm.DB) zip.Handler {
 					if user == nil || user.IsForbidden || user.IsDeleted {
 						return httpx.ErrCode(c, "please sign in first", CodeLoginRequired)
 					}
+					f.session = true
 					return loginGrant(c, db, user, f)
 				}
 				// No session, and this flow has no credential to fall back on: the
@@ -344,11 +348,7 @@ func codeLogin(ctx context.Context, db orm.DB, f loginForm, user *schema.User) (
 func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
 	ctx := c.Context()
 
-	// type=device: approve a pending RFC 8628 device authorization against the
-	// identity now fully proven (device.go). Device approval has its OWN tenant model —
-	// a SuperAdmin may deliberately approve a device across tenants (device.go), a
-	// blessed capability — so the reserved-org confinement MintFor enforces (which
-	// binds a SuperAdmin to its own-org app) does NOT apply to it; it precedes it.
+	// type=device approves a pending RFC 8628 code under mayApprove (device.go).
 	if f.Type == "device" {
 		return approveDevice(c, db, user, f.UserCode)
 	}
@@ -366,6 +366,9 @@ func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
 	// silent SSO would each have had to remember it. One mint path, one set of
 	// rules, no endpoint that can forget one.
 	out, err := MintFor(ctx, db, app, user.Owner+"/"+user.Name, f.mint())
+	if errors.Is(err, errAttended) {
+		return httpx.ErrCode(c, err.Error(), CodeLoginRequired)
+	}
 	if err != nil {
 		return httpx.Err(c, err.Error())
 	}
@@ -408,6 +411,7 @@ func (f loginForm) mint() Mint {
 		CodeChallenge:       f.CodeChallenge,
 		CodeChallengeMethod: f.CodeChallengeMethod,
 		Resource:            f.Resource,
+		Session:             f.session,
 	}
 }
 
@@ -449,7 +453,7 @@ func resolveLoginUser(ctx context.Context, db orm.DB, org, identifier string, me
 // (store.MemberByIdentifier). Any other app searches only the org itself.
 func servesMembers(ctx context.Context, db orm.DB, f loginForm) bool {
 	app, err := ResolveApp(ctx, db, f.ClientId, f.Application)
-	return err == nil && app != nil && app.IsShared && app.Organization == f.Organization
+	return err == nil && app != nil && app.IsShared && app.ServesAnyOrg() && app.Organization == f.Organization
 }
 
 // decoy is a password hash no one holds, verified when a sign-in names nobody so

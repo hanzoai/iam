@@ -258,7 +258,8 @@ an item under it.
 **Every privileged act is recorded, refusals included** — a refused attempt to
 step into a tenant is the row an auditor most wants. `schema.AuditLog` carries the
 real actor (`user`), the org (`organization`), the time (`createdTime`) and the
-address (`clientIp`, from `X-Forwarded-For`); the row is filed under the org
+address (`clientIp`, `httpx.Visitor`: the `X-Forwarded-For` hop before the
+last); the row is filed under the org
 stepped INTO so that tenant sees who was in it. `ActionAssumeOrg` /
 `ActionReleaseOrg` are `schema.PlatformWritten`, so the generic audit-log CRUD
 refuses to create, alter or delete one. Query it at
@@ -270,8 +271,8 @@ createdTime).
 `schema.User.SuperAdmin`: a PERSON (`!Machine()`) whose row's `owner` is
 `admin`. Nothing else answers it. The Guard sets `Principal.Sudo` from it when it
 loads the caller's row, and every gate reads `p.Sudo` or asks the row directly
-(assume/release, device approval across tenants, unlink, bootstrap's
-credential freeze, the registry push gate). `authz.Claims.Sudo` is the same rule
+(assume/release, unlink, bootstrap's credential freeze, the registry push
+gate). `authz.Claims.Sudo` is the same rule
 read off a token: its home org is `orgs[0]`, which `store.MemberOrgRefs` opens
 with the row's `owner`, so the row and every token minted from it agree. The
 token shape is unchanged; the `owner` claim is the minting app's org and decides
@@ -283,7 +284,8 @@ nothing.
   with an admin membership is an ordinary hanzo account; `admin/z` is the
   operator.
 - **A machine in `admin` is never SuperAdmin** — `User.Type` service-account or
-  application. `admin/provisioner` is declared `type: service` in universe's
+  application; its token carries `type: "application"` (`kindOf`), so
+  `authz.Claims.Sudo` refuses it. `admin/provisioner` is declared `type: service` in universe's
   provision document but the upsert writes it with no machine class, so it is a
   person here and keeps platform authority. Stamping a class on it would end its
   converge.
@@ -292,20 +294,23 @@ nothing.
   machines included, nor a name nobody holds yet) and `users.Authorize` (only a
   SuperAdmin writes an account in `admin`). Both read the owner as written;
   resolving a name folds its case and never its org.
-- **`groups` is membership, not SuperAdmin.** The claim still lists every org a
-  person belongs to, so `admin` appears for a brand org's member of it. Two
-  relying parties read it as platform authority: the forge (`--admin-group
-  admin`, universe `hanzo-git.yaml`) and Hanzo CD (`hanzocd-rbac-cm.yaml`).
-  Moving them to `orgs[0]` needs the SuperAdmin to sign in through an app that
-  serves the admin org — reserved-org confinement refuses the brand apps.
+- **`groups` names a reserved org for a SuperAdmin only** (`groupsOf`, every
+  token and UserInfo); `orgs` keeps the membership.
 - **Provisioning** is `POST /v1/iam/admin/users/upsert` with `owner: admin` —
   a named person declared IN the admin org. Nothing promotes from a brand org.
 - **Audit.** Every request the Guard admits for a SuperAdmin is one
   `schema.ActionSuperAdmin` row (method, URI with query, status, client IP,
-  actor), filed under `admin`; so are a SuperAdmin's unlink of someone else's
-  sign-in method and a device approval into another org. The action is
+  actor), filed under `admin`; so is a SuperAdmin's unlink of someone else's
+  sign-in method. The action is
   `PlatformWritten`: the audit-log CRUD cannot create, alter or delete it.
   assume/release/list-organizations keep their own rows.
+- **Every SuperAdmin token is recorded before release, or not issued.** The
+  Signer signs claims `authz.Claims.Sudo` reads as platform authority only with
+  a trail (`signerFor`), which writes one `superadmin-token` row per token:
+  `User`, the client's `Organization`, `ClientIp`/`Method`/`RequestUri`, and
+  `Object` `{sub, client, audience, scope, kind, jti, expires, assumed}`. A
+  failed write returns `server_error`. Refresh rotates in one transaction, so a
+  failed write consumes nothing and racing rotations mint once.
 
 ## A mark is how a SUBJECT appears, and a subject is a person OR an org
 
@@ -390,6 +395,11 @@ have routes to ONE existence-independent answer. It differs only in *which*
 answer — KMS reads the org from the token, so absence is its only observable and
 it answers 404; here the org is a stated parameter, so there is a decision to
 report and reporting it is the point.
+
+**An application of a reserved org serves that org alone.** `ServesAnyOrg` is
+false for it whatever `isShared`/`orgChoiceMode` say, and `BeforeCreate`/
+`BeforeUpdate` refuse storing it otherwise (`schema.ErrUnconfined`: API and
+upsert 400, seed stops the boot).
 
 **Cross-tenant reach exists only where a grant says so**, and a grant HONOURS the
 org it names (returning that org's real data, correctly attributed) — it never
@@ -547,6 +557,23 @@ relaxation was dormant (every live registration is confidential and takes the
 secret path), so nothing that worked broke. The rule lives on the GRANT, not in a
 document, because registration shape must not be able to open a credential
 surface — the same lesson as `Token.PublicGrant` above, in the other direction.
+
+**A reserved org neither issues nor approves a device code.** `mayApprove` is
+MintFor's tenant rule with every reserved org refused; the poll judges the
+stored approver again (`access_denied`, code spent); a reserved-org app answers
+`unauthorized_client`. `schema.Token.Device` marks the family, whose tokens drop
+reserved orgs (`unreserved`). `issueTokens` applies MintFor's reserved-org
+confinement at every mint (`invalid_grant`).
+
+**A session never answers an attended application** (`Attended`: a reserved
+`organization`, or `enableSigninSession` off). `MintFor` refuses a grant whose
+`Mint.Session` is set: authorize answers `prompt=none` with
+`interaction_required` and otherwise shows the credential form; the login
+endpoint's session branch answers `login_required`.
+
+**A reserved org's application that holds a secret is proved by it at every
+redemption** (`Relaxes` is false): neither the code grant's PKCE relaxation nor
+`PublicGrant` stands in for it. Tenant apps keep the relaxation.
 
 **One client id.** `hanzo-cli` is the id BOTH CLIs authenticate as — Rust
 `hanzoai/cli` (`src/iam/oauth.rs` `CLIENT_ID`) and the Go control CLI

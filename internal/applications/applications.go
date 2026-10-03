@@ -284,7 +284,7 @@ func Create(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 		in.Init(db)
 		in.SetId(id)
 		if err := in.Create(); err != nil {
-			return nil, zip.ErrInternal(err.Error())
+			return nil, written(err)
 		}
 		return in.Mask(), nil
 	}
@@ -363,10 +363,18 @@ func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 		in.CreatedTime = existing.CreatedTime
 		in.CreatedAt = existing.CreatedAt
 		if err := in.Update(); err != nil {
-			return nil, zip.ErrInternal(err.Error())
+			return nil, written(err)
 		}
 		return in.Mask(), nil
 	}
+}
+
+// written maps a store error to its HTTP answer.
+func written(err error) error {
+	if errors.Is(err, schema.ErrUnconfined) {
+		return zip.ErrBadRequest(err.Error())
+	}
+	return zip.ErrInternal(err.Error())
 }
 
 // deleteApplication removes an application. Anyone mid-sign-in through it is
