@@ -296,3 +296,24 @@ func TestPrepareKeepsTheTimestamps(t *testing.T) {
 		t.Fatalf("not keyed: %v", after)
 	}
 }
+
+// Connect writes nothing: an unkeyed row stays unkeyed, where Open would key it.
+func TestConnectLeavesTheStoreAsItIs(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "iam.db")
+	db, err := Open("sqlite", path, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	putUser(t, db, "acme", "Jade", "")
+	_ = db.Close()
+	unkey(t, path, `1 = 1`)
+
+	db, err = Connect("sqlite", path, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if doc := rawDoc(t, db, "users", "acme/Jade"); doc["nameKey"] != nil {
+		t.Fatalf("Connect keyed the row: %v", doc)
+	}
+}

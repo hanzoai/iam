@@ -27,7 +27,7 @@ import (
 // byte-for-byte identical open config (WAL, busy timeout) — a drift here would
 // be a drift between what the migrator writes and what the server reads.
 func Open(backend, path, addr string) (orm.DB, error) {
-	db, err := open(backend, path, addr)
+	db, err := Connect(backend, path, addr)
 	if err != nil {
 		return nil, err
 	}
@@ -40,8 +40,10 @@ func Open(backend, path, addr string) (orm.DB, error) {
 	return db, nil
 }
 
-// open opens the store on backend, as Open documents, and nothing else.
-func open(backend, path, addr string) (orm.DB, error) {
+// Connect opens the store on backend as Open does, and does not prepare it, so it
+// writes nothing to it. It is for reading a store that must stay as it is, such as
+// either side of a comparison; a store that will serve is opened with Open.
+func Connect(backend, path, addr string) (orm.DB, error) {
 	switch backend {
 	case "", "sqlite":
 		if dir := filepath.Dir(path); dir != "" && dir != "." {
