@@ -165,10 +165,11 @@ func NameHeldElsewhere(ctx context.Context, db orm.DB, owner, name string) (bool
 // Case does not distinguish principals. New names are normalized to lowercase at
 // creation (schema.Username), but rows written before that rule are stored as they
 // arrived, and renaming them would move real principals — so the RESOLUTION
-// tolerates case instead of the data being rewritten. Three steps, cheapest first:
-// the exact key, then the folded key (both indexed lookups, and between them they
-// answer every all-lowercase row, which is all of them going forward), then a
-// case-insensitive pass over the org for a legacy mixed-case row.
+// tolerates case instead of the data being rewritten. Three indexed lookups,
+// cheapest first: the exact name, then the lower-cased name (between them they
+// answer every all-lowercase row, which is all of them going forward), then the
+// NameKey (schema.Fold) for a legacy mixed-case row, which reads at most two rows
+// of the org, never the org.
 //
 // It FAILS CLOSED when the folding is ambiguous — the same rule GetUserById
 // applies to a duplicated subject. If "Alice" and "ALICE" both exist, "alice"
