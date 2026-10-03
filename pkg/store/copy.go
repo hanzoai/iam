@@ -149,8 +149,12 @@ func each(ctx context.Context, db orm.DB, kind string, fn func(id string, doc js
 	}
 	walked, last := 0, ""
 	for {
+		q, err := orm.After(db.Query(kind), last)
+		if err != nil {
+			return err
+		}
 		var docs []json.RawMessage
-		keys, err := db.Query(kind).After(last).Limit(copyPage).GetAll(ctx, &docs)
+		keys, err := q.Limit(copyPage).GetAll(ctx, &docs)
 		if err != nil {
 			return fmt.Errorf("read after %q: %w", last, err)
 		}

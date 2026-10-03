@@ -79,8 +79,12 @@ func Prepare(ctx context.Context, db orm.DB) (Prepared, error) {
 			continue
 		}
 		for last := ""; ; {
+			q, err := orm.After(db.Query(k.kind), last)
+			if err != nil {
+				return p, fmt.Errorf("%s: %w", k.kind, err)
+			}
 			var docs []json.RawMessage
-			keys, err := db.Query(k.kind).After(last).Limit(preparePage).GetAll(ctx, &docs)
+			keys, err := q.Limit(preparePage).GetAll(ctx, &docs)
 			if err != nil && !errors.Is(err, orm.ErrNotFound) {
 				return p, fmt.Errorf("%s after %q: %w", k.kind, last, err)
 			}
