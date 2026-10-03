@@ -57,6 +57,10 @@ type User struct {
 	UpdatedTime string `json:"updatedTime"`
 	DeletedTime string `json:"deletedTime,omitempty"`
 
+	// NameKey is Fold(Name), written by MarshalJSON on every save: the indexed key
+	// a case-insensitive username lookup reads (store.GetUserByName).
+	NameKey string `json:"nameKey,omitempty" orm:"index"`
+
 	ExternalId string `json:"externalId,omitempty" orm:"index"`
 	Type       string `json:"type,omitempty"`
 
@@ -410,4 +414,13 @@ func (u *User) Picture() string {
 		return u.Avatar
 	}
 	return Gravatar(u.Email)
+}
+
+// MarshalJSON writes the record with NameKey derived from Name, so whichever path
+// saves a user, the stored key folds the name it is stored beside.
+func (u User) MarshalJSON() ([]byte, error) {
+	type record User
+	r := record(u)
+	r.NameKey = Fold(u.Name)
+	return json.Marshal(r)
 }

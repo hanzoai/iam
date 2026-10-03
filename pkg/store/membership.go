@@ -95,9 +95,11 @@ func MembershipIn(ctx context.Context, db orm.DB, user, org, workspace, project 
 	if user == "" || org == "" {
 		return nil, nil
 	}
+	// User last: the last indexed equality drives the lookup, and one person's
+	// rows are few where an org's, or every org-wide row's, are all of them.
 	m, err := orm.TypedQuery[schema.Membership](db).
-		Filter("User=", user).Filter("Org=", org).
-		Filter("Workspace=", workspace).Filter("Project=", project).First()
+		Filter("Workspace=", workspace).Filter("Project=", project).
+		Filter("Org=", org).Filter("User=", user).First()
 	if err != nil {
 		if errors.Is(err, orm.ErrNotFound) {
 			return nil, nil
@@ -112,7 +114,8 @@ func GetMembership(_ context.Context, db orm.DB, user, org string) (*schema.Memb
 	if user == "" || org == "" {
 		return nil, nil
 	}
-	m, err := orm.TypedQuery[schema.Membership](db).Filter("User=", user).Filter("Org=", org).First()
+	// User last, so it drives the lookup rather than the org's whole roster.
+	m, err := orm.TypedQuery[schema.Membership](db).Filter("Org=", org).Filter("User=", user).First()
 	if err == orm.ErrNotFound {
 		return nil, nil
 	}
@@ -525,12 +528,11 @@ const memberCandidates = 16
 // the identifier is an address. It is the reach a SHARED application's sign-in makes,
 // so a person who works in org signs in at org's apps without an account there.
 //
-// The work is bounded by org, not by the estate. A username is matched, without
-// regard to case, against the names on org's roster in one read of it, so a name
-// that many other orgs also use costs nothing extra. An address is looked up by the
-// indexed email, at most memberCandidates accounts, and each is kept only if it is
-// on that roster. Only then are the few survivors read and checked for platform
-// authority.
+// The work is bounded by the answer, not by the roster. A username is matched,
+// without regard to case, by the indexed NameKey on org's membership rows. An
+// address is looked up by the indexed email, at most memberCandidates accounts,
+// and each is kept only if an indexed read finds it on org's roster. Only then are
+// the few survivors read and checked for platform authority.
 //
 // The reach is org's org-wide members and nothing wider: a reserved org is never
 // searched and no one homed in one is ever matched, so no tenant's sign-in form
@@ -543,22 +545,17 @@ func MemberByIdentifier(ctx context.Context, db orm.DB, org, identifier string) 
 	if org == "" || identifier == "" || policy.IsReservedOrg(org) {
 		return nil, nil
 	}
-	rows, err := MembershipsByOrg(ctx, db, org)
-	if err != nil {
+	named, err := orm.TypedQuery[schema.Membership](db).Filter("Org=", org).
+		Filter("NameKey=", schema.Fold(identifier)).GetAll(ctx)
+	if err != nil && !errors.Is(err, orm.ErrNotFound) {
 		return nil, err
 	}
-	roster := map[string]bool{}
 	var ids []string
-	for _, m := range rows {
-		if m == nil || m.Workspace != "" || m.Project != "" {
+	for _, m := range named {
+		if !rosterRow(m, org) || slices.Contains(ids, m.User) {
 			continue
 		}
-		home, name, ok := strings.Cut(m.User, "/")
-		if !ok || home == "" || name == "" || home == org || policy.IsReservedOrg(home) {
-			continue
-		}
-		roster[m.User] = true
-		if strings.EqualFold(name, identifier) {
+		if _, name, _ := strings.Cut(m.User, "/"); strings.EqualFold(name, identifier) {
 			ids = append(ids, m.User)
 		}
 	}
@@ -568,7 +565,15 @@ func MemberByIdentifier(ctx context.Context, db orm.DB, org, identifier string) 
 			return nil, err
 		}
 		for _, u := range byEmail {
-			if id := u.Owner + "/" + u.Name; roster[id] && !slices.Contains(ids, id) {
+			id := u.Owner + "/" + u.Name
+			if slices.Contains(ids, id) {
+				continue
+			}
+			on, err := onRoster(ctx, db, org, id)
+			if err != nil {
+				return nil, err
+			}
+			if on {
 				ids = append(ids, id)
 			}
 		}
@@ -589,6 +594,31 @@ func MemberByIdentifier(ctx context.Context, db orm.DB, org, identifier string) 
 		match = u
 	}
 	return match, nil
+}
+
+// rosterRow reports whether m is an org-wide membership of org held by a person
+// whose home is another, non-reserved org: the rows MemberByIdentifier reaches.
+func rosterRow(m *schema.Membership, org string) bool {
+	if m == nil || m.Org != org || m.Workspace != "" || m.Project != "" {
+		return false
+	}
+	home, name, ok := strings.Cut(m.User, "/")
+	return ok && home != "" && name != "" && home != org && !policy.IsReservedOrg(home)
+}
+
+// onRoster reports whether the user id holds an org-wide membership of org, by an
+// indexed read of that user's rows in org.
+func onRoster(ctx context.Context, db orm.DB, org, id string) (bool, error) {
+	rows, err := orm.TypedQuery[schema.Membership](db).Filter("Org=", org).Filter("User=", id).GetAll(ctx)
+	if err != nil && !errors.Is(err, orm.ErrNotFound) {
+		return false, err
+	}
+	for _, m := range rows {
+		if rosterRow(m, org) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // addressed returns the accounts, in any org, whose email is address as written or

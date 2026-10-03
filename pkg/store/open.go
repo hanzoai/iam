@@ -4,6 +4,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,6 +27,23 @@ import (
 // byte-for-byte identical open config (WAL, busy timeout) — a drift here would
 // be a drift between what the migrator writes and what the server reads.
 func Open(backend, path, addr string) (orm.DB, error) {
+	db, err := open(backend, path, addr)
+	if err != nil {
+		return nil, err
+	}
+	// Rows stored before NameKey existed get it once per store. Not fatal: until it
+	// lands, a case-insensitive lookup misses only those old rows, and the next open
+	// tries again, because the store records the migration only when it is done.
+	if n, err := BackfillNameKeys(context.Background(), db); err != nil {
+		fmt.Fprintf(os.Stderr, "iam: name key backfill incomplete, a case-insensitive lookup may miss older rows: %v\n", err)
+	} else if n > 0 {
+		fmt.Fprintf(os.Stderr, "iam: wrote the name key on %d stored row(s)\n", n)
+	}
+	return db, nil
+}
+
+// open opens the store on backend, as Open documents, and nothing else.
+func open(backend, path, addr string) (orm.DB, error) {
 	switch backend {
 	case "", "sqlite":
 		if dir := filepath.Dir(path); dir != "" && dir != "." {

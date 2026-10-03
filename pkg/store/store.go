@@ -197,8 +197,11 @@ func GetUserByName(ctx context.Context, db orm.DB, owner, name string) (*schema.
 			return nil, err
 		}
 	}
-	us, err := orm.TypedQuery[schema.User](db).Filter("Owner=", owner).GetAll(ctx)
-	if err != nil {
+	// The rest of the fold is an indexed equality on NameKey (schema.Fold), not a
+	// read of the organization: two rows are enough to know the name is ambiguous.
+	us, err := orm.TypedQuery[schema.User](db).Filter("Owner=", owner).
+		Filter("NameKey=", schema.Fold(folded)).Limit(2).GetAll(ctx)
+	if err != nil && !errors.Is(err, orm.ErrNotFound) {
 		return nil, err
 	}
 	var match *schema.User
