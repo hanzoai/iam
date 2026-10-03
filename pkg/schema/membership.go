@@ -4,7 +4,6 @@
 package schema
 
 import (
-	"encoding/json"
 	"strings"
 
 	"github.com/hanzoai/orm"
@@ -37,8 +36,8 @@ type Membership struct {
 	User string `json:"user" orm:"index"` // the user id, "<homeOrg>/<username>"
 	Team string `json:"team" orm:"index"` // the team name, owner-scoped by Org
 
-	// NameKey is Fold of User's username half, written by MarshalJSON on every
-	// save: the indexed key that finds an org's member by name (store.MemberByIdentifier).
+	// NameKey is Fold of User's username half, derived on every save: the indexed
+	// key that finds an org's member by name (store.MemberByIdentifier).
 	NameKey string `json:"nameKey,omitempty" orm:"index"`
 
 	// The SCOPE. Org is the tenant and is always set. Workspace narrows the grant
@@ -96,12 +95,21 @@ func OrgRefsFromMemberships(ms []*Membership) []OrgRef {
 	return out
 }
 
-// MarshalJSON writes the row with NameKey derived from User, so whichever path
-// saves a membership, the stored key folds the member's username.
-func (m Membership) MarshalJSON() ([]byte, error) {
-	type row Membership
-	r := row(m)
-	_, name, _ := strings.Cut(m.User, "/")
-	r.NameKey = Fold(name)
-	return json.Marshal(r)
+// BeforeCreate and BeforeUpdate derive NameKey from User's username half on every
+// save the model makes.
+func (m *Membership) BeforeCreate() error {
+	m.NameKey = MemberKey(m.User)
+	return nil
+}
+
+// BeforeUpdate is BeforeCreate for a save of an existing membership.
+func (m *Membership) BeforeUpdate(*Membership) error {
+	m.NameKey = MemberKey(m.User)
+	return nil
+}
+
+// MemberKey is the NameKey of a membership held by the user id "<home>/<name>".
+func MemberKey(user string) string {
+	_, name, _ := strings.Cut(user, "/")
+	return Fold(name)
 }

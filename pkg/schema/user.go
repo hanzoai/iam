@@ -57,8 +57,8 @@ type User struct {
 	UpdatedTime string `json:"updatedTime"`
 	DeletedTime string `json:"deletedTime,omitempty"`
 
-	// NameKey is Fold(Name), written by MarshalJSON on every save: the indexed key
-	// a case-insensitive username lookup reads (store.GetUserByName).
+	// NameKey is Fold(Name), derived on every save (BeforeCreate, BeforeUpdate):
+	// the indexed key a case-insensitive username lookup reads (store.GetUserByName).
 	NameKey string `json:"nameKey,omitempty" orm:"index"`
 
 	ExternalId string `json:"externalId,omitempty" orm:"index"`
@@ -416,11 +416,15 @@ func (u *User) Picture() string {
 	return Gravatar(u.Email)
 }
 
-// MarshalJSON writes the record with NameKey derived from Name, so whichever path
-// saves a user, the stored key folds the name it is stored beside.
-func (u User) MarshalJSON() ([]byte, error) {
-	type record User
-	r := record(u)
-	r.NameKey = Fold(u.Name)
-	return json.Marshal(r)
+// BeforeCreate and BeforeUpdate derive NameKey from Name on every save the model
+// makes, so the stored key always folds the name it is stored beside.
+func (u *User) BeforeCreate() error {
+	u.NameKey = Fold(u.Name)
+	return nil
+}
+
+// BeforeUpdate is BeforeCreate for a save of an existing user.
+func (u *User) BeforeUpdate(*User) error {
+	u.NameKey = Fold(u.Name)
+	return nil
 }

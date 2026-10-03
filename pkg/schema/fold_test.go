@@ -4,7 +4,6 @@
 package schema
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -28,28 +27,24 @@ func TestFoldAgreesWithEqualFold(t *testing.T) {
 	}
 }
 
-// Whatever path saves a user or a membership, the stored JSON carries the key of
-// the name it is stored beside.
-func TestSavedRecordsCarryTheirNameKey(t *testing.T) {
+// A save through the model derives the key of the name it is stored beside,
+// on create and on update, replacing whatever the caller left in it.
+func TestSavesDeriveTheNameKey(t *testing.T) {
 	var u User
-	u.Owner, u.Name = "acme", "Dana"
-	b, err := json.Marshal(&u)
-	if err != nil {
-		t.Fatal(err)
+	u.Name, u.NameKey = "Dana", "stale"
+	if err := u.BeforeCreate(); err != nil || u.NameKey != Fold("Dana") {
+		t.Fatalf("create: NameKey %q, %v; want %q", u.NameKey, err, Fold("Dana"))
 	}
-	var got map[string]any
-	_ = json.Unmarshal(b, &got)
-	if got["nameKey"] != Fold("Dana") || got["name"] != "Dana" {
-		t.Fatalf("user JSON %s: want nameKey %q beside name Dana", b, Fold("Dana"))
+	u.Name = "Erik"
+	if err := u.BeforeUpdate(nil); err != nil || u.NameKey != Fold("Erik") {
+		t.Fatalf("update after rename: NameKey %q, %v; want %q", u.NameKey, err, Fold("Erik"))
 	}
-	u.NameKey = "stale"
-	if b, _ = json.Marshal(u); !strings.Contains(string(b), `"nameKey":"`+Fold("Dana")+`"`) {
-		t.Fatalf("a stale NameKey was written as is: %s", b)
-	}
-
 	var m Membership
-	m.User, m.Org = "acme/Dana", "shared"
-	if b, _ = json.Marshal(&m); !strings.Contains(string(b), `"nameKey":"`+Fold("Dana")+`"`) {
-		t.Fatalf("membership JSON %s: want nameKey of the username half", b)
+	m.User = "acme/Dana"
+	if err := m.BeforeCreate(); err != nil || m.NameKey != Fold("Dana") {
+		t.Fatalf("membership: NameKey %q, %v; want the username half's fold", m.NameKey, err)
+	}
+	if MemberKey("nohalf") != "" {
+		t.Fatal("a user id with no / has no username half to key")
 	}
 }
