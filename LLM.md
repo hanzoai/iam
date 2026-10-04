@@ -437,8 +437,18 @@ as the entity, so serving the list at `keys` and the writes at `key` made two en
 strings for one entity — and any capability keyed on it was dead on whichever half
 you did not name. Same defect `entityNoun` fixes for the legacy verb spellings.
 
-`Scope` is the ACCESS CLASS, fixed at create (an update that could flip it would
-blank a secret and make its `pk-` half resolve at the ingest endpoint):
+`Scope` carries the ACCESS CLASS, fixed at create (an update that could flip it
+would blank a secret and make its `pk-` half resolve at the ingest endpoint), and
+the REACH beside it, which is policy: `PUT` may change the reach and is refused if
+it names the other class. A `PUT` writes every editable field, so a caller sends the
+row as read with its changes made.
+
+A row records `prefix` (`schema.PrefixOf`, the first 12 characters of the credential
+its holder presents, set at mint) so a listing can say which string it is. Revoking is
+`PUT` with `state: "Revoked"`: the row stays listed, stamps `revoker`/`revokeTime`,
+resolves to `key_revoked`, and is final (a later `PUT` is 409). `DELETE` still removes
+a row outright. `keys/principal` answers the row's name as `key`, so a resource server
+can count and limit each credential on its own.
 
 | scope | halves | resolves to | endpoint |
 |---|---|---|---|

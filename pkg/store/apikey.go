@@ -85,6 +85,9 @@ const (
 	// expired key is re-minted, a disabled one is switched back on — and told apart
 	// from KeyUnknown because the credential is real and its holder is not guessing.
 	KeyDisabled KeyFailure = "key_disabled"
+	// KeyRevoked: the row exists and was revoked (schema.KeyStateRevoked). Told
+	// apart from KeyDisabled because a revoked key is final: the cure is a new key.
+	KeyRevoked KeyFailure = "key_revoked"
 	// KeySuperAdmin: an sk- row names an account in the admin org, where every
 	// SuperAdmin lives. No durable key speaks for one (SuperAdminKey); the holder
 	// signs in for a short-lived token instead.
@@ -131,10 +134,10 @@ func notFound(r KeyFailure) error { return &KeyError{Reason: r} }
 // third shape: a value that is not a pk- and not a live sk- is simply not a key, and
 // special-casing any particular non-key spelling would invent the third family back.
 //
-// Revocation is deletion, so a gone key reads as KeyUnknown. Termination is not the
-// only way a real row stops answering, though: an sk- that has run out (KeyExpired) or
-// been switched off (KeyDisabled) resolves to nobody just the same, because the one
-// place a secret becomes a key asks that question for every resolver (see keyBySecret).
+// A deleted key reads as KeyUnknown. A present row stops answering too: an sk- that
+// has been revoked (KeyRevoked), has run out (KeyExpired) or been switched off
+// (KeyDisabled) resolves to nobody just the same, because the one place a secret
+// becomes a key asks that question for every resolver (see keyBySecret).
 func UserByAccessKey(ctx context.Context, db orm.DB, key string) (*schema.User, error) {
 	u, _, err := UserAndScopeByAccessKey(ctx, db, key)
 	return u, err
@@ -181,6 +184,9 @@ type Holder struct {
 	// Role is the holder's standing in Org: the membership role for a member's key,
 	// the home role otherwise. It is what decides whether Org's pool pays.
 	Role string
+	// Key is the key row's Name within Org: which credential the request arrived
+	// on, so a resource server can apply that key's own policy.
+	Key string
 }
 
 // HolderByAccessKey is UserAndScopeByAccessKey with the org the key acts in and
@@ -262,7 +268,7 @@ func holderOwningKey(ctx context.Context, db orm.DB, secret string) (Holder, err
 	if role == "" {
 		role = HomeRole(u)
 	}
-	return Holder{User: u, Org: k.Owner, Scope: k.Scope, Role: role}, nil
+	return Holder{User: u, Org: k.Owner, Scope: k.Scope, Role: role, Key: k.Name}, nil
 }
 
 // SuperAdminKey reports whether a secret key filed as k would speak for an account
@@ -437,12 +443,10 @@ func KeyBySecret(ctx context.Context, db orm.DB, secret string) (*schema.Key, er
 // pk- path lives here and not in UserByAccessKey.
 //
 // Fail-closed on every non-resolution, so this resolver can only ever speak for a live
-// key
-// that was explicitly minted as a browser key: a value that is not a pk-, an unknown
-// key, a non-publishable (secret) key even when addressed by its OWN pk- half
-// (Scope != KeyScopePublish), or an expired key all yield orm.ErrNotFound. Revocation
-// is deletion (the row is gone → not found), so a present, unexpired, publish-scoped
-// key is live.
+// key that was explicitly minted as a browser key: a value that is not a pk-, an
+// unknown key, a non-publishable (secret) key even when addressed by its OWN pk- half
+// (Scope != KeyScopePublish), or a revoked, expired or disabled key (dead) all yield
+// orm.ErrNotFound.
 func PublishableKeyByAccessKey(ctx context.Context, db orm.DB, key string, now time.Time) (*schema.Key, error) {
 	key = strings.TrimSpace(key)
 	if !strings.HasPrefix(key, "pk-") {
@@ -485,6 +489,8 @@ func PublishableKeyByAccessKey(ctx context.Context, db orm.DB, key string, now t
 func dead(k *schema.Key, now time.Time) KeyFailure {
 	switch k.State {
 	case "", "Active", "test":
+	case schema.KeyStateRevoked:
+		return KeyRevoked
 	default:
 		return KeyDisabled
 	}

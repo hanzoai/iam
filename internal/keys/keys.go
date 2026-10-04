@@ -12,6 +12,7 @@
 package keys
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -183,6 +184,7 @@ func create(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 		// response is the only time its holder can ever read it — but what is
 		// written down is a value that cannot be replayed if the table leaks.
 		secret := k.AccessSecret
+		k.Prefix = schema.PrefixOf(cmp.Or(secret, k.AccessKey))
 		k.AccessSecretDigest = schema.DigestSecret(secret)
 		k.AccessSecret = ""
 
@@ -194,8 +196,15 @@ func create(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 	}
 }
 
-// update changes what a key is called or what it may reach. The credential
-// itself is not reissued — the key in your deployment keeps working.
+// update changes what a key is called, what it may reach, when it expires, or
+// revokes it. The credential itself is not reissued — the key in your deployment
+// keeps working until it expires or is revoked.
+//
+// An update writes the whole set of editable fields, so send the key as you read
+// it with your changes made. The class in its scope (publishable or secret) is
+// fixed at creation and an update naming the other is refused. Setting state to
+// "Revoked" revokes the key: the row stays, records who revoked it and when, and
+// is never updated again.
 func update(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 	return func(ctx context.Context, in *schema.Key) (*schema.Key, error) {
 		if in.Owner == "" || in.Name == "" {
@@ -207,6 +216,9 @@ func update(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 		}
 		if err != nil {
 			return nil, zip.ErrInternal(err.Error())
+		}
+		if k.State == schema.KeyStateRevoked {
+			return nil, zip.ErrConflict("a revoked key is final; create a new key instead")
 		}
 		// A member's key names its member for as long as it exists. Its secret is in
 		// the member's hands, so repointing it would hand them whoever it now names.
@@ -231,13 +243,28 @@ func update(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 				return nil, err
 			}
 		}
+		if (ClassOf(in.Scope) == schema.KeyScopePublish) != (ClassOf(k.Scope) == schema.KeyScopePublish) {
+			return nil, zip.ErrBadRequest("a key's class is fixed when it is minted; create a new key instead")
+		}
 		apply(k, in)
+		// The reach half of the scope is policy and changes here; the class half is
+		// equal, checked above, so this never turns one kind of key into the other.
+		k.Scope = in.Scope
 		if ClassOf(k.Scope) == schema.KeyScopePublish {
 			// Keep a publishable key write-only for its whole lifecycle: an update can
 			// never attach a confidential sk- secret to a pk--only browser key.
 			k.AccessSecret = ""
 		}
-		k.UpdatedTime = time.Now().UTC().Format(time.RFC3339)
+		now := time.Now().UTC().Format(time.RFC3339)
+		k.UpdatedTime = now
+		if k.State == schema.KeyStateRevoked {
+			// Revoking keeps the row and says who and when. A person revokes as
+			// themselves; a minter names the person it acts for.
+			k.Revoker, k.RevokeTime = in.Revoker, now
+			if p, ok := person(ctx); ok {
+				k.Revoker = self(p)
+			}
+		}
 		if err := k.UpdateCtx(ctx); err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
@@ -414,11 +441,11 @@ func operatorFree(owner, user, scope string) error {
 // This matters more the moment the secret is stored as a digest rather than
 // verbatim — a chosen digest is a forgery, not merely a chosen password.
 //
-// Scope is not copied either: it is the key's ACCESS CLASS, fixed at create. Letting
-// an update flip a secret key to publish scope would blank its AccessSecret and make
-// its pk- half org-resolvable at the ingest endpoint — a privilege change disguised as
-// an
-// edit. Rotation and re-scoping are mint operations, not field writes.
+// Scope is not copied either. Its CLASS is fixed at create: letting an update flip
+// a secret key to publish scope would blank its AccessSecret and make its pk- half
+// org-resolvable at the ingest endpoint — a privilege change disguised as an edit.
+// Its REACH is policy, so update writes the scope itself once it has checked the
+// class is unchanged. Rotation is a mint operation, not a field write.
 func apply(dst, src *schema.Key) {
 	dst.DisplayName = src.DisplayName
 	dst.Type = src.Type
@@ -647,6 +674,7 @@ func write(ctx context.Context, db orm.DB, r row) error {
 	k.DisplayName = r.label
 	k.Type, k.User = "User", r.user
 	k.AccessKey = r.access
+	k.Prefix = schema.PrefixOf(cmp.Or(r.secret, r.access))
 	// The digest is what is written; the secret leaves with its holder and is
 	// never stored, so a leak of this table reveals nothing that can be replayed.
 	k.AccessSecret = ""

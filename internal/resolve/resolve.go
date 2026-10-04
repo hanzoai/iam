@@ -126,6 +126,9 @@ type holder struct {
 	// A resource server cannot enforce a per-key limit it is never told, and this
 	// is the only endpoint that knows both halves at once.
 	Scope string `json:"scope,omitempty"`
+	// Key is the key's name within Org — which credential this is, so a resource
+	// server can count and limit each key on its own.
+	Key string `json:"key,omitempty"`
 }
 
 // who answers which account a SECRET key belongs to — what a gateway of yours calls
@@ -178,6 +181,7 @@ func who(db orm.DB) zip.Handler {
 			IsAdmin:        admin,
 			BillingAccount: billing,
 			Scope:          h.Scope,
+			Key:            h.Key,
 		})
 	}
 }

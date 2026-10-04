@@ -256,10 +256,15 @@ func TestKeys_UpdateCannotReScopeOrRotate(t *testing.T) {
 	}
 	secret, access := made.AccessSecret, made.AccessKey
 
+	// Flipping the class is refused outright: it would blank the secret and make
+	// the pk- half org-resolvable at the ingest endpoint.
+	if _, err := update(db)(ctx, &schema.Key{Owner: "acme", Name: "svc", Scope: schema.KeyScopePublish}); err == nil {
+		t.Fatal("update re-scoped a secret key to publish")
+	}
+
 	got, err := update(db)(ctx, &schema.Key{
 		Owner: "acme", Name: "svc",
 		DisplayName:  "renamed",
-		Scope:        schema.KeyScopePublish,
 		AccessSecret: "sk-live-attacker",
 		AccessKey:    "pk-live-attacker",
 	})
@@ -691,5 +696,128 @@ func TestKeys_MemberKeyIsWrittenOnlyForAMemberByAMinter(t *testing.T) {
 	}
 	if _, err := u(minter, &schema.Key{Owner: "client", Name: "josh-secret", User: "agency/josh", DisplayName: "renamed"}); err != nil {
 		t.Fatalf("an edit that keeps the member was refused: %v", err)
+	}
+}
+
+// A key records the head of the credential its holder presents, so a listing can
+// say which string a row is: the sk- of a secret key, the pk- of a publishable one.
+func TestKeys_PrefixIsTheHeadOfThePresentedCredential(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+
+	made, err := create(db)(ctx, &schema.Key{Owner: "acme", Name: "svc"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if made.Prefix == "" || !strings.HasPrefix(made.AccessSecret, made.Prefix) || !strings.HasPrefix(made.Prefix, "sk-") {
+		t.Fatalf("prefix %q is not the head of the secret", made.Prefix)
+	}
+	if len(made.Prefix) >= len(made.AccessSecret)/2 {
+		t.Fatalf("prefix %q carries too much of the secret", made.Prefix)
+	}
+	stored, err := orm.Get[schema.Key](db, "acme/svc")
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if stored.Prefix != made.Prefix {
+		t.Fatalf("the stored prefix %q differs from the minted %q", stored.Prefix, made.Prefix)
+	}
+
+	pub, err := create(db)(ctx, &schema.Key{Owner: "acme", Name: "web", Scope: schema.KeyScopePublish})
+	if err != nil {
+		t.Fatalf("create publishable: %v", err)
+	}
+	if !strings.HasPrefix(pub.AccessKey, pub.Prefix) || !strings.HasPrefix(pub.Prefix, "pk-") {
+		t.Fatalf("publishable prefix %q is not the head of %q", pub.Prefix, pub.AccessKey)
+	}
+
+	secret, err := MintUserKey(ctx, db, "acme", "ada", "")
+	if err != nil {
+		t.Fatalf("MintUserKey: %v", err)
+	}
+	row, err := orm.Get[schema.Key](db, id("acme", NameFor("ada", "")))
+	if err != nil {
+		t.Fatalf("read the minted row: %v", err)
+	}
+	if row.Prefix == "" || !strings.HasPrefix(secret, row.Prefix) {
+		t.Fatalf("MintUserKey recorded prefix %q for %q", row.Prefix, secret[:3])
+	}
+}
+
+// A key's reach is policy: an update changes it and the credential keeps
+// working, unchanged.
+func TestKeys_UpdateChangesTheReachAndKeepsTheSecret(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+	seedUser(t, db, "acme", "ada")
+
+	made, err := create(db)(ctx, &schema.Key{Owner: "acme", Name: "svc", User: "ada", State: "Active"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := update(db)(ctx, &schema.Key{Owner: "acme", Name: "svc", User: "ada", State: "Active", Scope: "model:zen5"}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	h, err := store.HolderByAccessKey(ctx, db, made.AccessSecret)
+	if err != nil {
+		t.Fatalf("the edited key stopped resolving: %s", store.Reason(err))
+	}
+	if h.Scope != "model:zen5" || h.Key != "svc" {
+		t.Fatalf("resolved scope %q key %q, want model:zen5 svc", h.Scope, h.Key)
+	}
+
+	pub, err := create(db)(ctx, &schema.Key{Owner: "acme", Name: "web", Scope: schema.KeyScopePublish})
+	if err != nil {
+		t.Fatalf("create publishable: %v", err)
+	}
+	if _, err := update(db)(ctx, &schema.Key{Owner: "acme", Name: "web", Scope: "model:zen5"}); err == nil {
+		t.Fatal("an update turned a publishable key into a secret one")
+	}
+	got, err := update(db)(ctx, &schema.Key{Owner: "acme", Name: "web", Scope: schema.KeyScopePublish + ",model:zen5"})
+	if err != nil {
+		t.Fatalf("narrow the publishable key: %v", err)
+	}
+	if got.Scope != "publish,model:zen5" || got.AccessKey != pub.AccessKey {
+		t.Fatalf("publishable update gave scope %q key %q", got.Scope, got.AccessKey)
+	}
+}
+
+// Revoking keeps the row, says who and when, refuses the credential with its own
+// reason, and is final.
+func TestKeys_RevokeIsAFinalStateThatStaysListed(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+	seedUser(t, db, "acme", "ada")
+
+	made, err := create(db)(ctx, &schema.Key{Owner: "acme", Name: "svc", User: "ada", State: "Active"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	other, err := create(db)(ctx, &schema.Key{Owner: "acme", Name: "svc2", User: "ada", State: "Active"})
+	if err != nil {
+		t.Fatalf("create second: %v", err)
+	}
+	got, err := update(db)(ctx, &schema.Key{Owner: "acme", Name: "svc", User: "ada", State: schema.KeyStateRevoked, Revoker: "acme/bob"})
+	if err != nil {
+		t.Fatalf("revoke: %v", err)
+	}
+	if got.Revoker != "acme/bob" || got.RevokeTime == "" {
+		t.Fatalf("revoke recorded revoker %q at %q", got.Revoker, got.RevokeTime)
+	}
+	if _, err := store.HolderByAccessKey(ctx, db, made.AccessSecret); store.Reason(err) != store.KeyRevoked {
+		t.Fatalf("a revoked key resolved with reason %q, want %q", store.Reason(err), store.KeyRevoked)
+	}
+	if _, err := store.HolderByAccessKey(ctx, db, other.AccessSecret); err != nil {
+		t.Fatalf("revoking one key ended its sibling: %s", store.Reason(err))
+	}
+	listed, err := list(db)(as("acme"), &ListRequest{Owner: "acme"})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(listed.Keys) != 2 {
+		t.Fatalf("a revoked key must stay listed, got %d rows", len(listed.Keys))
+	}
+	if _, err := update(db)(ctx, &schema.Key{Owner: "acme", Name: "svc", User: "ada", State: "Active"}); err == nil {
+		t.Fatal("an update reopened a revoked key")
 	}
 }

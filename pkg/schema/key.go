@@ -93,6 +93,35 @@ type Key struct {
 	// SuperAdmin target is refused, so the grant reaches only ordinary members of
 	// the one tenant that holds the key.
 	Act bool `json:"act,omitempty" url:"-"`
+
+	// Prefix is the head of the credential the holder presents — the sk- of a
+	// secret key, the pk- of a publishable one — recorded when the key is minted
+	// (PrefixOf). It lets a listing say which string a row is, and is far too
+	// short to use: the secret itself is never stored.
+	Prefix string `json:"prefix,omitempty" url:"-"`
+
+	// Revoker is who revoked the key and RevokeTime when. Revoking sets State to
+	// KeyStateRevoked and keeps the row, so the key is still listed and its
+	// history can be read; the resolvers refuse it, and no update reopens it.
+	Revoker    string `json:"revoker,omitempty" url:"-"`
+	RevokeTime string `json:"revokeTime,omitempty" url:"-"`
+}
+
+// KeyStateRevoked is the State of a revoked key. It is final: the resolvers
+// refuse the key (store.KeyRevoked) and an update to the row is refused.
+const KeyStateRevoked = "Revoked"
+
+// prefixLen is how much of a credential PrefixOf keeps: "sk-live-" and four
+// hex digits, enough to tell one holder's keys apart and 16 of the secret's
+// 128 random bits.
+const prefixLen = 12
+
+// PrefixOf is the recorded head of a credential.
+func PrefixOf(credential string) string {
+	if len(credential) > prefixLen {
+		return credential[:prefixLen]
+	}
+	return credential
 }
 
 // KeyScopePublish is the Scope value marking a WRITE-ONLY publishable key: a pk-
