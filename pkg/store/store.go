@@ -843,6 +843,28 @@ func ListTokensByUserApp(ctx context.Context, db orm.DB, user, application strin
 		Filter("User=", user).Filter("Application=", application).GetAll(ctx)
 }
 
+// RekeyTokens moves every token row a user holds from one identity key to
+// another — the "owner/name" pair the mint stamps on the row as User. Moving a
+// user between orgs re-keys their identity, and a grant still naming the old key
+// resolves nobody: its refresh would answer invalid_grant to the person it was
+// issued to. Both keys are required; an empty one moves nothing.
+func RekeyTokens(ctx context.Context, db orm.DB, from, to string) error {
+	if from == "" || to == "" || from == to {
+		return nil
+	}
+	rows, err := orm.TypedQuery[schema.Token](db).Filter("User=", from).GetAll(ctx)
+	if err != nil && !errors.Is(err, orm.ErrNotFound) {
+		return err
+	}
+	for _, tk := range rows {
+		tk.User = to
+		if err := tk.UpdateCtx(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // DeleteToken removes a token row by (owner, name). A missing row is not an
 // error — revocation is idempotent.
 func DeleteToken(ctx context.Context, db orm.DB, tok *schema.Token) error {

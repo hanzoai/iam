@@ -239,8 +239,14 @@ func provision(ctx context.Context, db orm.DB, cl claim) (provisioned, error) {
 		// longer exists, so the previous org's roster keeps a ghost member forever.
 		// Drop it in the same converge that re-keyed the user — one identity, one set
 		// of memberships. Idempotent (a missing row reports false, never an error).
+		// The grants the caller signed in with name the old id too, so they move
+		// with the identity: a refresh after founding renews into the new org
+		// instead of answering invalid_grant to the person who just founded it.
 		if wasOwner != cl.slug {
 			if _, err := store.DeleteMembership(ctx, tx, wasOwner+"/"+cl.name, wasOwner); err != nil {
+				return &fault{500, "server_error"}
+			}
+			if err := store.RekeyTokens(ctx, tx, wasOwner+"/"+cl.name, cl.slug+"/"+cl.name); err != nil {
 				return &fault{500, "server_error"}
 			}
 		}
