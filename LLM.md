@@ -265,6 +265,12 @@ refuses to create, alter or delete one. Query it at
 `GET /v1/iam/audit-logs?owner=<org>` (indexed on organization, user, action,
 createdTime).
 
+A membership grant or revoke (`POST /v1/iam/memberships`, `/v1/iam/delete-membership`)
+writes `ActionMembershipGrant` / `ActionMembershipRevoke` in the same transaction as
+the row, filed under the org it changes: actor, client IP, and `object`
+`{user, org, role, added|removed}`. A repeated grant is recorded with `added:false`;
+a refused one writes nothing. Both actions are `PlatformWritten`.
+
 ## SuperAdmin — one predicate, on the row
 
 `schema.User.SuperAdmin`: a PERSON (`!Machine()`) whose row's `owner` is
