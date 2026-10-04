@@ -8,12 +8,10 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"sync"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/cred"
 	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/mfa/factor"
 	"github.com/hanzoai/iam/internal/otp"
@@ -247,12 +245,6 @@ func loginHandler(db orm.DB) zip.Handler {
 			pwOrg = user.Owner
 		}
 		orgPasswordType := loginOrgPasswordType(ctx, db, pwOrg)
-		if user == nil && members {
-			// A shared app's roster was searched and held nobody by this name. Spend
-			// the verify a real account would, so the refusal below cannot be told
-			// from a wrong password by how long it took.
-			decoyVerify(f.Password)
-		}
 		// Verify through the ONE lockout-enforcing choke point (F-D1) — users.Authenticate,
 		// shared with the ROPC grant, the registry token endpoint, and the LDAP-bind seam.
 		// One opaque failure for "no such user" and "wrong password" — no oracle that
@@ -420,10 +412,12 @@ func (f loginForm) mint() Mint {
 // own is not in the org being searched. The org it registered in still knows it,
 // and [store.GetSignupByEmail] is that reach: the accounts org's applications
 // registered, by the address they registered with, ambiguity refused, reserved
-// orgs unreachable. Every application of the org reaches the same accounts, so a
-// person who registered at hanzo.ai signs in at the console and the CLI, and a
-// code-proved password reset — whose body names the org and no application —
-// finds them too.
+// orgs unreachable. An identifier that is not an address reaches them by the
+// username they kept ([store.SignupByName]), under the same scope; a name two of
+// them hold reaches nobody. Every application of the org reaches the same
+// accounts, so a person who registered at hanzo.ai signs in at the console and the
+// CLI, and a code-proved password reset — whose body names the org and no
+// application — finds them too.
 //
 // It is not a cross-org lookup by address. Resolving an address across every org
 // couples the accounts that merely share one — their lockout counters above all —
@@ -437,10 +431,31 @@ func resolveLoginUser(ctx context.Context, db orm.DB, org, identifier string, me
 	if err != nil || user != nil {
 		return user, err
 	}
+	if !strings.Contains(identifier, "@") {
+		return resolveName(ctx, db, org, identifier, members)
+	}
 	if user, err = store.GetSignupByEmail(ctx, db, org, identifier); err != nil || user != nil || !members {
 		return user, err
 	}
 	return store.MemberByIdentifier(ctx, db, org, identifier)
+}
+
+// resolveName is resolveLoginUser's reach for a username that is not in org itself.
+// A shared application's roster is asked first: the people org admitted by
+// membership outrank a name anyone could register. Then the accounts org's
+// applications registered, where a name held by exactly one of them resolves it and
+// a name held by two resolves nobody.
+func resolveName(ctx context.Context, db orm.DB, org, name string, members bool) (*schema.User, error) {
+	if members {
+		if user, err := store.MemberByIdentifier(ctx, db, org, name); err != nil || user != nil {
+			return user, err
+		}
+	}
+	user, held, err := store.SignupByName(ctx, db, org, name)
+	if err != nil || held != 1 {
+		return nil, err
+	}
+	return user, nil
 }
 
 // servesMembers reports whether this sign-in is for a SHARED application of the
@@ -450,19 +465,6 @@ func resolveLoginUser(ctx context.Context, db orm.DB, org, identifier string, me
 func servesMembers(ctx context.Context, db orm.DB, f loginForm) bool {
 	app, err := ResolveApp(ctx, db, f.ClientId, f.Application)
 	return err == nil && app != nil && app.IsShared && app.Organization == f.Organization
-}
-
-// decoy is a password hash no one holds, verified when a sign-in names nobody so
-// that the refusal takes as long as a wrong password does.
-var decoy = sync.OnceValue(func() string {
-	h, _ := cred.Hash("decoy")
-	return h
-})
-
-func decoyVerify(password string) {
-	if h := decoy(); h != "" {
-		_ = cred.Verify(cred.TypeArgon2id, password, h)
-	}
 }
 
 // resolveInOrg resolves the login identifier within one org, resolving NAME FIRST

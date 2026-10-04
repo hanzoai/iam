@@ -277,7 +277,7 @@ func signupHandler(db orm.DB) zip.Handler {
 			if email == "" {
 				return httpx.Err(c, "an email address or a username is required")
 			}
-			name, err := allocateName(ctx, db, f.Organization, email, "")
+			name, err := allocateName(ctx, db, f.Organization, app.Organization, email, "")
 			if err != nil {
 				return httpx.Err(c, err.Error())
 			}
@@ -293,7 +293,7 @@ func signupHandler(db orm.DB) zip.Handler {
 				return httpx.Err(c, err.Error())
 			}
 			f.Username = name
-			if taken, err := userExists(ctx, db, f.Organization, name); err != nil {
+			if taken, err := nameTaken(ctx, db, f.Organization, app.Organization, name); err != nil {
 				return httpx.Err(c, err.Error())
 			} else if taken {
 				return httpx.Err(c, "username already exists")
@@ -508,10 +508,18 @@ func orgSlugFree(ctx context.Context, db orm.DB, slug string) (bool, error) {
 	return !held, err
 }
 
-// userExists reports whether a user (org, name) already exists.
-func userExists(ctx context.Context, db orm.DB, org, name string) (bool, error) {
-	u, err := store.GetUserByName(ctx, db, org, name)
-	return u != nil, err
+// nameTaken reports whether a new account in org may not take name: a user of org
+// holds it, or an account an application of registrar registered holds it, in
+// whatever org it now works. The second half is what keeps a username unique across
+// the accounts one org registers — founding moves each of them out of the org this
+// first half searches, and a name two of them hold signs neither in
+// (store.SignupByName).
+func nameTaken(ctx context.Context, db orm.DB, org, registrar, name string) (bool, error) {
+	if u, err := store.GetUserByName(ctx, db, org, name); err != nil || u != nil {
+		return u != nil, err
+	}
+	_, held, err := store.SignupByName(ctx, db, registrar, name)
+	return held > 0, err
 }
 
 // nameAttempts bounds the dedupe walk: the first free suffix wins, and a name
@@ -545,8 +553,9 @@ func allocate(base string, free func(string) (bool, error)) (string, error) {
 	return "", errors.New("could not allocate a unique name")
 }
 
-// allocateName mints the username a NEW account gets in org: the handle its
-// address yields, or the first free variant of it. It is the ONE derivation both
+// allocateName mints the username a NEW account gets in org, registered by an
+// application of registrar: the handle its address yields, or the first free
+// variant of it ([nameTaken]). It is the ONE derivation both
 // ways into this store use — a password signup with no username of its own, and a
 // federated signup, which never has one.
 //
@@ -560,7 +569,7 @@ func allocate(base string, free func(string) (bool, error)) (string, error) {
 // The walk is [allocate]'s: alice@gmail.com becomes "alice", then "alice2",
 // "alice3". That replaced a random 8-hex suffix on EVERY name ("z-3f9ab21c"),
 // which made collisions impossible by making every name unrecognisable.
-func allocateName(ctx context.Context, db orm.DB, org, email, fallback string) (string, error) {
+func allocateName(ctx context.Context, db orm.DB, org, registrar, email, fallback string) (string, error) {
 	base := schema.Handle(email)
 	if base == "" {
 		base, _ = schema.Username(fallback)
@@ -569,7 +578,7 @@ func allocateName(ctx context.Context, db orm.DB, org, email, fallback string) (
 		base = "user"
 	}
 	return allocate(base, func(name string) (bool, error) {
-		taken, err := userExists(ctx, db, org, name)
+		taken, err := nameTaken(ctx, db, org, registrar, name)
 		return !taken, err
 	})
 }

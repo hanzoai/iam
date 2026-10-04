@@ -129,7 +129,7 @@ func codeSignup(c *zip.Ctx, db orm.DB, f loginForm) error {
 // founded into an org of its own where the application founds one.
 func createWithCode(ctx context.Context, db orm.DB, app *schema.Application, address string, terms *schema.Terms) (*schema.User, error) {
 	org := app.Organization
-	name, err := allocateName(ctx, db, org, address, "")
+	name, err := allocateName(ctx, db, org, org, address, "")
 	if err != nil {
 		return nil, err
 	}

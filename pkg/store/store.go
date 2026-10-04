@@ -406,6 +406,84 @@ func GetSignupByEmail(ctx context.Context, db orm.DB, org, email string) (*schem
 	}
 }
 
+// nameScan bounds the rows the first username read takes from every org at once.
+// A name is held by at most one account per registration org, so a fuller read
+// means many orgs hold it, and the lookup reads org's own applications instead.
+const nameScan = 64
+
+// SignupByName finds the account registered in org that holds a username: a row
+// whose [schema.User.SignupApplication] names an application of org, compared by
+// [schema.Fold], never a reserved org. held counts the matches, stopping at two, and
+// the account is returned only when held is exactly one.
+//
+// It is [GetSignupByEmail] for the other identifier a sign-in form takes. A
+// founding application moves each account it registers into an org of its own, and
+// the account keeps its username there, so the registration org — the only org a
+// sign-in screen can name — no longer holds that name. This is the reach that finds
+// it, under the same scope.
+//
+// A name two accounts hold (usernames written before they were unique across a
+// registration org) names nobody. That is reported as a count, not an error, so a
+// sign-in refuses it exactly as it refuses a name nobody holds, and signup reads the
+// same count to keep a name from being handed out twice.
+func SignupByName(ctx context.Context, db orm.DB, org, name string) (user *schema.User, held int, err error) {
+	key := schema.Fold(strings.TrimSpace(name))
+	if org == "" || key == "" {
+		return nil, 0, nil
+	}
+	us, err := orm.TypedQuery[schema.User](db).
+		Filter("NameKey=", key).Filter("SignupApplication!=", "").Limit(nameScan).GetAll(ctx)
+	if err == orm.ErrNotFound {
+		return nil, 0, nil
+	}
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(us) >= nameScan {
+		us, err = registeredNamed(ctx, db, org, key)
+	} else {
+		us, err = registeredIn(ctx, db, org, us)
+	}
+	if err != nil {
+		return nil, 0, err
+	}
+	switch len(us) {
+	case 0:
+		return nil, 0, nil
+	case 1:
+		return us[0], 1, nil
+	default:
+		return nil, 2, nil
+	}
+}
+
+// registeredNamed reads, application by application, the accounts org's
+// applications registered under key, stopping at two: the exact answer for a name
+// too many orgs hold to read in one pass, reading nothing another org registered.
+func registeredNamed(ctx context.Context, db orm.DB, org, key string) ([]*schema.User, error) {
+	apps, err := orm.TypedQuery[schema.Application](db).Filter("Organization=", org).GetAll(ctx)
+	if err != nil && err != orm.ErrNotFound {
+		return nil, err
+	}
+	var out []*schema.User
+	for _, app := range apps {
+		us, err := orm.TypedQuery[schema.User](db).
+			Filter("NameKey=", key).Filter("SignupApplication=", app.Name).Limit(2).GetAll(ctx)
+		if err != nil && err != orm.ErrNotFound {
+			return nil, err
+		}
+		for _, u := range us {
+			if !policy.IsReservedOrg(u.Owner) {
+				out = append(out, u)
+			}
+		}
+		if len(out) >= 2 {
+			return out[:2], nil
+		}
+	}
+	return out, nil
+}
+
 // RegisteredIn reports whether an application of org registered u — the reach
 // [GetSignupByEmail] makes by address, asked of an account already in hand.
 func RegisteredIn(ctx context.Context, db orm.DB, org string, u *schema.User) (bool, error) {

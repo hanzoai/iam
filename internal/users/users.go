@@ -15,6 +15,7 @@ package users
 import (
 	"context"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -671,12 +672,26 @@ func hashPassword(plaintext string) (string, error) {
 //
 // It is the single verify choke point for the login path — the digest itself
 // never leaves the store, so verification happens here, against the row.
+//
+// No account, or an account with no password, still pays one verify against a
+// digest nobody holds, so a refusal takes as long as a wrong password does and its
+// timing says neither whether the identifier names anybody nor whether that
+// account has a password.
 func VerifyPassword(u *schema.User, plaintext, orgPasswordType string) bool {
 	if u == nil || u.PasswordHash == "" {
+		if h := decoy(); h != "" {
+			_ = cred.Verify(cred.TypeArgon2id, plaintext, h)
+		}
 		return false
 	}
 	return cred.Verify(cred.Resolve(u.PasswordType, orgPasswordType), plaintext, u.PasswordHash)
 }
+
+// decoy is a password digest no one holds, minted once at the current parameters.
+var decoy = sync.OnceValue(func() string {
+	h, _ := cred.Hash("decoy")
+	return h
+})
 
 // nowRFC3339 is the single timestamp format for v1-compatible string times.
 func nowRFC3339() string { return time.Now().UTC().Format(time.RFC3339) }

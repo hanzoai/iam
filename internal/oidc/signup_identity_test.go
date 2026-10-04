@@ -212,7 +212,7 @@ func TestAllocateName_DerivesFromTheAddress(t *testing.T) {
 					t.Fatalf("seed hanzo/%s: %v", held, err)
 				}
 			}
-			got, err := allocateName(ctx, db, "hanzo", tc.email, tc.fallback)
+			got, err := allocateName(ctx, db, "hanzo", "hanzo", tc.email, tc.fallback)
 			if err != nil {
 				t.Fatalf("allocateName(%q, %q): %v", tc.email, tc.fallback, err)
 			}

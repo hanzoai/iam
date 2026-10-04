@@ -68,10 +68,10 @@ const (
 // one verify, a self-inflicted DoS. Only its boolean result crosses into the atomic
 // counter update, which is the sole part that must be serialized.
 func Authenticate(ctx context.Context, db orm.DB, user *schema.User, password, orgPasswordType string, now time.Time) (ok, locked bool) {
+	passwordOK := VerifyPassword(user, password, orgPasswordType)
 	if user == nil {
 		return false, false
 	}
-	passwordOK := VerifyPassword(user, password, orgPasswordType)
 	return recordAttempt(ctx, db, user.Owner, user.Name, passwordOK, now)
 }
 

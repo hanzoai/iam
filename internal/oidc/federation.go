@@ -597,7 +597,7 @@ func linkOrProvision(ctx context.Context, db orm.DB, app *schema.Application, pr
 // become an identity, which is allocateName's rule to keep.
 func provisionFederatedUser(ctx context.Context, db orm.DB, app *schema.Application, prov *schema.Provider, binding connectorBinding, id federatedIdentity) (*schema.User, error) {
 	org := app.Organization
-	name, err := allocateName(ctx, db, org, id.email, prov.Type)
+	name, err := allocateName(ctx, db, org, org, id.email, prov.Type)
 	if err != nil {
 		return nil, fmt.Errorf("federation: %w", err)
 	}
