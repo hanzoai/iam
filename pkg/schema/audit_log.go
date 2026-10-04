@@ -82,6 +82,11 @@ const (
 	ActionInviteSignupRefused = "invitation-signup-refused"
 	// A code IAM sent a signed-in account to prove its address for joining.
 	ActionInviteCodeSent = "invitation-code-sent"
+	// A membership granted or revoked through /v1/iam/memberships, filed under the
+	// org it changes: an org's roster is its authority over who acts and spends in
+	// it, so every change to it is accountable to that org.
+	ActionMembershipGrant  = "membership-grant"
+	ActionMembershipRevoke = "membership-revoke"
 )
 
 // PlatformWritten reports whether action names a record the platform writes
@@ -95,7 +100,7 @@ func PlatformWritten(action string) bool {
 		ActionRevokeUserKeys, ActionTokenExchange, ActionAs,
 		ActionAssumeOrg, ActionReleaseOrg, ActionListOrgs, ActionSuperAdmin, ActionWorkloadToken,
 		ActionInviteSend, ActionInviteAccept, ActionInviteRefused, ActionInviteSignupRefused,
-		ActionInviteCodeSent:
+		ActionInviteCodeSent, ActionMembershipGrant, ActionMembershipRevoke:
 		return true
 	}
 	return false

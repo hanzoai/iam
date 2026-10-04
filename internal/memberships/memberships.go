@@ -30,6 +30,7 @@ package memberships
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -176,8 +177,10 @@ func ensure(db orm.DB) zip.Handler {
 				}
 			}
 			var err error
-			added, err = store.EnsureMembership(ctx, tx, in.User, in.Org, in.Role)
-			return err
+			if added, err = store.EnsureMembership(ctx, tx, in.User, in.Org, in.Role); err != nil {
+				return err
+			}
+			return store.Append(ctx, tx, record(c, schema.ActionMembershipGrant, in, "added", added))
 		})
 		if err != nil {
 			return httpx.Err(c, err.Error())
@@ -223,11 +226,54 @@ func remove(db orm.DB) zip.Handler {
 		if store.IsHomeOrg(in.User, in.Org) {
 			return httpx.Err(c, homeOrgIsNotRevocable)
 		}
-		removed, err := store.DeleteMembership(ctx, db, in.User, in.Org)
+		var removed bool
+		err := db.RunInTransaction(ctx, func(tx orm.DB) error {
+			var err error
+			if removed, err = store.DeleteMembership(ctx, tx, in.User, in.Org); err != nil {
+				return err
+			}
+			return store.Append(ctx, tx, record(c, schema.ActionMembershipRevoke, in, "removed", removed))
+		})
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
 		return httpx.Ok(c, removed)
+	}
+}
+
+// record is the audit row for a grant or revoke the gate admitted, filed under
+// the org it changes so that org's own trail shows who was let in or put out,
+// by whom, from where — and whether the store changed anything, since a repeated
+// grant is still an authorized act on the org's roster. It is written in the
+// same transaction as the membership, so neither exists without the other.
+func record(c *zip.Ctx, action string, in request, outcome string, changed bool) *schema.AuditLog {
+	object, _ := json.Marshal(map[string]any{
+		"user": in.User, "org": in.Org, "role": in.Role, outcome: changed,
+	})
+	return &schema.AuditLog{
+		Owner:        in.Org,
+		Organization: in.Org,
+		User:         actor(c.Context()),
+		ClientIp:     httpx.ClientIP(c),
+		Method:       c.Method(),
+		RequestUri:   c.Fiber().OriginalURL(),
+		Action:       action,
+		Object:       string(object),
+		StatusCode:   http.StatusOK,
+	}
+}
+
+// actor names who made the request: "<org>/<name>" for a person, the
+// application's "<owner>/<name>" for a confidential client.
+func actor(ctx context.Context) string {
+	p, ok := principal.From(ctx)
+	switch {
+	case !ok:
+		return ""
+	case p.App != nil:
+		return p.App.Owner + "/" + p.App.Name
+	default:
+		return p.Org + "/" + p.User
 	}
 }
 
