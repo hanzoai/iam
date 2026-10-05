@@ -7,6 +7,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/hanzoai/orm"
@@ -186,6 +187,31 @@ func TestAs_noActGrant_refused(t *testing.T) {
 	resp, body := do(t, app, asReq("sk-live-optoken", "?id=hanzo/alice"))
 	if resp.StatusCode != 403 {
 		t.Fatalf("status = %d, want 403; body=%s", resp.StatusCode, body)
+	}
+	if rows := auditRows(t, db, schema.ActionAs); len(rows) != 0 {
+		t.Fatalf("a refused mint wrote %d audit rows, want 0", len(rows))
+	}
+}
+
+// A key limited to less than its holder may not act: the token it would mint
+// carries the target's whole authority, which no limit on the key would bound.
+func TestAs_limitedKey_refused(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-app", secret: "app-secret"})
+	seedActUser(t, db, "hanzo", "alice", "ext-alice")
+	seedActKey(t, db, "hanzo", "op", "sk-live-optoken", "hanzo-app", true)
+	k, err := orm.Get[schema.Key](db, "hanzo/op")
+	if err != nil {
+		t.Fatalf("read key: %v", err)
+	}
+	k.Scope = "read:*"
+	if err := k.UpdateCtx(context.Background()); err != nil {
+		t.Fatalf("limit key: %v", err)
+	}
+
+	resp, body := do(t, app, asReq("sk-live-optoken", "?id=hanzo/alice"))
+	if resp.StatusCode != 403 || !strings.Contains(string(body), "a limited key cannot act") {
+		t.Fatalf("status = %d, want 403 naming the limit; body=%s", resp.StatusCode, body)
 	}
 	if rows := auditRows(t, db, schema.ActionAs); len(rows) != 0 {
 		t.Fatalf("a refused mint wrote %d audit rows, want 0", len(rows))

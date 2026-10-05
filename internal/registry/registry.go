@@ -303,15 +303,17 @@ func (h *handler) resolve(ctx context.Context, id, secret string) *principal {
 
 // userByKey resolves a Hanzo API key to its user, fail-closed: an empty, unknown,
 // or non-key value (any error, incl. orm.ErrNotFound) yields nil — never a wrong
-// or fallback principal. It reuses the ONE key resolver (store.UserByAccessKey);
+// or fallback principal. It reuses the ONE key resolver (store.UserAndScopeByAccessKey);
 // there is no second key path. The key resolves its OWNER's org (any tenant); the
-// candidateOrgs bound is applied ONCE in authenticate, not here.
+// candidateOrgs bound is applied ONCE in authenticate, not here. A key limited
+// in any way (a reach, a budget, a rate) is not a registry credential: the
+// registry enforces none of those, so it would act as its whole holder.
 func (h *handler) userByKey(ctx context.Context, key string) *schema.User {
 	if strings.TrimSpace(key) == "" {
 		return nil
 	}
-	u, err := store.UserByAccessKey(ctx, h.db, key)
-	if err != nil || u == nil {
+	u, scope, err := store.UserAndScopeByAccessKey(ctx, h.db, key)
+	if err != nil || u == nil || strings.TrimSpace(scope) != "" {
 		return nil
 	}
 	return u

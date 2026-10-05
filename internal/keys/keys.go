@@ -217,68 +217,88 @@ func update(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 		if in.Owner == "" || in.Name == "" {
 			return nil, zip.ErrBadRequest("owner and name are required")
 		}
-		k, err := orm.Get[schema.Key](db, id(in.Owner, in.Name))
-		if errors.Is(err, orm.ErrNotFound) {
-			return nil, zip.ErrNotFound("key not found: " + id(in.Owner, in.Name))
+		// The read, the checks and the write are one transaction, so an edit cannot
+		// write back a row a revoke changed under it.
+		var out *schema.Key
+		err := db.RunInTransaction(ctx, func(tx orm.DB) error {
+			var err error
+			out, err = edit(ctx, tx, in)
+			return err
+		})
+		var refused *zip.HTTPError
+		if errors.As(err, &refused) {
+			return nil, err
 		}
 		if err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
-		if k.State == schema.KeyStateRevoked {
-			return nil, zip.ErrConflict("a revoked key is final; create a new key instead")
+		return out, nil
+	}
+}
+
+// edit is update's body, run inside its transaction.
+func edit(ctx context.Context, db orm.DB, in *schema.Key) (*schema.Key, error) {
+	k, err := orm.Get[schema.Key](db, id(in.Owner, in.Name))
+	if errors.Is(err, orm.ErrNotFound) {
+		return nil, zip.ErrNotFound("key not found: " + id(in.Owner, in.Name))
+	}
+	if err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	}
+	if k.State == schema.KeyStateRevoked {
+		return nil, zip.ErrConflict("a revoked key is final; create a new key instead")
+	}
+	// A member's key names its member for as long as it exists. Its secret is in
+	// the member's hands, so repointing it would hand them whoever it now names.
+	if o, _, ok := strings.Cut(k.User, "/"); ok && o != k.Owner && in.User != k.User {
+		return nil, zip.ErrBadRequest("a member's key names its member for as long as it exists")
+	}
+	// A person edits a key and never who it speaks for, the same rule create holds
+	// them to: repointing it would hand its secret's holder whoever it named next.
+	// Leaving the holder out, or naming the one it has, keeps it; naming anyone
+	// else is refused.
+	if _, ok := person(ctx); ok {
+		if in.User != "" && qualify(k.Owner, in.User) != qualify(k.Owner, k.User) {
+			return nil, zip.ErrForbidden("a key names its holder for as long as it exists; create a new key instead")
 		}
-		// A member's key names its member for as long as it exists. Its secret is in
-		// the member's hands, so repointing it would hand them whoever it now names.
-		if o, _, ok := strings.Cut(k.User, "/"); ok && o != k.Owner && in.User != k.User {
-			return nil, zip.ErrBadRequest("a member's key names its member for as long as it exists")
-		}
-		// A person edits a key and never who it speaks for, the same rule create holds
-		// them to: repointing it would hand its secret's holder whoever it named next.
-		// Leaving the holder out, or naming the one it has, keeps it; naming anyone
-		// else is refused.
-		if _, ok := person(ctx); ok {
-			if in.User != "" && qualify(k.Owner, in.User) != qualify(k.Owner, k.User) {
-				return nil, zip.ErrForbidden("a key names its holder for as long as it exists; create a new key instead")
-			}
-			in.User = k.User
-		}
-		if err := holdable(ctx, db, k.Owner, in.User, k.Scope); err != nil {
+		in.User = k.User
+	}
+	if err := holdable(ctx, db, k.Owner, in.User, k.Scope); err != nil {
+		return nil, err
+	}
+	if in.Application != k.Application {
+		if err := application(ctx, db, k.Owner, in.Application); err != nil {
 			return nil, err
 		}
-		if in.Application != k.Application {
-			if err := application(ctx, db, k.Owner, in.Application); err != nil {
-				return nil, err
-			}
-		}
-		if (ClassOf(in.Scope) == schema.KeyScopePublish) != (ClassOf(k.Scope) == schema.KeyScopePublish) {
-			return nil, zip.ErrBadRequest("a key's class is fixed when it is minted; create a new key instead")
-		}
-		apply(k, in)
-		// The reach half of the scope is policy and changes here; the class half is
-		// equal, checked above, so this never turns one kind of key into the other.
-		k.Scope = in.Scope
-		if ClassOf(k.Scope) == schema.KeyScopePublish {
-			// Keep a publishable key write-only for its whole lifecycle: an update can
-			// never attach a confidential sk- secret to a pk--only browser key.
-			k.AccessSecret = ""
-		}
-		now := time.Now().UTC().Format(time.RFC3339)
-		k.UpdatedTime = now
-		if k.State == schema.KeyStateRevoked {
-			// Revoking keeps the row and says who and when. A person revokes as
-			// themselves; a minter names the person it acts for.
-			k.Revoker, k.RevokeTime = in.Revoker, now
-			if p, ok := person(ctx); ok {
-				k.Revoker = self(p)
-			}
-		}
-		if err := k.UpdateCtx(ctx); err != nil {
-			return nil, zip.ErrInternal(err.Error())
-		}
-		// An edit is not a mint: the secret is revealed ONCE, by create. Echoing it
-		// from every update would turn "rename this key" into "re-read its secret".
-		return k.Mask(), nil
 	}
+	if (ClassOf(in.Scope) == schema.KeyScopePublish) != (ClassOf(k.Scope) == schema.KeyScopePublish) {
+		return nil, zip.ErrBadRequest("a key's class is fixed when it is minted; create a new key instead")
+	}
+	apply(k, in)
+	// The reach half of the scope is policy and changes here; the class half is
+	// equal, checked above, so this never turns one kind of key into the other.
+	k.Scope = in.Scope
+	if ClassOf(k.Scope) == schema.KeyScopePublish {
+		// Keep a publishable key write-only for its whole lifecycle: an update can
+		// never attach a confidential sk- secret to a pk--only browser key.
+		k.AccessSecret = ""
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	k.UpdatedTime = now
+	if k.State == schema.KeyStateRevoked {
+		// Revoking keeps the row and says who and when. A person revokes as
+		// themselves; a minter names the person it acts for.
+		k.Revoker, k.RevokeTime = in.Revoker, now
+		if p, ok := person(ctx); ok {
+			k.Revoker = self(p)
+		}
+	}
+	if err := k.UpdateCtx(ctx); err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	}
+	// An edit is not a mint: the secret is revealed ONCE, by create. Echoing it
+	// from every update would turn "rename this key" into "re-read its secret".
+	return k.Mask(), nil
 }
 
 // del revokes an API key. Anything still presenting it stops being authorized at

@@ -315,6 +315,11 @@ func authorizeMinter(ctx context.Context, db orm.DB, c *zip.Ctx) (*minter, int, 
 		if !key.Act {
 			return nil, 403, "the key is not granted act"
 		}
+		// A token minted here carries its user's whole authority, so a key
+		// limited to less may not mint one.
+		if strings.TrimSpace(key.Scope) != "" {
+			return nil, 403, "a limited key cannot act"
+		}
 		return &minter{key: key}, 0, ""
 	}
 	return nil, 401, "client authentication required"

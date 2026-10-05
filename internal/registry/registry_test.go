@@ -542,6 +542,27 @@ func TestToken_ApiKey_Username(t *testing.T) {
 	}
 }
 
+// A limited key is not a registry credential: the registry enforces no reach,
+// budget or rate, so a key limited in any of them would act as its whole holder.
+func TestToken_LimitedKey_Denied(t *testing.T) {
+	app, db, _ := newServer(t)
+	seedKeyRow(t, db, "hanzo", "dave", false, "pk-DEADBEEFdeadbeef00", "sk-DEADBEEFdeadbeef00")
+	k, err := orm.Get[schema.Key](db, "hanzo/dave-key")
+	if err != nil {
+		t.Fatalf("read key: %v", err)
+	}
+	for _, scope := range []string{"read:*", "product:ai", "spend:month:500", "rate:minute:60"} {
+		k.Scope = scope
+		if err := k.UpdateCtx(context.Background()); err != nil {
+			t.Fatalf("limit key: %v", err)
+		}
+		status, body, _ := tokenGET(t, app, "dave", "sk-DEADBEEFdeadbeef00", testService, "repository:hanzo/app:pull")
+		if status != 401 {
+			t.Fatalf("scope %q: status = %d, want 401; body %v", scope, status, body)
+		}
+	}
+}
+
 // TestToken_ForeignTenantKey_Denied is the regression proof for the cross-tenant
 // image-poisoning CRITICAL. The attacker self-onboards org "evil" (becomes IsAdmin
 // there), mints a key in their OWN org (a legitimate self-org write), and presents
