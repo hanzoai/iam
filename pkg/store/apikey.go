@@ -366,10 +366,55 @@ func keyBySecret(ctx context.Context, db orm.DB, secret string) (*schema.Key, er
 		k.AccessSecret = ""
 		_ = k.UpdateCtx(ctx)
 	}
-	if r := dead(k, time.Now().UTC()); r != "" {
+	now := time.Now().UTC()
+	if r := dead(k, now); r != "" {
 		return nil, notFound(r)
 	}
+	sight(ctx, db, k, now)
 	return k, nil
+}
+
+// sightEvery is how stale a key's last sighting may grow before a resolution
+// writes a new one, so a busy key costs one write a minute and not one a request.
+const sightEvery = time.Minute
+
+// sight records that k was just presented, at most once per sightEvery. A failed
+// write is dropped: the key resolved, and when it was last seen is a report, never
+// a reason to refuse it.
+//
+// Its id is the key's under its own prefix: the store keys every kind by id, so a
+// sighting spelled like its key would be written over the key row itself.
+func sight(ctx context.Context, db orm.DB, k *schema.Key, now time.Time) {
+	id := "sighting/" + k.Owner + "/" + k.Name
+	if s, err := orm.Get[schema.Sighting](db, id); err == nil {
+		if t, err := time.Parse(time.RFC3339, s.Time); err == nil && now.Sub(t) < sightEvery {
+			return
+		}
+	} else if !errors.Is(err, orm.ErrNotFound) {
+		return
+	}
+	s := orm.New[schema.Sighting](db)
+	s.SetId(id)
+	s.Owner, s.Name, s.Time = k.Owner, k.Name, now.Format(time.RFC3339)
+	_ = s.PutCtx(ctx)
+}
+
+// Sightings is when each key filed in owner was last seen, by key name. An empty
+// owner reads every org's.
+func Sightings(ctx context.Context, db orm.DB, owner string) (map[string]string, error) {
+	q := orm.TypedQuery[schema.Sighting](db)
+	if owner != "" {
+		q = q.Filter("Owner=", owner)
+	}
+	rows, err := q.GetAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(rows))
+	for _, s := range rows {
+		out[s.Owner+"/"+s.Name] = s.Time
+	}
+	return out, nil
 }
 
 // only reads the ONE key whose field equals val: nil when none does, and an error
@@ -473,6 +518,7 @@ func PublishableKeyByAccessKey(ctx context.Context, db orm.DB, key string, now t
 	if r := dead(k, now); r != "" {
 		return nil, notFound(r)
 	}
+	sight(ctx, db, k, now)
 	return k, nil
 }
 

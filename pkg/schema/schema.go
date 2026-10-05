@@ -33,7 +33,7 @@ func Kinds() []string {
 		"webauthn_credentials", "sessions", "tokens", "audit_logs",
 		"invitations", "verifications", "projects", "workspaces",
 		"federation_states", "challenges", "wallets", "login_challenges",
-		"memberships", "teams", "tombstones",
+		"memberships", "teams", "tombstones", "sightings",
 	}
 }
 
@@ -61,4 +61,5 @@ func init() {
 	orm.Register[LoginChallenge]("login_challenges")
 	orm.Register[Membership]("memberships")
 	orm.Register[Team]("teams")
+	orm.Register[Sighting]("sightings")
 }

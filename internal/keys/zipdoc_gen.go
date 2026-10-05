@@ -11,7 +11,7 @@ func init() {
 		Description: "Revokes an API key. Anything still presenting it stops being authorized at\nonce, so roll the replacement out before you revoke.",
 	})
 	zip.Describe("github.com/hanzoai/iam/internal/keys GET /v1/iam/keys", zip.Doc{
-		Description: "Returns an organization's API keys, newest first — what each is called,\nwhat it may reach, and its publishable half. Secret halves are never listed.\n\nWhich organization comes from your credentials, not from the request: you read\nyour own and no one else's. The capability that admits a confidential client to\nthis collection does not itself name a tenant, so the tenant is decided here.",
+		Description: "Returns an organization's API keys, newest first — what each is called,\nwhat it may reach, its publishable half, and when it was last used. Secret halves\nare never listed.\n\nWhich organization comes from your credentials, not from the request: you read\nyour own and no one else's. The capability that admits a confidential client to\nthis collection does not itself name a tenant, so the tenant is decided here.",
 		Fields: map[string]string{
 			"Key.accessKey":          "AccessKey (pk-*) is the publishable identifier and lookup index;\nAccessSecret (sk-*) is the confidential secret.\nAccessSecret IS NOT PERSISTED for a key minted at or after the digest\nchange: it carries the secret out to its holder once, in the mint response,\nand the row keeps only AccessSecretDigest. It stays on the struct because\nthat one-time reveal is the whole point of minting, and it stays in the\nschema because rows written before the change still hold a plaintext secret\nthat the resolver drains on first use.",
 			"Key.accessSecretDigest": "AccessSecretDigest is how a presented secret finds its key: the resolver\ndigests what the caller sent and looks THAT up. It is what lets the row hold\nno plaintext and still be found in one indexed read — a salted hash cannot be\nlooked up by value, which is the reason the plaintext was here.",
@@ -24,6 +24,7 @@ func init() {
 			"Key.revoker":            "Revoker is who revoked the key and RevokeTime when. Revoking sets State to\nKeyStateRevoked and keeps the row, so the key is still listed and its\nhistory can be read; the resolvers refuse it, and no update reopens it.",
 			"Key.scope":              "Scope is the key's ACCESS CLASS, orthogonal to Type (which names the bound\nprincipal). Empty (the default, \"secret\") is a full key: a pk- publishable\nhalf AND a confidential sk- half, the sk- authenticating a server-side reader.\nKeyScopePublish is a WRITE-ONLY publishable key — a pk- half only, no secret —\nthat resolves to just an ORG (never a principal) at the ingest endpoint and is safe\nto ship in client JS. A missing value on an existing row reads as the default,\nso every pre-Scope key is a secret key unchanged.",
 			"Key.type":               "Type is the scope the key is bound to — \"Organization\", \"Application\",\n\"User\", or \"General\" — and Organization / Application / User name the\nconcrete principal for whichever scope Type selects.",
+			"Key.usedTime":           "UsedTime is when the key was last presented and resolved. A list read fills\nit from the key's Sighting; the key row itself never holds it, so recording a\nuse never rewrites the row a person may be editing.",
 			"Model[github.com/hanzoai/iam/pkg/schema.Key].id": "Persisted fields",
 		},
 	})
@@ -41,6 +42,7 @@ func init() {
 			"Key.revoker":            "Revoker is who revoked the key and RevokeTime when. Revoking sets State to\nKeyStateRevoked and keeps the row, so the key is still listed and its\nhistory can be read; the resolvers refuse it, and no update reopens it.",
 			"Key.scope":              "Scope is the key's ACCESS CLASS, orthogonal to Type (which names the bound\nprincipal). Empty (the default, \"secret\") is a full key: a pk- publishable\nhalf AND a confidential sk- half, the sk- authenticating a server-side reader.\nKeyScopePublish is a WRITE-ONLY publishable key — a pk- half only, no secret —\nthat resolves to just an ORG (never a principal) at the ingest endpoint and is safe\nto ship in client JS. A missing value on an existing row reads as the default,\nso every pre-Scope key is a secret key unchanged.",
 			"Key.type":               "Type is the scope the key is bound to — \"Organization\", \"Application\",\n\"User\", or \"General\" — and Organization / Application / User name the\nconcrete principal for whichever scope Type selects.",
+			"Key.usedTime":           "UsedTime is when the key was last presented and resolved. A list read fills\nit from the key's Sighting; the key row itself never holds it, so recording a\nuse never rewrites the row a person may be editing.",
 			"Model[github.com/hanzoai/iam/pkg/schema.Key].id": "Persisted fields",
 		},
 	})
@@ -58,6 +60,7 @@ func init() {
 			"Key.revoker":            "Revoker is who revoked the key and RevokeTime when. Revoking sets State to\nKeyStateRevoked and keeps the row, so the key is still listed and its\nhistory can be read; the resolvers refuse it, and no update reopens it.",
 			"Key.scope":              "Scope is the key's ACCESS CLASS, orthogonal to Type (which names the bound\nprincipal). Empty (the default, \"secret\") is a full key: a pk- publishable\nhalf AND a confidential sk- half, the sk- authenticating a server-side reader.\nKeyScopePublish is a WRITE-ONLY publishable key — a pk- half only, no secret —\nthat resolves to just an ORG (never a principal) at the ingest endpoint and is safe\nto ship in client JS. A missing value on an existing row reads as the default,\nso every pre-Scope key is a secret key unchanged.",
 			"Key.type":               "Type is the scope the key is bound to — \"Organization\", \"Application\",\n\"User\", or \"General\" — and Organization / Application / User name the\nconcrete principal for whichever scope Type selects.",
+			"Key.usedTime":           "UsedTime is when the key was last presented and resolved. A list read fills\nit from the key's Sighting; the key row itself never holds it, so recording a\nuse never rewrites the row a person may be editing.",
 			"Model[github.com/hanzoai/iam/pkg/schema.Key].id": "Persisted fields",
 		},
 	})
@@ -75,6 +78,7 @@ func init() {
 			"Key.revoker":            "Revoker is who revoked the key and RevokeTime when. Revoking sets State to\nKeyStateRevoked and keeps the row, so the key is still listed and its\nhistory can be read; the resolvers refuse it, and no update reopens it.",
 			"Key.scope":              "Scope is the key's ACCESS CLASS, orthogonal to Type (which names the bound\nprincipal). Empty (the default, \"secret\") is a full key: a pk- publishable\nhalf AND a confidential sk- half, the sk- authenticating a server-side reader.\nKeyScopePublish is a WRITE-ONLY publishable key — a pk- half only, no secret —\nthat resolves to just an ORG (never a principal) at the ingest endpoint and is safe\nto ship in client JS. A missing value on an existing row reads as the default,\nso every pre-Scope key is a secret key unchanged.",
 			"Key.type":               "Type is the scope the key is bound to — \"Organization\", \"Application\",\n\"User\", or \"General\" — and Organization / Application / User name the\nconcrete principal for whichever scope Type selects.",
+			"Key.usedTime":           "UsedTime is when the key was last presented and resolved. A list read fills\nit from the key's Sighting; the key row itself never holds it, so recording a\nuse never rewrites the row a person may be editing.",
 			"Model[github.com/hanzoai/iam/pkg/schema.Key].id": "Persisted fields",
 		},
 	})

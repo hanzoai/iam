@@ -77,7 +77,8 @@ type DeleteResponse struct {
 func id(owner, name string) string { return owner + "/" + name }
 
 // list returns an organization's API keys, newest first — what each is called,
-// what it may reach, and its publishable half. Secret halves are never listed.
+// what it may reach, its publishable half, and when it was last used. Secret halves
+// are never listed.
 //
 // Which organization comes from your credentials, not from the request: you read
 // your own and no one else's. The capability that admits a confidential client to
@@ -96,9 +97,15 @@ func list(db orm.DB) zip.TypedHandler[ListRequest, ListResponse] {
 		if err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
+		seen, err := store.Sightings(ctx, db, owner)
+		if err != nil {
+			return nil, zip.ErrInternal(err.Error())
+		}
 		out := &ListResponse{Keys: make([]schema.Key, 0, len(items))}
 		for _, k := range items {
-			out.Keys = append(out.Keys, *k.Mask())
+			m := k.Mask()
+			m.UsedTime = seen[k.Owner+"/"+k.Name]
+			out.Keys = append(out.Keys, *m)
 		}
 		return out, nil
 	}

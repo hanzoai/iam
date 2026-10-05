@@ -450,6 +450,12 @@ resolves to `key_revoked`, and is final (a later `PUT` is 409). `DELETE` still r
 a row outright. `keys/principal` answers the row's name as `key`, so a resource server
 can count and limit each credential on its own.
 
+**Last used is a `Sighting`, not a field write.** The resolver (`keyBySecret`,
+`PublishableKeyByAccessKey`) records when a key was presented in its own row
+(`sighting/<owner>/<name>`), at most once a minute, and the list fills `usedTime`
+from it. Writing it onto the key row would race a `PUT` and could undo an edit; the
+store keys every kind by id, so the prefix keeps it off the key row too.
+
 | scope | halves | resolves to | endpoint |
 |---|---|---|---|
 | `""` (secret) | `pk-` + `sk-` | the USER | `get-user?accessKey=` (`CapKeyResolve`) |

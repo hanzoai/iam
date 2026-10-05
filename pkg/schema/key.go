@@ -105,6 +105,21 @@ type Key struct {
 	// history can be read; the resolvers refuse it, and no update reopens it.
 	Revoker    string `json:"revoker,omitempty" url:"-"`
 	RevokeTime string `json:"revokeTime,omitempty" url:"-"`
+
+	// UsedTime is when the key was last presented and resolved. A list read fills
+	// it from the key's Sighting; the key row itself never holds it, so recording a
+	// use never rewrites the row a person may be editing.
+	UsedTime string `json:"usedTime,omitempty" url:"-"`
+}
+
+// Sighting is when a key was last presented and resolved: Owner and Name are the
+// key's, Time is RFC 3339. It is a row of its own, written by the resolver.
+type Sighting struct {
+	orm.Model[Sighting]
+
+	Owner string `json:"owner"`
+	Name  string `json:"name"`
+	Time  string `json:"time"`
 }
 
 // KeyStateRevoked is the State of a revoked key. It is final: the resolvers

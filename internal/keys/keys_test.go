@@ -821,3 +821,50 @@ func TestKeys_RevokeIsAFinalStateThatStaysListed(t *testing.T) {
 		t.Fatal("an update reopened a revoked key")
 	}
 }
+
+// A key that is used says when: the resolver records a sighting, at most one write
+// a minute, and the list reads it back as usedTime without the key row changing.
+func TestKeys_AResolvedKeyIsListedWithWhenItWasUsed(t *testing.T) {
+	db := memDB(t)
+	ctx := context.Background()
+	seedUser(t, db, "acme", "ada")
+
+	made, err := create(db)(ctx, &schema.Key{Owner: "acme", Name: "svc", User: "ada", State: "Active"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := create(db)(ctx, &schema.Key{Owner: "acme", Name: "idle", User: "ada", State: "Active"}); err != nil {
+		t.Fatalf("create idle: %v", err)
+	}
+	before, err := orm.Get[schema.Key](db, "acme/svc")
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	for range 3 {
+		if _, err := store.HolderByAccessKey(ctx, db, made.AccessSecret); err != nil {
+			t.Fatalf("resolve: %s", store.Reason(err))
+		}
+	}
+	listed, err := list(db)(as("acme"), &ListRequest{Owner: "acme"})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	used := map[string]string{}
+	for _, k := range listed.Keys {
+		used[k.Name] = k.UsedTime
+	}
+	if used["svc"] == "" || used["idle"] != "" {
+		t.Fatalf("usedTime: svc %q, idle %q; want svc set and idle empty", used["svc"], used["idle"])
+	}
+	after, err := orm.Get[schema.Key](db, "acme/svc")
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if after.UpdatedTime != before.UpdatedTime || after.UsedTime != "" {
+		t.Fatal("recording a use rewrote the key row")
+	}
+	n, err := orm.TypedQuery[schema.Sighting](db).GetAll(ctx)
+	if err != nil || len(n) != 1 {
+		t.Fatalf("three uses inside a minute wrote %d sightings (%v), want 1", len(n), err)
+	}
+}
