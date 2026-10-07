@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
@@ -51,7 +52,7 @@ func Route(app *zip.Group, db orm.DB) {
 
 // ListRequest names the organization to read. Omitting it means "the one my
 // credential is scoped to", which for a credential that spans tenants is all of
-// them; principal.Scope turns the two into one answer.
+// them; visible turns the two into one answer.
 type ListRequest struct {
 	Owner string `json:"owner,omitempty"`
 }
@@ -76,16 +77,16 @@ type DeleteResponse struct {
 // "owner/name" identity the v1 record used.
 func id(owner, name string) string { return owner + "/" + name }
 
-// list returns an organization's API keys, newest first — what each is called,
-// what it may reach, its publishable half, and when it was last used. Secret halves
-// are never listed.
+// list returns the API keys of an organization that you may see, newest first —
+// what each is called, what it may reach, its publishable half, and when it was
+// last used. Secret halves are never listed.
 //
-// Which organization comes from your credentials, not from the request: you read
-// your own and no one else's. The capability that admits a confidential client to
-// this collection does not itself name a tenant, so the tenant is decided here.
+// Which keys come from your credentials, not from the request. You may name an
+// organization you belong to: its admin sees every key it holds, and a member sees
+// the keys they hold there. Naming any other organization is refused.
 func list(db orm.DB) zip.TypedHandler[ListRequest, ListResponse] {
 	return func(ctx context.Context, in *ListRequest) (*ListResponse, error) {
-		owner, err := principal.Scope(ctx, in.Owner)
+		owner, holder, err := visible(ctx, in.Owner)
 		if err != nil {
 			return nil, err
 		}
@@ -103,6 +104,9 @@ func list(db orm.DB) zip.TypedHandler[ListRequest, ListResponse] {
 		}
 		out := &ListResponse{Keys: make([]schema.Key, 0, len(items))}
 		for _, k := range items {
+			if holder != "" && qualify(k.Owner, k.User) != holder {
+				continue
+			}
 			m := k.Mask()
 			m.UsedTime = seen[k.Owner+"/"+k.Name]
 			out.Keys = append(out.Keys, *m)
@@ -320,6 +324,50 @@ func del(db orm.DB) zip.TypedHandler[Ref, DeleteResponse] {
 		}
 		return &DeleteResponse{Deleted: true}, nil
 	}
+}
+
+// visible resolves which key rows the caller may list: the organization, and the
+// one holder whose rows they are when the caller may see only their own.
+//
+//   - A confidential client holding the key-mint capability reads the org it SERVES
+//     (principal.Scope). Its mint reaches every tenant and its read does not, so a
+//     client credential alone never reads another tenant's keys.
+//   - A SuperAdmin, and a person who administers the org (AdminOf), read every key
+//     the org holds — the same people the Guard admits to a named key.
+//   - Any other person reads the keys they hold in an org they BELONG to
+//     (principal.ScopeRead), and no colleague's. The membership set is read from the
+//     store when the principal is built, never from a claim the caller supplies.
+//
+// A stranger to the org is refused with the bytes every stranger gets, and so is a
+// principal with no account behind it, which holds no key. The reserved orgs
+// (admin, built-in, app) are a SuperAdmin's alone, as the Guard holds every row
+// they own: belonging to one, or serving it, reads none of its keys.
+func visible(ctx context.Context, owner string) (org, holder string, err error) {
+	p, ok := principal.From(ctx)
+	if !ok {
+		return "", "", zip.ErrForbidden("no principal")
+	}
+	if p.App != nil {
+		if !p.Holds(policy.CapKeyMint, principal.Env) {
+			return "", "", zip.ErrForbidden("forbidden")
+		}
+		org, err = principal.Scope(ctx, owner)
+	} else {
+		org, err = principal.ScopeRead(ctx, owner)
+	}
+	if err != nil {
+		return "", "", err
+	}
+	if policy.IsReservedOrg(org) && !p.Sudo {
+		return "", "", zip.ErrForbidden("forbidden: a reserved organization's keys are read by a SuperAdmin only")
+	}
+	if p.App != nil || p.Sudo || p.AdminOf(org) {
+		return org, "", nil
+	}
+	if holder = self(p); holder == "" {
+		return "", "", zip.ErrForbidden("forbidden: this credential holds no keys")
+	}
+	return org, holder, nil
 }
 
 // person reports whether the caller writes keys for itself — a principal that is

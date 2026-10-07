@@ -37,7 +37,6 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/keys"
 	"github.com/hanzoai/iam/internal/principal"
@@ -341,7 +340,7 @@ func admin(p *principal.Principal, org string) bool {
 		return false
 	}
 	if p.App != nil {
-		return p.Holds(policy.CapKeyMint, authz.Env)
+		return p.Holds(policy.CapKeyMint, principal.Env)
 	}
 	return p.Sudo || (p.Admin && p.Org == org)
 }
@@ -361,8 +360,8 @@ func read(p *principal.Principal, org string) bool {
 		return false
 	}
 	if p.App != nil {
-		return p.Holds(policy.CapKeyMint, authz.Env) ||
-			(p.Holds(policy.CapServiceAccountRead, authz.Env) && p.BoundTo(org))
+		return p.Holds(policy.CapKeyMint, principal.Env) ||
+			(p.Holds(policy.CapServiceAccountRead, principal.Env) && p.BoundTo(org))
 	}
 	return p.Sudo || (p.Admin && p.Org == org)
 }

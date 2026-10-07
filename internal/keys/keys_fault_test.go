@@ -330,11 +330,11 @@ func TestRevokeUserKey_AbsentSucceedsAndAnUnreadableStoreDoesNot(t *testing.T) {
 	}
 }
 
-// as returns a context carrying an ordinary member of org — the caller a listing
-// is scoped to. A handler that resolves its tenant from the credential needs one
+// as returns a context carrying the admin of org — the caller who sees every key
+// the org holds. A handler that resolves its tenant from the credential needs one
 // to answer at all.
 func as(org string) context.Context {
-	return principal.Bind(context.Background(), &principal.Principal{Org: org})
+	return principal.Bind(context.Background(), &principal.Principal{Org: org, User: "boss", Admin: true})
 }
 
 // A listing with NOBODY behind it is refused, not answered. principal.Scope has

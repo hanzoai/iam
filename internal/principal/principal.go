@@ -20,10 +20,18 @@ package principal
 
 import (
 	"context"
+	"os"
 
 	policy "github.com/hanzoai/authz"
 	"github.com/zap-proto/zip"
 )
+
+// Env is the capability allowlist as THIS process sees it. The decision takes the
+// lookup as an INPUT so it stays free of config; IAM is the process that HAS an
+// environment, so it binds one here, once. It lives in the leaf so a collection
+// authentication is built on — keys — asks a capability the same way the Guard
+// does, and a test supplies its own by assigning a map lookup.
+var Env policy.Env = os.Getenv
 
 // Principal is the identity a gated request acts as. It is the DECISION's own
 // input type, not a second one: RESOLVING it needs a store — a verified bearer, the

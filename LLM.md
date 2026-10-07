@@ -577,6 +577,17 @@ for redaction. The secret is revealed ONCE, by `create`. `capFor("keys")` =
 `CapKeyMint`: the authority that already mints a credential may read the set it
 manages.
 
+**Who lists which keys** is `keys.visible`; the collection authorizes itself
+(`handlerAuthorizedExact`), because belonging opens it and the tenant rule admits
+only an admin. A client holding key-mint reads the org it SERVES and no other: its
+mint reaches every tenant, its read does not. A SuperAdmin or the org's admin
+(`AdminOf`) reads every key; any other person reads the keys they hold in an org
+they belong to (`ScopeRead`). A reserved org's keys are a SuperAdmin's alone, as the
+Guard holds every row it owns. So cloud lists a customer's keys with the customer's
+own token and writes with the client. A named key stays the Guard's. The allowlist
+lookup is `principal.Env`, in the leaf so a collection can ask a capability.
+Pinned by `routes/member_keys_test.go`.
+
 `MintUserKey` writes a `schema.Key` ROW because that is the only thing the resolvers
 read. Stamping it on `schema.User.AccessKey` authenticated nobody — nothing resolves
 that field, and it is not a credential.

@@ -32,7 +32,6 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/store"
@@ -76,7 +75,7 @@ func org(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
 		p, ok := principal.From(ctx)
-		if !ok || p.App == nil || !p.Holds(policy.CapPublishableResolve, authz.Env) {
+		if !ok || p.App == nil || !p.Holds(policy.CapPublishableResolve, principal.Env) {
 			return httpx.Err(c, unauthorized)
 		}
 		k, err := store.PublishableKeyByAccessKey(ctx, db, c.Query("accessKey"), time.Now())
@@ -151,7 +150,7 @@ func who(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
 		p, ok := principal.From(ctx)
-		if !ok || p.App == nil || !p.Holds(policy.CapKeyResolve, authz.Env) {
+		if !ok || p.App == nil || !p.Holds(policy.CapKeyResolve, principal.Env) {
 			return httpx.Err(c, unauthorized)
 		}
 		h, err := store.HolderByAccessKey(ctx, db, strings.TrimSpace(c.Query("accessKey")))

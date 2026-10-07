@@ -61,7 +61,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"os"
 	"reflect"
 	"strings"
 
@@ -76,13 +75,6 @@ import (
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
-
-// Env is the capability allowlist as THIS process sees it. The decision takes the
-// lookup as an INPUT so it stays free of config; IAM is the process that HAS an
-// environment, so it binds one here, once. Every capability question in the
-// service therefore reads the same allowlists, and a test supplies its own by
-// assigning a map lookup.
-var Env policy.Env = os.Getenv
 
 // Deny renders a principal.Scope refusal in the envelope the caller's surface
 // speaks — the SAME shaping the Guard's own refusal uses, so one refusal looks
@@ -102,7 +94,7 @@ func Can(ctx context.Context, method, entity, owner, name string) bool {
 	if !ok {
 		return false
 	}
-	return p.CanEntity(policy.VerbOf(method), policy.Entity{Kind: entity, Owner: owner, Name: name}, Env)
+	return p.CanEntity(policy.VerbOf(method), policy.Entity{Kind: entity, Owner: owner, Name: name}, principal.Env)
 }
 
 // IsSuper reports whether the ctx principal is a SuperAdmin — used by a raw
@@ -126,7 +118,7 @@ func CanSetOrg(p *principal.Principal, org string) bool {
 	if p == nil {
 		return false
 	}
-	return p.CanEntity(policy.Write, policy.Entity{Kind: "applications", Owner: org}, Env)
+	return p.CanEntity(policy.Write, policy.Entity{Kind: "applications", Owner: org}, principal.Env)
 }
 
 // CanSetCert reports whether principal p may point a row at the signing cert
@@ -141,7 +133,7 @@ func CanSetCert(p *principal.Principal, owner, name string) bool {
 	if p == nil {
 		return false
 	}
-	return p.CanEntity(policy.Write, policy.Entity{Kind: "certs", Owner: owner, Name: name}, Env)
+	return p.CanEntity(policy.Write, policy.Entity{Kind: "certs", Owner: owner, Name: name}, principal.Env)
 }
 
 // AuthorizeCert gates the signing cert a row NAMES, separately from the row's own
@@ -412,7 +404,7 @@ var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/", "/v1/iam/service-accou
 // itself behind its own capability: keys/principal behind CapKeyResolve, and
 // keys/org behind CapPublishableResolve, which returns ONLY the org and never a
 // principal. They are exact rather than a prefix so neither can reach
-// /v1/iam/keys, the Guard-authorized key collection beside them.
+// /v1/iam/keys/{owner}/{name}, the Guard-authorized key beside them.
 //
 // The organization collection is here because it NAMES no target: it asks which
 // organizations the CALLER may act in, so the answer is derived from the
@@ -429,7 +421,15 @@ var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/", "/v1/iam/service-accou
 // ScopeRead itself, which honours an org the caller belongs to and refuses a
 // stranger. Exact, never a prefix: the ITEM beneath (/v1/iam/projects/{owner}/
 // {name}) authorizes nowhere but the Guard, so a prefix would take its gate away.
+//
+// The key COLLECTION is here for the same reason: belonging opens it. A member of an
+// org lists the keys they hold there, which the tenant rule refuses to anyone but
+// the org's admin. The list handler (keys.visible) asks ScopeRead for a person,
+// narrows a member to their own rows, and holds a confidential client to the
+// key-mint capability and the org it serves. Exact, so a named key stays the
+// Guard's.
 var handlerAuthorizedExact = map[string]bool{
+	"/v1/iam/keys":                 true,
 	"/v1/iam/keys/org":             true,
 	"/v1/iam/keys/principal":       true,
 	"/v1/iam/organizations":        true,
@@ -563,7 +563,7 @@ func Guard(db orm.DB) zip.Handler {
 		// before the handler could scope). Every other read is authorized here.
 		if v := policy.VerbOf(c.Method()); v == policy.Read && !pathAuthorized(c.Path()) {
 			owner, name, one := readTarget(c)
-			if !one || !p.CanEntity(v, policy.Entity{Kind: entityOf(c.Path()), Owner: owner, Name: name}, Env) {
+			if !one || !p.CanEntity(v, policy.Entity{Kind: entityOf(c.Path()), Owner: owner, Name: name}, principal.Env) {
 				if actor != "" {
 					return trail(refuse(c, 403, "forbidden"))
 				}
@@ -718,7 +718,7 @@ func Authorize(ctx context.Context, op zip.Op, in any) (zip.Decision, error) {
 	if v == policy.Read && pathAuthorized(op.Path) {
 		return zip.Decision{Effect: zip.Allow}, nil
 	}
-	if !p.CanEntity(v, policy.Entity{Kind: entityOf(op.Path), Owner: owner, Name: name}, Env) {
+	if !p.CanEntity(v, policy.Entity{Kind: entityOf(op.Path), Owner: owner, Name: name}, principal.Env) {
 		return zip.Decision{Effect: zip.Deny, Clause: "entity", Reason: "forbidden"}, nil
 	}
 	return zip.Decision{Effect: zip.Allow}, nil
