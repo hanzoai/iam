@@ -86,6 +86,10 @@ func routeFrontDoor(r *zip.Group, db orm.DB) {
 		zip.WithStatus(200, 400, 401, 403, 404), zip.WithTags("auth"))
 	r.Post(PathRelease, releaseHandler(db),
 		zip.WithStatus(200, 400, 401), zip.WithTags("auth"))
+	// A SuperAdmin signing in AS a person, for support. It answers a login_hint,
+	// not a token, and authenticates on the operator's own bearer like assume.
+	r.Post(PathImpersonate, impersonateHandler(db),
+		zip.WithStatus(200, 400, 401, 403, 404), zip.WithTags("auth"))
 	// Account-canonical data-sharing consent (insights + opt-in training) — the ONE
 	// source of truth the hanzo.id signup, the browser extension, and hanzo.ai share.
 	r.Raw(http.MethodGet, PathConsent, getConsentHandler(db))

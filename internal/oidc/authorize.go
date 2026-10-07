@@ -128,6 +128,13 @@ func authorizeHandler(db orm.DB) zip.Handler {
 			return authorizeErrorRedirect(c, q, "invalid_request", "prompt=none must not be combined with other values")
 		}
 
+		// A login_hint that names an impersonation is answered here, by the hint
+		// and the operator's session together, and never by a screen or by
+		// whoever else is signed in on this browser (impersonate.go).
+		if id, ok := impersonation(q.loginHint); ok {
+			return impersonate(c, db, app, q, id)
+		}
+
 		// A request that names a social `provider` is federated to that external
 		// IdP (Google/GitHub, …) instead of the hosted credential login. The
 		// client + redirect_uri + PKCE policy above are already enforced, so the

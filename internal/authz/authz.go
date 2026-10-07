@@ -58,6 +58,7 @@ package authz
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
@@ -283,7 +284,7 @@ func AuthorizeGrant(ctx context.Context, method, home string, users, teams, role
 // only WHO the caller is, not that the caller INTENDED this request (the wallet
 // link branch pairs it with a same-site check for exactly that reason).
 func Optional(c *zip.Ctx, db orm.DB) *principal.Principal {
-	p, err := resolve(c, db)
+	p, _, err := resolve(c, db)
 	if err != nil {
 		return nil
 	}
@@ -296,6 +297,10 @@ var (
 	errNoBearer  = errors.New("authz: no bearer")
 	errNoSubject = errors.New("authz: token subject carries no org")
 	errRevoked   = errors.New("authz: principal is forbidden or deleted")
+	// errImpersonated is an impersonated bearer on a write. The Guard answers it
+	// 403 rather than the opaque 401: the credential is good, the act is not one
+	// it may perform.
+	errImpersonated = errors.New("authz: an impersonated credential reads and never writes")
 )
 
 // fold reads one query key the way zip's binder reads it: case-INSENSITIVELY.
@@ -534,9 +539,21 @@ func Guard(db orm.DB) zip.Handler {
 		if c.Method() == http.MethodOptions {
 			return c.Continue()
 		}
-		p, err := resolve(c, db)
-		if err != nil {
+		p, actor, err := resolve(c, db)
+		if err != nil && !errors.Is(err, errImpersonated) {
 			return refuse(c, 401, "authentication required")
+		}
+		// An operator acting as somebody else: every request is a row naming the
+		// operator, filed under the person's org so that tenant reads it, refused
+		// or not.
+		trail := func(err error) error {
+			target, _ := json.Marshal(map[string]string{"target": p.Org + "/" + p.User})
+			audit(c, db, &schema.AuditLog{Owner: p.Org, Organization: p.Org, User: actor,
+				Action: schema.ActionImpersonate, Object: string(target)}, err)
+			return err
+		}
+		if err != nil {
+			return trail(refuse(c, 403, "an impersonated session reads; it never writes"))
 		}
 		// A path-targeted resource (SCIM: /Users/{id}) carries its target in the
 		// PATH, not the query — so, like a write whose target rides in the body, the
@@ -547,26 +564,34 @@ func Guard(db orm.DB) zip.Handler {
 		if v := policy.VerbOf(c.Method()); v == policy.Read && !pathAuthorized(c.Path()) {
 			owner, name, one := readTarget(c)
 			if !one || !p.CanEntity(v, policy.Entity{Kind: entityOf(c.Path()), Owner: owner, Name: name}, Env) {
+				if actor != "" {
+					return trail(refuse(c, 403, "forbidden"))
+				}
 				return refuse(c, 403, "forbidden")
 			}
 		}
 		c.SetContext(principal.Bind(c.Context(), p))
-		if !p.Sudo {
-			return c.Continue()
+		switch {
+		case actor != "":
+			return trail(c.Continue())
+		case p.Sudo:
+			err = c.Continue()
+			audit(c, db, &schema.AuditLog{Owner: p.Org, Organization: p.Org, User: p.Org + "/" + p.User,
+				Action: schema.ActionSuperAdmin}, err)
+			return err
 		}
-		err = c.Continue()
-		audit(c, db, p, err)
-		return err
+		return c.Continue()
 	}
 }
 
-// audit files a request a SuperAdmin made on the SuperAdmin trail: who, from
-// where, what (method and address, query included), and the answer. Every one,
-// read or write, admitted or refused downstream, because platform authority is
-// the one scope nothing else bounds and a record is the only account of what it
-// did. It runs after the handler so the answer is the one written; an error is
-// read the way the framework renders it. Best effort — the act already happened.
-func audit(c *zip.Ctx, db orm.DB, p *principal.Principal, err error) {
+// audit files a request on a privileged trail — a SuperAdmin's, or an operator's
+// impersonating somebody: who (row), from where, what (method and address, query
+// included), and the answer. Every one, read or write, admitted or refused
+// downstream, because that authority is what nothing else bounds and a record is
+// the only account of what it did. It runs after the handler so the answer is the
+// one written; an error is read the way the framework renders it. Best effort —
+// the act already happened.
+func audit(c *zip.Ctx, db orm.DB, row *schema.AuditLog, err error) {
 	status := c.Fiber().Response().StatusCode()
 	if err != nil {
 		status = http.StatusInternalServerError
@@ -575,16 +600,11 @@ func audit(c *zip.Ctx, db orm.DB, p *principal.Principal, err error) {
 			status = he.Status
 		}
 	}
-	store.Record(c.Context(), db, &schema.AuditLog{
-		Owner:        p.Org,
-		Organization: p.Org,
-		User:         p.Org + "/" + p.User,
-		ClientIp:     httpx.ClientIP(c),
-		Method:       c.Method(),
-		RequestUri:   c.Fiber().OriginalURL(),
-		Action:       schema.ActionSuperAdmin,
-		StatusCode:   status,
-	})
+	row.ClientIp = httpx.ClientIP(c)
+	row.Method = c.Method()
+	row.RequestUri = c.Fiber().OriginalURL()
+	row.StatusCode = status
+	store.Record(c.Context(), db, row)
 }
 
 // mcpPath is where zip mounts the MCP server. zip exports SpecPath and DocsPath
@@ -765,18 +785,29 @@ func stringField(v reflect.Value, name string) string {
 // org-scoped only, which on the raw CRUD authorizes to nothing until a later
 // phase grants machine identities explicit scope. This closes the phantom-admin subject: a token for
 // "admin/<nobody>" resolves to no authority, not SuperAdmin.
-func resolve(c *zip.Ctx, db orm.DB) (*principal.Principal, error) {
+func resolve(c *zip.Ctx, db orm.DB) (*principal.Principal, string, error) {
 	if p, ok := app(c, db); ok {
-		return p, nil
+		return p, "", nil
 	}
 	bearer := httpx.Bearer(c)
 	if bearer == "" {
-		return nil, errNoBearer
+		return nil, "", errNoBearer
 	}
 	ctx := c.Context()
 	claims, err := oidc.VerifyToken(ctx, db, bearer)
 	if err != nil {
-		return nil, err
+		return nil, "", err
+	}
+	// An IMPERSONATED bearer speaks for its subject, whose authority it is — the
+	// operator's is never carried — and it READS. Every write here is a credential,
+	// a grant or a person's record, and the person never made it: a key or a
+	// passkey minted with one would outlive the fifteen minutes it was issued for.
+	// It lives only while its operator may still impersonate, and actor names them.
+	actor := ""
+	if claims.Imp {
+		if actor, err = oidc.Operator(ctx, db, claims); err != nil {
+			return nil, "", errRevoked
+		}
 	}
 	// The subject is the principal's OWN stable identity, set server-side at mint and
 	// signed — a UUID for a v2 token, or "<owner>/<name>" pre-cutover. Resolve it to
@@ -786,18 +817,28 @@ func resolve(c *zip.Ctx, db orm.DB) (*principal.Principal, error) {
 	// the tenant's authority, not the claim's (the org-confusion defense).
 	u, err := store.GetUserBySubject(ctx, db, claims.Subject)
 	if err != nil {
-		return nil, err // fail closed: cannot establish the principal
+		return nil, "", err // fail closed: cannot establish the principal
 	}
 	if u != nil {
 		if u.IsForbidden || u.IsDeleted {
-			return nil, errRevoked
+			return nil, "", errRevoked
 		}
 		// Sudo is THE predicate, asked of the row: a person whose own org is the
-		// reserved one. A membership of the admin org does not make one.
-		return &principal.Principal{
-			Org: u.Owner, User: u.Name, Admin: u.IsAdmin, Sudo: u.SuperAdmin(),
+		// reserved one. A membership of the admin org does not make one, and an
+		// impersonation never carries it.
+		p := &principal.Principal{
+			Org: u.Owner, User: u.Name, Admin: u.IsAdmin, Sudo: u.SuperAdmin() && actor == "",
 			Orgs: membershipRoles(ctx, db, u.Owner+"/"+u.Name),
-		}, nil
+		}
+		if actor != "" && policy.VerbOf(c.Method()) != policy.Read {
+			return p, actor, errImpersonated
+		}
+		return p, actor, nil
+	}
+	// An impersonation speaks for a person; with the person gone it speaks for
+	// nobody, and never for an application that happens to share the name.
+	if claims.Imp {
+		return nil, "", errRevoked
 	}
 	// No user row. A machine token's subject is "<appOwner>/<appName>", which names
 	// an APPLICATION — so it resolves to the SAME confidential-client Principal the
@@ -817,11 +858,11 @@ func resolve(c *zip.Ctx, db orm.DB) (*principal.Principal, error) {
 	// remains its capability allowlist, pinned to a reserved signing owner.
 	owner, name, hasSlash := strings.Cut(claims.Subject, "/")
 	if !hasSlash || owner == "" {
-		return nil, errNoSubject
+		return nil, "", errNoSubject
 	}
 	if name != "" {
 		if a, err := store.GetApplicationByName(ctx, db, owner, name); err == nil && a != nil {
-			return appPrincipal(a), nil
+			return appPrincipal(a), "", nil
 		}
 	}
 	// A subject that names neither a live user nor a live application — an opaque
@@ -829,7 +870,7 @@ func resolve(c *zip.Ctx, db orm.DB) (*principal.Principal, error) {
 	// already blocks) — is org-scoped only, carrying no admin, super, or app
 	// authority. Fail closed by construction: on the raw CRUD this authorizes to
 	// nothing.
-	return &principal.Principal{Org: owner}, nil
+	return &principal.Principal{Org: owner}, "", nil
 }
 
 // membershipRoles reads the org->role set a person may act in. A store error is

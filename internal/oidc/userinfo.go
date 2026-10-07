@@ -44,6 +44,11 @@ func userinfoHandler(db orm.DB) zip.Handler {
 		if err != nil {
 			return userinfoUnauthorized(c, "the access token is invalid")
 		}
+		if claims.Imp {
+			if _, err := Operator(ctx, db, claims); err != nil {
+				return userinfoUnauthorized(c, "the impersonation has ended")
+			}
+		}
 
 		// Resolve the token's principal from its `sub` (a stable UUID for a v2 token,
 		// or owner/name pre-cutover). The response `sub` is the signed claims.Subject
@@ -79,6 +84,16 @@ func buildUserinfo(u *schema.User, claims *Claims, row *schema.Token, iss string
 	}
 	if claims.Organization != "" {
 		info["organization"] = claims.Organization
+	}
+	// Who is acting, when it is not the subject: the operator impersonating them
+	// (`imp`), or the key acting for them. Read from the signed token, because it
+	// is a fact about this credential and not about the person — a client draws
+	// its "signed in as" banner from these two.
+	if claims.Act != nil {
+		info["act"] = claims.Act
+	}
+	if claims.Imp {
+		info["imp"] = true
 	}
 	// A client_credentials token (or a since-deleted user) has no profile.
 	if u == nil {

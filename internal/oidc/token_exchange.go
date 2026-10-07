@@ -12,6 +12,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -125,6 +126,23 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 	}
 	scope := param(c, "scope")
 	id := identityOf(ctx, db, user) // the ONE user→claims resolution
+	// An impersonated subject_token stays impersonated: the operator rides forward
+	// in `act` beside `imp`, and the new token dies no later than the one it was
+	// exchanged for. An exchange is never how an impersonation sheds its mark or
+	// its clock.
+	actor := ""
+	if claims.Imp {
+		if actor, err = Operator(ctx, db, claims); err != nil {
+			trail{actor: actorKey(claims.Act), target: natural, client: clientApp.ClientId, ip: httpx.ClientIP(c),
+				method: "POST", uri: PathToken, org: owner}.record(ctx, db, 400, "the impersonation is no longer permitted")
+			return tokenError(c, 400, "invalid_grant", "the impersonation is no longer permitted")
+		}
+		id.Act, id.Imp = claims.Act, true
+		ttl = min(ttl, impersonationTTL)
+		if claims.ExpiresAt != nil {
+			ttl = min(ttl, claims.ExpiresAt.Sub(now))
+		}
+	}
 	access, err := signer.SignUserToken(id, owner, aud, clientApp.ClientId, scope, ttl, now)
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
@@ -139,12 +157,17 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 		TokenType:       "Bearer",
 		ExpiresIn:       int(ttl.Seconds()),
 		AccessTokenHash: hashToken(access),
+		Actor:           actor,
 	}
 	row.Name = "tx-" + hashToken(access)[:32]
 	if err := store.PersistToken(ctx, db, row); err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}
 	auditMint(ctx, db, c, schema.ActionTokenExchange, clientApp.ClientId, natural)
+	if actor != "" {
+		trail{actor: actor, target: natural, client: clientApp.ClientId, ip: httpx.ClientIP(c),
+			method: "POST", uri: PathToken, org: owner, ttl: ttl}.record(ctx, db, 200, "")
+	}
 
 	// 6) RFC 8693 §2.2 response.
 	return c.JSON(200, map[string]any{

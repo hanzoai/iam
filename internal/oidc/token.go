@@ -21,6 +21,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/users"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
@@ -187,6 +188,10 @@ func authorizationCodeGrant(c *zip.Ctx, db orm.DB) error {
 	if app == nil || isDevice(tok) {
 		return tokenError(c, 400, "invalid_grant", "invalid authorization code")
 	}
+	// Every answer to an impersonation code is a row, whichever check gives it.
+	if tok.Actor != "" {
+		defer impersonationTrail(c, tok, app).answered(ctx, db, c)
+	}
 
 	// The presented client must be the code's client.
 	if clientID != "" && subtle.ConstantTimeCompare([]byte(clientID), []byte(app.ClientId)) != 1 {
@@ -238,12 +243,34 @@ func authorizationCodeGrant(c *zip.Ctx, db orm.DB) error {
 	tok.CodeIsUsed, tok.PublicGrant = true, !clientAuthed
 	resp, err := issueTokens(ctx, db, c, app, tok, newFamilyID(tok), now)
 	if err != nil {
+		if tok.Actor != "" {
+			// A refused impersonation code is spent, not parked until the rule
+			// happens to admit it again.
+			_ = store.SaveToken(ctx, db, tok)
+		}
 		return mintError(c, err)
 	}
 	if err := store.SaveToken(ctx, db, tok); err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}
 	return c.JSON(200, resp)
+}
+
+// impersonationTrail is the audit row for the token step of an impersonation
+// grant, read off the code row that carries it.
+func impersonationTrail(c *zip.Ctx, tok *schema.Token, app *schema.Application) trail {
+	org, _ := splitSub(tok.User)
+	return trail{
+		actor:  tok.Actor,
+		target: tok.User,
+		reason: tok.Reason,
+		client: app.ClientId,
+		ip:     httpx.ClientIP(c),
+		method: c.Method(),
+		uri:    PathToken,
+		org:    org,
+		ttl:    lifetime(app),
+	}
 }
 
 // clientCredentialsGrant issues a machine-to-machine access token. The subject
@@ -559,12 +586,17 @@ func issueTokens(ctx context.Context, db orm.DB, c *zip.Ctx, app *schema.Applica
 	if err != nil {
 		return tokenResponse{}, err
 	}
+	// An impersonation grant (row.Actor): the operator rides in `act` beside
+	// `imp`, the lifetime is capped, and nothing renews it. Decided here, on the
+	// one path every grant mints through, so no grant can hand one a refresh token.
+	if row.Actor != "" {
+		if id.Act, err = actorOf(ctx, db, row, app); err != nil {
+			return tokenResponse{}, err
+		}
+		id.Imp, ttl = true, lifetime(app)
+	}
 
 	access, err := signer.Sign(app, id, row.Scope, "", ttl, now)
-	if err != nil {
-		return tokenResponse{}, err
-	}
-	refresh, err := newOpaqueToken()
 	if err != nil {
 		return tokenResponse{}, err
 	}
@@ -575,19 +607,25 @@ func issueTokens(ctx context.Context, db orm.DB, c *zip.Ctx, app *schema.Applica
 	row.AccessToken = ""
 	row.AccessTokenHash = hashToken(access)
 	row.RefreshToken = ""
-	row.RefreshTokenHash = hashToken(refresh)
-	row.RefreshFamily = family
-	row.RefreshConsumed = false
-	row.RefreshExpireIn = now.Add(refreshTTL(app)).Unix()
 	row.ExpiresIn = int(ttl.Seconds())
 	row.TokenType = "Bearer"
 
 	resp := tokenResponse{
-		AccessToken:  access,
-		RefreshToken: refresh,
-		TokenType:    "Bearer",
-		ExpiresIn:    int(ttl.Seconds()),
-		Scope:        row.Scope,
+		AccessToken: access,
+		TokenType:   "Bearer",
+		ExpiresIn:   int(ttl.Seconds()),
+		Scope:       row.Scope,
+	}
+	if !id.Imp {
+		refresh, err := newOpaqueToken()
+		if err != nil {
+			return tokenResponse{}, err
+		}
+		row.RefreshTokenHash = hashToken(refresh)
+		row.RefreshFamily = family
+		row.RefreshConsumed = false
+		row.RefreshExpireIn = now.Add(refreshTTL(app)).Unix()
+		resp.RefreshToken = refresh
 	}
 	if hasScope(row.Scope, "openid") {
 		idt, err := signer.SignID(app, id, row.Scope, row.Nonce, ttl, now)
@@ -716,6 +754,9 @@ func mintError(c *zip.Ctx, err error) error {
 	// invalid_grant tells it to sign in again (RFC 6749 §5.2).
 	if errors.Is(err, ErrNoSubject) {
 		return tokenError(c, 400, "invalid_grant", "the grant's subject no longer names a user")
+	}
+	if errors.Is(err, ErrImpersonation) {
+		return tokenError(c, 400, "invalid_grant", "the impersonation is no longer permitted")
 	}
 	return tokenError(c, 500, "server_error", "")
 }

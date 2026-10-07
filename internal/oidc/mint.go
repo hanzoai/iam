@@ -32,6 +32,11 @@ type Mint struct {
 	CodeChallenge       string
 	CodeChallengeMethod string
 	Resource            string
+	// Actor and Reason are set only by an impersonation (impersonate.go): the
+	// SuperAdmin the code is minted for the user BY, and why. Every sign-in a
+	// person performs leaves both empty.
+	Actor  string
+	Reason string
 }
 
 // MintFor resolves what a successful authentication returns to the SDK: the
@@ -100,6 +105,7 @@ func MintFor(ctx context.Context, db orm.DB, app *schema.Application, userID str
 	// re-verify the redirect and echo the nonce into the id_token.
 	code.RedirectUri = p.RedirectUri
 	code.Nonce = p.Nonce
+	code.Actor, code.Reason = p.Actor, p.Reason
 	if err := store.PersistToken(ctx, db, code); err != nil {
 		return "", err
 	}

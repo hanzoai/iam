@@ -27,7 +27,7 @@ const PathWhoami = "/v1/iam/whoami"
 func whoamiHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
-		owner, name, ok := callerOf(ctx, c, db)
+		owner, name, ok := readerOf(ctx, c, db)
 		if !ok {
 			return c.JSON(200, accountResponse{Status: "error", Msg: "please sign in first"})
 		}

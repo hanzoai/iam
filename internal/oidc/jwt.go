@@ -104,12 +104,16 @@ type Claims struct {
 	// both an app token and a user token without emitting an empty claim.
 	Orgs []schema.OrgRef `json:"orgs,omitempty"`
 	// Act names the ACTOR a delegated token was minted BY — the org key behind
-	// as(). RFC 8693 §4.1: a nested {sub} a resource server reads to see WHO acted
-	// for the subject, kept distinct from the subject the token authorizes. Absent
-	// on every ordinary token, and on token exchange — an exchange proves the
-	// subject's own token and needs no separate actor. omitempty ⇒ a token that
-	// names no actor omits it entirely.
+	// as(), or the SuperAdmin impersonating the subject. RFC 8693 §4.1: a nested
+	// object a resource server reads to see WHO acted for the subject, kept
+	// distinct from the subject the token authorizes. It attributes; it never
+	// authorizes — authority is the subject's. Absent on every ordinary token.
+	// An exchange carries it forward only from an impersonated subject_token.
 	Act *Actor `json:"act,omitempty"`
+	// Imp marks an IMPERSONATED token: a platform operator signed in as the
+	// subject, named in Act. A client shows a banner on it; a resource server
+	// refuses it any durable credential or money act. Absent everywhere else.
+	Imp bool `json:"imp,omitempty"`
 	// Assumed names the organization a platform operator has stepped into
 	// (/v1/iam/assume). Absent on every ordinary token.
 	//
@@ -191,14 +195,22 @@ type Identity struct {
 	// state one of them differently from another path.
 	Wallets []schema.WalletRef
 	DID     string
+	// Act and Imp are who is ACTING for this identity, when it is not the
+	// person: an operator impersonating them (Imp). Nil and false for a person
+	// acting as themselves.
+	Act *Actor
+	Imp bool
 }
 
 // Actor is the RFC 8693 `act` claim value: the identity that requested a
-// delegated token. One field — the actor's own subject — because that is all a
-// resource server needs to attribute the act to whoever stood behind it; a longer
-// delegation chain nests another Actor here the same way, if one is ever needed.
+// delegated token. `sub` is the actor's own subject; an operator impersonating
+// someone is also named by `owner`/`name`, the address a banner and an audit
+// trail print. A longer delegation chain nests another Actor the same way, if
+// one is ever needed.
 type Actor struct {
-	Sub string `json:"sub,omitempty"`
+	Sub   string `json:"sub,omitempty"`
+	Owner string `json:"owner,omitempty"`
+	Name  string `json:"name,omitempty"`
 }
 
 // Signer signs tokens with one key under one algorithm. Immutable after
@@ -300,6 +312,8 @@ func (s *Signer) claims(id Identity, owner string, aud jwt.ClaimStrings, azp, sc
 		Assumed:           id.Assumed,
 		Wallets:           id.Wallets,
 		DID:               id.DID,
+		Act:               id.Act,
+		Imp:               id.Imp,
 	}, nil
 }
 

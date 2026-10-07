@@ -43,6 +43,9 @@ const (
 	// sign-in nobody authenticated.
 	KindRegister = "webauthn-register"
 	KindAssert   = "webauthn-assert"
+	// A SuperAdmin's impersonation hint (impersonate.go): the subject is the
+	// person to sign in as, the payload the operator, application and reason.
+	KindImpersonate = "impersonate"
 )
 
 // ErrChallenge is the ONE opaque failure for every way a challenge can be refused

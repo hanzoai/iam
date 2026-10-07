@@ -99,6 +99,8 @@ go run . version
 `${VAR}` expands from env). Deploy env: `IAM_ISSUER=https://<brand-id>`;
 the on-behalf-of (token-exchange) allow-lists `IAM_TOKEN_EXCHANGE_APPS` and
 `IAM_ADMIN_TOKEN_EXCHANGE_APPS`, matched by the globally-unique `client_id`;
+`IAM_IMPERSONATION_APPS`, the sites a SuperAdmin may open signed in as a person
+(`POST /v1/iam/impersonate`; LLM.md "Impersonation"), by `client_id`, unset = none;
 and the credential-administration capability `IAM_KEY_MINT_ALLOWED_APPS`,
 matched by application name (distinct from token exchange, so exchanging tokens
 does not grant the capability).

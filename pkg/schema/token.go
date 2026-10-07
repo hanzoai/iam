@@ -81,4 +81,13 @@ type Token struct {
 	// the access token's expiry). Carried across rotation, so the second refresh
 	// behaves like the first.
 	PublicGrant bool `json:"publicGrant,omitempty" url:"-"`
+
+	// Actor is the SuperAdmin ("owner/name") who opened this grant AS its User —
+	// impersonation, /v1/iam/impersonate — and Reason is why they said they did.
+	// Both empty on every grant a person established themselves. A grant with an
+	// Actor mints a short access token that names the actor in `act` and carries
+	// `imp`, and never a refresh token (issueTokens), and /v1/iam/signin refuses
+	// its code, so it cannot become a session at the issuer.
+	Actor  string `json:"actor,omitempty" url:"-"`
+	Reason string `json:"reason,omitempty" url:"-"`
 }

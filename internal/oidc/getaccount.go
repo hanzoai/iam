@@ -42,7 +42,7 @@ func getAccount(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
 
-		owner, name, ok := callerOf(ctx, c, db)
+		owner, name, ok := readerOf(ctx, c, db)
 		if !ok {
 			return c.JSON(200, accountResponse{Status: "error", Msg: "please sign in first"})
 		}
@@ -125,6 +125,10 @@ func accountEnvelopeFor(ctx context.Context, db orm.DB, owner, name string) (acc
 // callerOf resolves the signed-in principal by SESSION COOKIE first (the portal
 // and gateway-admin-guard path) then bearer access token (the API path) — two
 // credentials, one identity. ok=false means no valid session or token.
+//
+// It answers the account's HOLDER, which is who every self-service write acts
+// as: an impersonated bearer resolves nobody here, because the person holding it
+// is an operator and not the person it names. Reads use readerOf.
 func callerOf(ctx context.Context, c *zip.Ctx, db orm.DB) (owner, name string, ok bool) {
 	return callerFrom(ctx, db, c.Fiber().Cookies(sessions.CookieName), httpx.Bearer(c))
 }
@@ -134,22 +138,44 @@ func callerOf(ctx context.Context, c *zip.Ctx, db orm.DB) (owner, name string, o
 // same checks: session cookie first (the portal), then bearer (the API). callerOf
 // delegates here so one of the two cannot quietly become the lenient one.
 func callerFrom(ctx context.Context, db orm.DB, sessionCookie, bearer string) (owner, name string, ok bool) {
+	owner, name, imp, ok := accountOf(ctx, db, sessionCookie, bearer)
+	return owner, name, ok && !imp
+}
+
+// readerOf is callerOf for a READ: an impersonated bearer resolves to the person
+// it names, so an operator sees that person's account as they would. Never for a
+// write — a password, a passkey, a linked sign-in, a profile — which is how an
+// impersonation would outlive its fifteen minutes.
+func readerOf(ctx context.Context, c *zip.Ctx, db orm.DB) (owner, name string, ok bool) {
+	owner, name, _, ok = accountOf(ctx, db, c.Fiber().Cookies(sessions.CookieName), httpx.Bearer(c))
+	return owner, name, ok
+}
+
+// accountOf is the one resolution behind callerOf and readerOf: the account a
+// session cookie or a bearer speaks for, and whether that bearer is impersonated.
+func accountOf(ctx context.Context, db orm.DB, sessionCookie, bearer string) (owner, name string, imp, ok bool) {
 	if sc, ok := sessions.CurrentValue(ctx, sessionCookie, db); ok {
-		return sc.Owner, sc.Name, true
+		return sc.Owner, sc.Name, false, true
 	}
 	if bearer == "" {
-		return "", "", false
+		return "", "", false, false
 	}
 	claims, err := verifyBearer(ctx, db, bearer)
 	if err != nil {
-		return "", "", false
+		return "", "", false, false
 	}
 	// The `sub` is a stable UUID for a v2 token; resolve it to the real (owner,name)
 	// so the account/whoami envelope reports the identity, not the opaque subject. A
 	// subject with no user row (a machine token) is not an account caller.
 	u, err := store.GetUserBySubject(ctx, db, claims.Subject)
 	if err != nil || u == nil {
-		return "", "", false
+		return "", "", false, false
 	}
-	return u.Owner, u.Name, true
+	// An impersonation reads only while its operator may still impersonate.
+	if claims.Imp {
+		if _, err := Operator(ctx, db, claims); err != nil {
+			return "", "", false, false
+		}
+	}
+	return u.Owner, u.Name, claims.Imp, true
 }

@@ -87,6 +87,10 @@ const (
 	// it, so every change to it is accountable to that org.
 	ActionMembershipGrant  = "membership-grant"
 	ActionMembershipRevoke = "membership-revoke"
+	// A SuperAdmin signing in AS another person (/v1/iam/impersonate): the hint
+	// issued, the code minted for it, and the token that code became. One action
+	// for all three steps, each row's requestUri naming its step; refusals too.
+	ActionImpersonate = "impersonate"
 )
 
 // PlatformWritten reports whether action names a record the platform writes
@@ -100,7 +104,7 @@ func PlatformWritten(action string) bool {
 		ActionRevokeUserKeys, ActionTokenExchange, ActionAs,
 		ActionAssumeOrg, ActionReleaseOrg, ActionListOrgs, ActionSuperAdmin, ActionWorkloadToken,
 		ActionInviteSend, ActionInviteAccept, ActionInviteRefused, ActionInviteSignupRefused,
-		ActionInviteCodeSent, ActionMembershipGrant, ActionMembershipRevoke:
+		ActionInviteCodeSent, ActionMembershipGrant, ActionMembershipRevoke, ActionImpersonate:
 		return true
 	}
 	return false

@@ -108,6 +108,12 @@ func rescope(ctx context.Context, db orm.DB, in *assumeBody, org string) (*httpx
 	if err != nil {
 		return httpx.Bad(401, "the access token is not valid", CodeLoginRequired), nil
 	}
+	// An impersonated session is the person it names, who steps into nothing; the
+	// refusal names the operator holding it, not that person.
+	if claims.Imp {
+		record(ctx, db, actionFor(org), actorKey(claims.Act), "", in.Forwarded, 403)
+		return httpx.Bad(403, "an impersonated session cannot step into an organization", ""), nil
+	}
 	user, err := store.GetUserBySubject(ctx, db, claims.Subject)
 	if err != nil {
 		return httpx.Bad(500, "server_error", ""), nil

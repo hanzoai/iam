@@ -93,6 +93,15 @@ func init() {
 			"identifierBody.identifier": "Identifier is the email address the person typed.",
 		},
 	})
+	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/impersonate", zip.Doc{
+		Description: "Lets a SuperAdmin open an application signed in as somebody\nelse, to see what they see.\n\nIt returns a one-time login_hint for that application, good for a few minutes\nand only in a browser where the operator is signed in here. The token the\napplication finally receives belongs to the person, names the operator in `act`,\ncarries `imp`, lasts at most fifteen minutes and cannot be refreshed. A reason\nis required and every attempt is recorded, refused or not.",
+		Fields: map[string]string{
+			"Response.code":            "Code is a STABLE machine-readable reason, where the human `msg` is\ndeliberately generic. `msg` is prose for a person and several distinct causes\nlegitimately share one sentence; a caller that must BRANCH on the cause — or\ntell its own user which of them happened — cannot parse prose. Optional, so\nevery existing envelope is byte-identical and no SDK changes.",
+			"impersonateBody.clientId": "ClientId is the application the operator will open as the target.",
+			"impersonateBody.reason":   "Reason is why: a ticket, a sentence. Required — it is what the trail is for.",
+			"impersonateBody.target":   "Target is the person, \"<owner>/<name>\". Body only, like the reason: a URL\nlands in access logs.",
+		},
+	})
 	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/invitations/accept", zip.Doc{
 		Description: "Joins the caller to an organization through an invitation, for\na person who already has an account. Signing up through the invitation is the\nother way in (signupHandler); this one spends the same seat under the same rules.\n\nOnly the caller joins, as a member and never more; the request names nobody\nelse. An invitation pinned to an address admits only the account holding that\naddress, and only with a code IAM sent to it for this join — the account's own\nverified flag is not enough, because a tenant's identity provider can set it. An\ninvitation pinned to a phone number or a username admits no other org's account\nthis way. Joining an org the caller already belongs to succeeds and spends\nnothing. Every refusal is recorded, and an account refused acceptLimit times in\nacceptWindow is refused before anything is looked at.",
 		Fields: map[string]string{

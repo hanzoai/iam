@@ -66,6 +66,13 @@ func signinHandler(db orm.DB) zip.Handler {
 		if tok == nil || tok.CodeIsUsed || (tok.CodeExpireIn != 0 && now.Unix() > tok.CodeExpireIn) {
 			return httpx.Err(c, "the authorization code is invalid or expired")
 		}
+		// An impersonation code becomes a short token at its site and nothing
+		// else: a session here would outlive it, carry no mark, and make the
+		// operator's browser the person's at the issuer. It is not spent, so the
+		// site that started it can still redeem it.
+		if tok.Actor != "" {
+			return httpx.Err(c, "an impersonation does not open a session here")
+		}
 		owner, name := splitSub(tok.User)
 		if owner == "" || name == "" {
 			return httpx.Err(c, "the authorization code has no subject")

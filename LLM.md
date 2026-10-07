@@ -216,13 +216,13 @@ sees. Three ops, and none of them is a new way to authenticate:
 | `assume` | `POST /v1/iam/assume` `{"org":"acme"}` | SuperAdmin |
 | `release` | `POST /v1/iam/release` | SuperAdmin |
 
-**Nobody is impersonated.** `assume` RE-SCOPES the credential the caller
-presents: `sub`, `owner` and `name` on the token that comes back are the
-operator's own, and the tenant is named beside them in a new `assumed` claim. So
-every act downstream is attributed to the person who performed it and metering
-bills the account that did the work. `release` is the same mint with nothing
-assumed. The application, audience and signing cert are the presented token's, so
-the answer is a replacement for that token and not a token for somewhere else.
+**`assume` re-scopes; it does not impersonate.** `sub`, `owner` and `name` on the
+token that comes back are the operator's own, and the tenant is named beside them
+in `assumed`, so every act downstream is attributed to the operator and metering
+bills them. `release` is the same mint with nothing assumed. The application,
+audience and signing cert are the presented token's, so the answer replaces that
+token. Signing in AS a person exists too, since 2026-10 and by owner decision, as
+a separate act with its own marks: see "Impersonation" below.
 
 **The tenant is reached through the switch that already exists.** The assumed org
 joins `orgs`, which is the set a resource server already reads to admit
@@ -311,7 +311,106 @@ nothing.
   actor), filed under `admin`; so are a SuperAdmin's unlink of someone else's
   sign-in method and a device approval into another org. The action is
   `PlatformWritten`: the audit-log CRUD cannot create, alter or delete it.
-  assume/release/list-organizations keep their own rows.
+  assume/release/list-organizations/impersonate keep their own rows.
+
+## Impersonation — support signs in AS the person, and every token says so
+
+The owner overrode "nobody is impersonated" for one capability: from
+admin.hanzo.ai a SuperAdmin opens hanzo.ai or platform.hanzo.ai as a customer to
+reproduce their problem. The token is the person's and only the person's, it names
+the operator, and nothing it touches outlives fifteen minutes. Code:
+`internal/oidc/impersonate.go`; tests `TestImpersonate_*`.
+
+**Flow — authorize + token as written; no token ever reaches the operator:**
+
+1. `POST /v1/iam/impersonate` `{"target":"<owner>/<name>","reason":"…","clientId":"…"}`,
+   `Authorization: Bearer <the operator's own sign-in token>`, `X-Forwarded-For: <operator ip>`
+   → `{"status":"ok","data":{"loginHint":"impersonation:<id>","clientId","target","expiresIn":300,"ttl":900}}`.
+   The hint is a `LoginChallenge` of `KindImpersonate`: single-use, 5 minutes,
+   subject = target, payload = operator + client + reason.
+2. The site's OIDC Core §4 initiate-login endpoint gets `iss` + `login_hint` and
+   starts its OWN authorization request (its state, nonce, PKCE S256) carrying that
+   `login_hint`.
+3. `authorize` answers the `impersonation:` prefix itself and never falls through
+   to a login page. It burns the hint first — any presentation is its only one —
+   then requires a top-level navigation, a PKCE challenge, the hint's own client,
+   and the OPERATOR's session cookie on that browser (a leaked hint is inert). It
+   re-asks the rule and mints the code through `MintFor`, with `Actor`/`Reason` on
+   the `schema.Token` row. A refusal is an OAuth error on the site's registered
+   redirect_uri.
+4. The site redeems at `/v1/iam/oauth/token` as always. `issueTokens` sees
+   `row.Actor`, re-asks the rule, sets `act {sub, owner, name}` and `imp: true` on
+   the access token AND the id_token, caps life at `min(app, 15m)`, and issues NO
+   refresh token. A refused impersonation code is spent.
+
+**The rule, asked at every step of the rows as they stand.** Operator:
+`schema.User.SuperAdmin` on the row, not forbidden or deleted — never a claim, an
+`isAdmin`, or an admin membership — presenting their own sign-in (no `act`, `imp`
+or machine `type` on the bearer). Target: a person in a tenant — never a
+SuperAdmin, a reserved-org identity or a machine — not disabled, and one the
+application signs in. Application: named in `IAM_IMPERSONATION_APPS` (clientIds,
+admin-owned, fail closed — unset, impersonation reaches nothing) and serving no
+reserved org. Reason non-empty (recorded up to 512 bytes).
+
+**Contained.**
+- Authority is the TARGET's. `sub`, `orgs` and the Guard's principal resolve from
+  the target row, and an `imp` principal is never `Sudo`. Nothing of the operator's
+  rides along — the opposite of `assume`, which refuses an `imp` bearer.
+- It READS IAM and never WRITES it. The Guard answers any non-GET with an `imp`
+  bearer 403, and `callerOf`/`callerFrom` — every self-service write: password,
+  passkey, linked sign-ins, unlink, onboard, profile, preferences, consent, terms —
+  resolve nobody for one; the reads (account, whoami, linked-accounts, consent GET)
+  use `readerOf`. A key or passkey minted in the window would outlive it.
+- It lives only while its operator may impersonate: `oidc.Operator` is re-asked by
+  the Guard on every request, by UserInfo, the account reads, introspection
+  (`active:false` once it fails) and an exchange.
+- `/v1/iam/signin` refuses an impersonation code without spending it: a session at
+  the issuer would outlive the token and carry no mark. `PlatformBearer` already
+  refuses any token with `act`.
+- An RFC 8693 exchange of an `imp` subject_token carries `act`/`imp` forward and
+  dies no later than its subject.
+- It does not chain: an `imp` bearer is refused at `/v1/iam/impersonate`.
+
+**Visible.** `act` and `imp` ride both tokens, UserInfo and introspection;
+discovery advertises `imp`.
+
+**Trail.** `schema.ActionImpersonate` (PlatformWritten): a row per step — the
+hint, the code, the token, an exchange — and per IAM request the token makes,
+refusals included. `user` = the operator, always; `owner`/`organization` = the
+target's org, so the tenant reads who was in it (the operator's org until the
+target resolves); `requestUri` names the step; `object` = `{target, reason,
+client, ttl}`; `response` = why refused; `clientIp` is `X-Forwarded-For` as the
+caller sent it.
+
+**Not RFC 8693 for the mint.** An exchange proves a subject_token the operator does
+not hold, so it would need a non-standard subject parameter, and it hands the token
+to an API client rather than to the site's browser.
+
+**Rollout order.** Cloud and the sites ship their halves below FIRST; only then
+does `IAM_IMPERSONATION_APPS=hanzo-platform,hanzo-ai` go on the IAM deployment.
+Cloud writes IAM with its own client credential (API keys, memberships), so IAM's
+Guard never sees the `imp` bearer there: until cloud refuses it, an impersonation
+could mint the person a durable key.
+
+**Contract — cloud** `POST /v1/admin/users/:org/:name/impersonate` `{site, reason}`:
+forward the operator's bearer unchanged and their real address as
+`X-Forwarded-For` to `POST /v1/iam/impersonate` with `target=<org>/<name>` and the
+site's clientId (`platform` → `hanzo-platform`, `hanzo` → `hanzo-ai`); relay IAM's
+status and message; on 200 answer `{"url":"<initiate>?iss=<issuer>&login_hint=<urlencoded loginHint>"}`,
+`<initiate>` = `https://platform.hanzo.ai/auth/initiate` or `https://hanzo.ai/auth/initiate`.
+IAM is the gate; cloud adds none. On every request, cloud's caller identity carries
+`imp` and `act`: authorize on `sub`/`owner`/`orgs` exactly as for any token, never
+on `act`; refuse every non-GET that mints or changes a credential (API, SSH and
+principal keys), a membership, a payment method or a payout; bill no metered use to
+the person; write `act` beside the subject in its own audit.
+
+**Contract — sites** (hanzo.ai, platform.hanzo.ai): serve `GET /auth/initiate`
+(OIDC Core §4) — require `iss` = the configured issuer, start a fresh authorize
+with new state/nonce/PKCE and `login_hint` passed through verbatim, and replace any
+local session only on a successful callback (dropping it up front makes the link a
+logout CSRF); land on `/`. On a token or UserInfo with `imp: true`, show a fixed
+banner "Signed in as <name> by <act.owner>/<act.name> — support session", never
+offer refresh, and at expiry (≤ 15 min) sign out locally rather than renew.
 
 ## A mark is how a SUBJECT appears, and a subject is a person OR an org
 

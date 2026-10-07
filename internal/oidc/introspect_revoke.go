@@ -111,6 +111,12 @@ func introspectHandler(db orm.DB) zip.Handler {
 		if err != nil {
 			return c.JSON(200, inactiveToken())
 		}
+		// An impersonation is live only while its operator may still impersonate.
+		if claims.Imp {
+			if _, err := Operator(ctx, db, claims); err != nil {
+				return c.JSON(200, inactiveToken())
+			}
+		}
 
 		resp := map[string]any{
 			"active":     true,
@@ -141,6 +147,13 @@ func introspectHandler(db orm.DB) zip.Handler {
 		}
 		if claims.ID != "" {
 			resp["jti"] = claims.ID
+		}
+		// RFC 8693 §4.1: the actor, when the subject is not the one acting.
+		if claims.Act != nil {
+			resp["act"] = claims.Act
+		}
+		if claims.Imp {
+			resp["imp"] = true
 		}
 		return c.JSON(200, resp)
 	}
