@@ -68,8 +68,9 @@ import (
 //
 // and `act` names the orchestrator, so every reader sees who acted.
 
-// delegationTTL caps a delegated token's life. A run is bounded well inside it;
-// the cap is what a client that forgets to say how long its run lasts gets.
+// delegationTTL caps a delegated token's life, and is what a client that does not
+// say how long its run lasts gets. It is the delegation's own bound, independent
+// of the asking client's token lifetime.
 const delegationTTL = 4 * time.Hour
 
 // delegationAllowed reports whether app may obtain delegated tokens. Its own list,
@@ -157,8 +158,11 @@ func delegate(c *zip.Ctx, db orm.DB, client *schema.Application) error {
 		return refuse(403, "access_denied", "the subject is not a member of "+d.org)
 	}
 
-	// A caller may ask for less life than the cap and never more.
-	ttl := min(appTTL(client), delegationTTL)
+	// A caller may ask for less life than the cap and never more. The client's own
+	// token lifetime is NOT a bound: it says how long the orchestrator's identity
+	// lasts, not how long a person's run does, and reading it cut every run to an
+	// hour (hanzo-cloud declares none, so it takes the one-hour default).
+	ttl := delegationTTL
 	if want := seconds(param(c, "lifetime")); want > 0 && want < ttl {
 		ttl = want
 	}

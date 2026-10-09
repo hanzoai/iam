@@ -38,18 +38,15 @@ const (
 	api         = "https://api.hanzo.ai"
 )
 
-// delegationServer seeds the orchestrator (admin-owned, client_credentials, a
-// week-long token like production's), three orgs, and alice: home hanzo, a
-// member of acme, nothing in other.
+// delegationServer seeds the orchestrator (admin-owned, client_credentials, and
+// — as in production, where hanzo-cloud declares no expireInHours — a one-hour
+// token of its own), three orgs, and alice: home hanzo, a member of acme,
+// nothing in other.
 func delegationServer(t *testing.T) (*zip.App, orm.DB) {
 	t.Helper()
 	t.Setenv("IAM_DELEGATION_APPS", cloudID)
 	app, db := newServer(t)
-	a := seedApp(t, db, appOpts{clientID: cloudID, secret: cloudSecret, grants: []string{"client_credentials"}})
-	a.ExpireInHours = 168
-	if err := a.UpdateCtx(context.Background()); err != nil {
-		t.Fatalf("app lifetime: %v", err)
-	}
+	seedApp(t, db, appOpts{clientID: cloudID, secret: cloudSecret, grants: []string{"client_credentials"}})
 	for _, o := range []string{"hanzo", "acme", "other", "admin"} {
 		seedOrg(t, db, o)
 	}
@@ -270,6 +267,8 @@ func TestDelegate_lifetimeIsCapped(t *testing.T) {
 		{"", delegationTTL},
 		{"999999", delegationTTL},
 		{"600", 10 * time.Minute},
+		// Longer than the client's own one-hour token: the run's length decides.
+		{"10800", 3 * time.Hour},
 	} {
 		status, tok := delegated(t, app, url.Values{"lifetime": {tc.lifetime}})
 		if status != 200 {
