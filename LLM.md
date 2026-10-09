@@ -412,6 +412,63 @@ logout CSRF); land on `/`. On a token or UserInfo with `imp: true`, show a fixed
 banner "Signed in as <name> by <act.owner>/<act.name> — support session", never
 offer refresh, and at expiry (≤ 15 min) sign out locally rather than renew.
 
+## Delegation — a run acts and bills as its person, for model calls only
+
+Cloud runs coding work FOR a person inside a sandbox that executes model output.
+The sandbox needs a credential for its model calls. Cloud's own machine token
+billed every tenant's run to `admin` and put the deployment's identity in the
+box; `tokens/issue` would hand the box the person's whole account. Delegation is
+the third thing. Code: `internal/oidc/delegate.go`; tests `TestDelegate_*`.
+
+**Grant — RFC 8693 token exchange with an actor and no subject_token:**
+
+    POST /v1/iam/oauth/token
+    grant_type=urn:ietf:params:oauth:grant-type:token-exchange
+    client_id, client_secret                the orchestrator (hanzo-cloud)
+    actor_token=<its own machine token>     client_credentials or workload grant
+    requested_subject=<sub | owner/name>    the person
+    org=<slug>                              the org the run bills
+    scope=ai:inference                      schema.Inference, the only one
+    resource=https://api.hanzo.ai           RFC 8707, absolute https URI
+    lifetime=<seconds>                      ≤ 4h (delegationTTL), one way
+    run=<id>                                audit only
+
+**Who may ask.** `IAM_DELEGATION_APPS` (clientIds, admin-owned, fail closed) —
+its own list, not `IAM_TOKEN_EXCHANGE_APPS`: a client allowed the narrower act
+is not thereby allowed the wider. The actor_token must be that client's own,
+live machine token (`type: application`, `azp` and `sub` its own, no `act`/`imp`).
+
+**For whom, where.** A live person (not forbidden, deleted or a machine), never a
+reserved-org identity (a SuperAdmin: IAM reads authority off the ROW). The org
+must exist, must not be reserved, and must be one the person's own token names
+(`store.MemberOrgRefs`) — a person in several orgs is minted into the one asked
+for or refused.
+
+**What comes back** is the person's token narrowed, each narrowing a claim
+consumers already read: `orgs` = that one org (role as held), `owner` =
+`organization` = it; `scope` = `ai:inference`; `aud` = the URI, `azp` empty (no
+consumer that admits a token by its client — S3's federation — admits this one);
+`act {sub: admin/hanzo-cloud, owner, name}`; `billing_account` as the person's own
+token states it at home and none elsewhere (account.Payer ignores a home claim in
+another org, so the spend matches); no refresh token. Row `dl-<hash>`, revocable
+by the client and live to introspection.
+
+**Confined means confined.** `schema.Confined(scope)` is the one predicate.
+`verifyBearer` refuses a confined token, so the Guard, UserInfo, account reads,
+impersonation and masquerade never take one; an exchange refuses one as
+subject_token. Introspection reports it as it is (active, scope, act). Cloud
+serves it the inference addresses and nothing else (cloud LLM.md "Delegated
+tokens"). A scope only narrows: a person who asks for `ai:inference` at sign-in
+confines their own token.
+
+**Trail.** `schema.ActionDelegate` (PlatformWritten), one row per attempt after
+client authentication: `user` = the person, filed under the org asked for (the
+client's own org until it is known to be allowed to name one), `object` =
+`{actor, org, run, ttl, scope}`, refusals with their reason and status.
+
+**Rollout.** IAM first, with `IAM_DELEGATION_APPS=hanzo-cloud`; then cloud, which
+fails a run rather than fall back to its machine token.
+
 ## A mark is how a SUBJECT appears, and a subject is a person OR an org
 
 `schema.Mark` is the pair every subject carries — `avatar`, an image, and

@@ -3,7 +3,29 @@
 
 package schema
 
-import "github.com/hanzoai/orm"
+import (
+	"slices"
+	"strings"
+
+	"github.com/hanzoai/orm"
+)
+
+// Inference is the scope of a DELEGATED token: one a confidential client obtained
+// for a person so that a process it runs on their behalf can make model calls,
+// and do nothing else (iam LLM.md "Delegation").
+//
+// A token whose scope names it is CONFINED. A resource server serves it only the
+// addresses that answer a model call, and IAM accepts it as a bearer nowhere on
+// its own surface. A scope only ever narrows, so the rule holds for any token that
+// names it, however it was minted: a person who asks for it at sign-in confines
+// their own token and gains nothing.
+const Inference = "ai:inference"
+
+// Confined reports whether scope — the space-separated OAuth list (RFC 6749
+// §3.3) — names Inference.
+func Confined(scope string) bool {
+	return slices.Contains(strings.Fields(scope), Inference)
+}
 
 // Token is an issued OAuth2/OIDC token record (v1 the legacy surface `token`, v2 kind
 // "tokens"). One row is the authorization-server's persistent memory of a

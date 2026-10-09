@@ -91,6 +91,11 @@ const (
 	// issued, the code minted for it, and the token that code became. One action
 	// for all three steps, each row's requestUri naming its step; refusals too.
 	ActionImpersonate = "impersonate"
+	// A confidential client obtaining a delegated token for a person
+	// (iam LLM.md "Delegation"): the person, the org it bills, the client that
+	// acts, the run it is for and its lifetime. Refusals too, filed under the org
+	// asked for, so a tenant reads every attempt to act in it.
+	ActionDelegate = "delegate"
 )
 
 // PlatformWritten reports whether action names a record the platform writes
@@ -104,7 +109,8 @@ func PlatformWritten(action string) bool {
 		ActionRevokeUserKeys, ActionTokenExchange, ActionAs,
 		ActionAssumeOrg, ActionReleaseOrg, ActionListOrgs, ActionSuperAdmin, ActionWorkloadToken,
 		ActionInviteSend, ActionInviteAccept, ActionInviteRefused, ActionInviteSignupRefused,
-		ActionInviteCodeSent, ActionMembershipGrant, ActionMembershipRevoke, ActionImpersonate:
+		ActionInviteCodeSent, ActionMembershipGrant, ActionMembershipRevoke, ActionImpersonate,
+		ActionDelegate:
 		return true
 	}
 	return false

@@ -10,6 +10,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/hanzoai/orm"
 
+	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
 
@@ -39,9 +40,15 @@ func VerifyToken(ctx context.Context, db orm.DB, tokenStr string) (*Claims, erro
 // not minted as a credential here.
 var errNotBearer = errors.New("verify: not an access token")
 
+// errConfined refuses a confined token (schema.Confined) as a bearer. It was
+// delegated for model calls, and nothing IAM serves is one: read as the person
+// it names it would be their whole account, keys and sign-in methods included,
+// and IAM resolves authority from the row, so it would be their SuperAdmin too.
+var errConfined = errors.New("verify: a confined token is not a bearer here")
+
 // verifyBearer is the verification of a credential presented to act: verifyToken,
 // then the token must be an access token (tokenType "access-token"), name an
-// audience, and carry an issuer this IAM mints under.
+// audience, carry an issuer this IAM mints under, and not be confined.
 func verifyBearer(ctx context.Context, db orm.DB, tokenStr string) (*Claims, error) {
 	claims, err := verifyToken(ctx, db, tokenStr)
 	if err != nil {
@@ -49,6 +56,9 @@ func verifyBearer(ctx context.Context, db orm.DB, tokenStr string) (*Claims, err
 	}
 	if claims.TokenType != "access-token" || len(claims.Audience) == 0 || !issues(claims.Issuer) {
 		return nil, errNotBearer
+	}
+	if schema.Confined(claims.Scope) {
+		return nil, errConfined
 	}
 	return claims, nil
 }

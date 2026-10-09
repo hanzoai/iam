@@ -56,6 +56,11 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 	if clientApp == nil || clientApp.ClientSecret == "" || !clientApp.Proves(clientSecret) {
 		return tokenErrorClient(c, "client authentication failed")
 	}
+	// A delegation names its subject rather than proving it (delegate.go). It has
+	// its own allow-list and its own rules, and nothing below applies to it.
+	if param(c, "requested_subject") != "" {
+		return delegate(c, db, clientApp)
+	}
 	if !mintAllowed(clientApp) {
 		return tokenError(c, 403, "unauthorized_client", "client is not permitted for token exchange")
 	}
@@ -76,6 +81,11 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 	}
 	if claims.Subject == "" {
 		return tokenError(c, 400, "invalid_grant", "subject_token carries no subject")
+	}
+	// A confined token is exchanged for nothing: the exchange would hand back the
+	// person's whole authority for a credential that was given model calls only.
+	if schema.Confined(claims.Scope) {
+		return tokenError(c, 400, "invalid_grant", "a confined token is not exchanged")
 	}
 	// Resolve the acted-for user from the subject_token's `sub` — which is now the
 	// stable UUID for a v2-minted token (store.GetUserBySubject decodes Id-or-name).
