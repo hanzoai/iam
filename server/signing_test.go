@@ -20,6 +20,7 @@ import (
 	ormdb "github.com/hanzoai/orm/db"
 
 	"github.com/hanzoai/iam/internal/keyring"
+	"github.com/hanzoai/iam/internal/oidc"
 	"github.com/hanzoai/iam/pkg/schema"
 	iamstore "github.com/hanzoai/iam/pkg/store"
 	iamserver "github.com/hanzoai/iam/server"
@@ -496,10 +497,10 @@ func TestPlatformSigningCertSelectsFromReferencedSet(t *testing.T) {
 	}
 }
 
-// A PROCESS THAT DELEGATES HOLDS THE DELEGATION KEY. Delegation is on when
-// IAM_DELEGATION_APPS names a client; a replica that then lacks the unpublished
-// key boots green and fails every delegation it answers. It does not boot, and the
-// refusal names the key and where it goes.
+// A MISSING DELEGATION KEY TAKES DOWN DELEGATION, NEVER IDENTITY. Delegation is
+// on when IAM_DELEGATION_APPS names a client; a replica that lacks the unpublished
+// key still boots and signs everything else, and the readiness question names the
+// key and where it goes (the boot prints it).
 func TestRequireSigning_delegationKey(t *testing.T) {
 	ctx := context.Background()
 	signs := func(t *testing.T) orm.DB {
@@ -520,24 +521,35 @@ func TestRequireSigning_delegationKey(t *testing.T) {
 
 	t.Run("delegation off asks nothing", func(t *testing.T) {
 		t.Setenv("IAM_DELEGATION_APPS", "")
-		if err := iamserver.RequireSigning(ctx, signs(t)); err != nil {
+		db := signs(t)
+		if err := iamserver.RequireSigning(ctx, db); err != nil {
 			t.Fatalf("a process that does not delegate was refused: %v", err)
+		}
+		if err := oidc.DelegationReady(ctx, db); err != nil {
+			t.Fatalf("delegation off reported down: %v", err)
 		}
 	})
 	t.Run("on, and no delegation key declared", func(t *testing.T) {
 		t.Setenv("IAM_DELEGATION_APPS", "hanzo-cloud")
-		err := iamserver.RequireSigning(ctx, signs(t))
+		db := signs(t)
+		if err := iamserver.RequireSigning(ctx, db); err != nil {
+			t.Fatalf("a missing delegation key refused identity: %v", err)
+		}
+		err := oidc.DelegationReady(ctx, db)
 		if err == nil || !strings.Contains(err.Error(), "cert-delegation") || !strings.Contains(err.Error(), keyring.EnvDir) {
-			t.Fatalf("refusal = %v, want one naming cert-delegation and %s", err, keyring.EnvDir)
+			t.Fatalf("report = %v, want one naming cert-delegation and %s", err, keyring.EnvDir)
 		}
 	})
 	t.Run("on, declared, not mounted", func(t *testing.T) {
 		t.Setenv("IAM_DELEGATION_APPS", "hanzo-cloud")
 		db := signs(t)
 		delegation(t, db)
-		err := iamserver.RequireSigning(ctx, db)
-		if err == nil || !strings.Contains(err.Error(), "no key is mounted for cert-delegation") {
-			t.Fatalf("refusal = %v, want one naming the unmounted cert-delegation", err)
+		if err := iamserver.RequireSigning(ctx, db); err != nil {
+			t.Fatalf("an unmounted delegation key refused identity: %v", err)
+		}
+		err := oidc.DelegationReady(ctx, db)
+		if err == nil || !strings.Contains(err.Error(), "no key is mounted for cert-delegation") || !strings.Contains(err.Error(), keyring.EnvDir) {
+			t.Fatalf("report = %v, want one naming the unmounted cert-delegation and %s", err, keyring.EnvDir)
 		}
 	})
 	t.Run("on, declared, mounted", func(t *testing.T) {
@@ -546,8 +558,8 @@ func TestRequireSigning_delegationKey(t *testing.T) {
 		delegation(t, db)
 		keyring.Set("cert-delegation", material)
 		t.Cleanup(func() { keyring.Forget("cert-delegation") })
-		if err := iamserver.RequireSigning(ctx, db); err != nil {
-			t.Fatalf("a delegating replica holding its key was refused: %v", err)
+		if err := oidc.DelegationReady(ctx, db); err != nil {
+			t.Fatalf("a delegating replica holding its key reported down: %v", err)
 		}
 	})
 }

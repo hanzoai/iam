@@ -6,6 +6,7 @@ package oidc
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -182,8 +183,11 @@ func delegate(c *zip.Ctx, db orm.DB, client *schema.Application) error {
 	}
 	id.Act = &actor
 	signer, err := delegationSigner(ctx, db, tokenIssuer(c))
+	if errors.Is(err, ErrNoSigningCert) {
+		return refuse(503, "temporarily_unavailable", keyNotMounted)
+	}
 	if err != nil {
-		return refuse(500, "server_error", "no delegation key is configured")
+		return tokenError(c, 500, "server_error", "")
 	}
 	access, err := signer.SignUserToken(id, d.org, aud, "", scope, ttl, now)
 	if err != nil {
@@ -282,17 +286,25 @@ func delegationSigner(ctx context.Context, db orm.DB, issuer string) (*Signer, e
 	return NewSignerFromCert(newest, nil, issuer)
 }
 
-// RequireDelegation is the boot question for delegation, asked beside the other
-// signing questions (server.RequireSigning): when IAM_DELEGATION_APPS names a
-// client, this process signs delegated tokens, so a delegation key must be
-// mounted HERE. A replica without one boots green and then answers every
-// delegation 500 — and with several replicas that is a fraction of coding runs
-// failing in a way nobody can see from a probe. So it does not boot, and says
-// which key it lacks and where it goes.
+// keyNotMounted is what a delegation and the delegation key address answer while
+// this process holds no delegation key: 503, because the fault is the deployment's
+// and passes when the key is mounted, and in these words, so the run that could
+// not start says why.
+const keyNotMounted = "delegation key not mounted"
+
+// DelegationReady is the boot question for delegation: when IAM_DELEGATION_APPS
+// names a client, this process signs delegated tokens, so a delegation key must be
+// mounted HERE. nil when delegation is off or the key is there; otherwise an error
+// naming the certificate it lacks and the directory its PEM goes in.
+//
+// It takes down DELEGATION, never identity. A missing delegation key costs coding
+// runs — each refused with keyNotMounted, never handed anything else — and must not
+// cost a single sign-in, so the boot reports it loudly (server.RequireSigning) and
+// serves, and the two delegation addresses answer 503 until the key is mounted.
 //
 // How the key reaches the mount is the deployment's business; this asks only that
 // it is there.
-func RequireDelegation(ctx context.Context, db orm.DB) error {
+func DelegationReady(ctx context.Context, db orm.DB) error {
 	if strings.TrimSpace(os.Getenv("IAM_DELEGATION_APPS")) == "" {
 		return nil
 	}
@@ -353,6 +365,9 @@ func delegationKeysHandler(db orm.DB) zip.Handler {
 			if jwk, err := certToJWK(cert); err == nil {
 				keys = append(keys, jwk)
 			}
+		}
+		if len(keys) == 0 {
+			return tokenError(c, 503, "temporarily_unavailable", keyNotMounted)
 		}
 		return c.JSON(200, map[string]any{"keys": keys})
 	}

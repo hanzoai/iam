@@ -493,11 +493,37 @@ func TestDelegate_theDelegationKeySignsNothingElse(t *testing.T) {
 	if _, err := verifyToken(context.Background(), db, wide); err == nil {
 		t.Fatal("an unconfined token signed by the delegation key verifies")
 	}
-	// And with no delegation key mounted, nothing is delegated at all.
+}
+
+// A MISSING DELEGATION KEY TAKES DOWN DELEGATION, NEVER IDENTITY. With delegation
+// switched on and no key mounted, ordinary tokens issue as always, while the
+// exchange and the key address answer 503 "delegation key not mounted" — the words
+// the run that could not start reports — and nothing is signed under a published key.
+func TestDelegate_noKeyMountedTakesDownDelegationOnly(t *testing.T) {
+	app, db := delegationServer(t)
 	keyring.Forget(delegationKid)
-	cert.PrivateKey = ""
-	if status, body := delegated(t, app, nil); status != 500 {
-		t.Fatalf("a delegation with no key mounted answered %d %v", status, body)
+
+	if err := DelegationReady(context.Background(), db); err == nil || !strings.Contains(err.Error(), delegationKid) {
+		t.Fatalf("readiness = %v, want it to name %s", err, delegationKid)
+	}
+	// Identity serves: a machine's token and a person's sign-in both issue.
+	ownToken(t, app, cloudID, cloudSecret)
+	if r, tok := postToken(t, app, url.Values{
+		"grant_type": {"password"}, "client_id": {cloudID}, "client_secret": {cloudSecret},
+		"organization": {"hanzo"}, "username": {"alice@hanzo.ai"}, "password": {"correct horse"}, "scope": {"openid"},
+	}); r.StatusCode != 200 || tok["access_token"] == nil {
+		t.Fatalf("sign-in with delegation down = %d %v", r.StatusCode, tok)
+	}
+	// Delegation answers why it cannot.
+	status, body := delegated(t, app, nil)
+	if status != 503 || body["error"] != "temporarily_unavailable" || body["error_description"] != keyNotMounted {
+		t.Fatalf("delegation with no key = %d %v, want 503 %q", status, body, keyNotMounted)
+	}
+	req := formReqNoBody("GET", PathDelegationKeys)
+	req.Header.Set("Authorization", basic(cloudID, cloudSecret))
+	r, raw := do(t, app, req)
+	if out := decode(t, raw); r.StatusCode != 503 || out["error_description"] != keyNotMounted {
+		t.Fatalf("delegation keys with no key = %d %v, want 503 %q", r.StatusCode, out, keyNotMounted)
 	}
 }
 

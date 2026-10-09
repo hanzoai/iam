@@ -458,11 +458,13 @@ answered only to a client on `IAM_DELEGATION_APPS` presenting its secret
 delegation key signs, every one verifies (add before signing, keep until what it
 signed expires). Provisioned like every signing key: a Cert row (`owner: admin`,
 `name: cert-delegation`, `scope: delegation`, `type: x509`, `RS256`) and a PEM
-of that name in the `IAM_SIGNING_KEYS` mount from KMS. None mounted → delegation
-answers 500, never a published key — and a process with `IAM_DELEGATION_APPS` set
-does not BOOT without one (`oidc.RequireDelegation`, the fourth question of
-`server.RequireSigning`), naming the certificate and where its PEM goes, so a
-keyless replica never serves a fraction of runs a 500.
+of that name in the `IAM_SIGNING_KEYS` mount from KMS. None mounted takes down
+DELEGATION and never identity: the process boots and serves, `server.RequireSigning`
+prints one loud line (`iam: ERROR delegation is down, identity serves: …`, from
+`oidc.DelegationReady`, naming the certificate and the directory its PEM goes in),
+and the exchange and `/v1/iam/oauth/delegation/keys` answer 503
+`temporarily_unavailable` "delegation key not mounted" — so cloud refuses the
+coding run with those words, and never signs under a published key.
 
 **What comes back** is the person's token narrowed, each narrowing a claim
 cloud reads: `orgs` = that one org with role `member` (no admin role rides along),

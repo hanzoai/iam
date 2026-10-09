@@ -15,8 +15,10 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	policy "github.com/hanzoai/authz"
@@ -179,7 +181,7 @@ func Seed(ctx context.Context, db orm.DB, initDataPath string) (*seed.Summary, e
 // a rollout reads it as healthy and keeps going. Refusing here makes the pod never
 // reach ready, which is the one signal a rollout already stops on.
 //
-// FOUR questions, because one key is not the whole job:
+// THREE questions, because one key is not the whole job:
 //
 //   - PlatformSigningCert must resolve. It keys the session-cookie MAC
 //     (internal/sessions), so without it no browser session can be issued or read.
@@ -195,9 +197,11 @@ func Seed(ctx context.Context, db orm.DB, initDataPath string) (*seed.Summary, e
 //   - Where a cert carries BOTH a published certificate and a mounted key, the two
 //     must describe the same key, or the JWKS publishes one and the signer signs
 //     with another and every token is rejected.
-//   - When this process delegates (IAM_DELEGATION_APPS is set), a delegation key —
-//     the one the JWKS never publishes — must be mounted (oidc.RequireDelegation),
-//     or every delegation this replica answers is a 500.
+//
+// And one REPORT, not a question: when this process delegates (IAM_DELEGATION_APPS
+// is set) and holds no delegation key, that is said once, loudly, and identity
+// serves (reportDelegation) — delegation answers 503 "delegation key not mounted"
+// until the key is mounted, and nothing else is touched.
 //
 // The application half is read ONLY for the reserved owner. An application row is
 // tenant-writable — an org admin registers applications in their own org and
@@ -234,8 +238,26 @@ func RequireSigning(ctx context.Context, db orm.DB) error {
 			"the JWKS would publish a key that did not sign the tokens; mount the key that matches the "+
 			"published certificate for %s", strings.Join(mismatched, ", "), pluralThem(len(mismatched)))
 	}
-	return oidc.RequireDelegation(ctx, db)
+	reportDelegation(ctx, db)
+	return nil
 }
+
+// reportDelegation says, once per process and loudly, that delegation is down
+// (oidc.DelegationReady): IAM_DELEGATION_APPS names a client and no delegation key
+// is mounted. It is said and not required, because what it costs is delegation —
+// every coding run refused with "delegation key not mounted" until the key is
+// there — and refusing to serve identity over it would cost every sign-in too.
+func reportDelegation(ctx context.Context, db orm.DB) {
+	if err := oidc.DelegationReady(ctx, db); err != nil {
+		delegationReported.Do(func() {
+			fmt.Fprintf(os.Stderr, "iam: ERROR delegation is down, identity serves: %v\n", err)
+		})
+	}
+}
+
+// delegationReported keeps the report to one line however many times a host asks
+// the signing questions (cloud asks through Seed and again directly).
+var delegationReported sync.Once
 
 // unsignable names every signing cert this process must be able to sign under but
 // cannot, deduped and sorted. Two sources, unioned:
