@@ -429,7 +429,7 @@ the third thing. Code: `internal/oidc/delegate.go`; tests `TestDelegate_*`.
     requested_subject=<sub | owner/name>    the person
     org=<slug>                              the org the run bills
     scope=ai:inference                      schema.Inference, the only one
-    resource=https://api.hanzo.ai           RFC 8707, absolute https URI
+    resource=https://api.hanzo.ai           RFC 8707, on IAM_DELEGATION_AUDIENCES
     lifetime=<seconds>                      ≤ 4h (delegationTTL), one way
     run=<id>                                audit only
 
@@ -465,7 +465,9 @@ answers 500, never a published key.
 cloud reads: `orgs` = that one org with role `member` (no admin role rides along),
 `owner` = `organization` = it; `scope` = `ai:inference`; `aud` = the URI, `azp` empty (no
 consumer that admits a token by its client — S3's federation — admits this one);
-`act {sub: admin/hanzo-cloud, owner, name}`; `billing_account` as the person's own
+`aud` = an https origin named exactly on `IAM_DELEGATION_AUDIENCES` (the API that
+serves model calls; unset refuses every delegation, so the client never picks the
+service); `act {sub: admin/hanzo-cloud, owner, name}`; `billing_account` as the person's own
 token states it at home and none elsewhere (account.Payer ignores a home claim in
 another org, so the spend matches); no refresh token. Row `dl-<hash>`, revocable
 by the client and live to introspection.
@@ -479,12 +481,17 @@ tokens"). A scope only narrows: a person who asks for `ai:inference` at sign-in
 confines their own token.
 
 **Trail.** `schema.ActionDelegate` (PlatformWritten), one row per attempt after
-client authentication: `user` = the person, filed under the org asked for (the
-client's own org until it is known to be allowed to name one), `object` =
-`{actor, org, run, ttl, scope}`, refusals with their reason and status.
+client authentication: `user` = the person, filed under the org asked for,
+`object` = `{actor, org, run, ttl}`, refusals with their reason and status. A
+client NOT on the list gets a row in its own org naming only itself
+(`{"actor":"<clientId>"}`): any tenant's app reaches the branch, and nothing it
+wrote is filed as the platform's.
 
-**Rollout.** IAM first, with `IAM_DELEGATION_APPS=hanzo-cloud`; then cloud, which
-fails a run rather than fall back to its machine token.
+**Rollout.** IAM is embedded in cloud in production, so it ships in the cloud
+image (go.mod bump) together with `IAM_DELEGATION_APPS=hanzo-cloud`,
+`IAM_DELEGATION_AUDIENCES=https://api.hanzo.ai`, the `cert-delegation` row and its
+PEM in the signing mount. Cloud fails a run rather than fall back to its machine
+token.
 
 ## A mark is how a SUBJECT appears, and a subject is a person OR an org
 

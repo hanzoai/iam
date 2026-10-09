@@ -38,7 +38,7 @@ import (
 //	requested_subject=<sub | owner/name>  the person
 //	org=<slug>                            the org the work bills
 //	scope=ai:inference                    the one scope a delegation carries
-//	resource=https://api.hanzo.ai         RFC 8707, an absolute https URI
+//	resource=https://api.hanzo.ai         RFC 8707, on IAM_DELEGATION_AUDIENCES
 //	lifetime=<seconds>                    at most delegationTTL, one way
 //	run=<id>                              recorded, never signed
 //
@@ -126,8 +126,8 @@ func delegate(c *zip.Ctx, db orm.DB, client *schema.Application) error {
 		return refuse(400, "invalid_scope", "the one scope a delegation carries is "+schema.Inference)
 	}
 	aud := resourceOf(c)
-	if !resourceURI(aud) {
-		return refuse(400, "invalid_target", "resource must be an absolute https URI")
+	if !delegationAudience(aud) {
+		return refuse(400, "invalid_target", "resource must be an API this IAM delegates to")
 	}
 
 	user, err := store.GetUserBySubject(ctx, db, d.subject)
@@ -335,14 +335,21 @@ func membership(ctx context.Context, db orm.DB, user *schema.User, org string) (
 	return schema.OrgRef{}, false, nil
 }
 
-// resourceURI reports whether s is an RFC 8707 resource: an absolute URI, here
-// https with a host and nothing a server would not name itself by. It is never a
-// client id, which is the point: a consumer that admits a token by its client
-// must not find one here.
-func resourceURI(s string) bool {
+// delegationAudience reports whether s is an API a delegated token may be
+// addressed to: an https origin named, exactly, on IAM_DELEGATION_AUDIENCES —
+// the API host that serves model calls (https://api.hanzo.ai). Unset, it names
+// none and every delegation is refused.
+//
+// The allowed client chooses the person, the org and the lifetime; it does not
+// choose which service the token is for. A token addressed to some other
+// service's audience is the shape that service's own audience check admits.
+func delegationAudience(s string) bool {
 	u, err := url.Parse(s)
-	return err == nil && u.Scheme == "https" && u.Host != "" && u.User == nil &&
-		u.RawQuery == "" && u.Fragment == ""
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil ||
+		(u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+		return false
+	}
+	return appInList("IAM_DELEGATION_AUDIENCES", s)
 }
 
 // delegation is one attempt's audit row: the person, the org asked for, the

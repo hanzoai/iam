@@ -45,6 +45,7 @@ const (
 func delegationServer(t *testing.T) (*zip.App, orm.DB) {
 	t.Helper()
 	t.Setenv("IAM_DELEGATION_APPS", cloudID)
+	t.Setenv("IAM_DELEGATION_AUDIENCES", api)
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: cloudID, secret: cloudSecret, grants: []string{"client_credentials"}})
 	for _, o := range []string{"hanzo", "acme", "other", "admin"} {
@@ -228,6 +229,12 @@ func TestDelegate_onlyTheAllowListedClient(t *testing.T) {
 	if status, body := delegated(t, app, nil); status != 403 {
 		t.Fatalf("an unset allow-list admitted a delegation: status %d body %v", status, body)
 	}
+	// Nor does an unset audience list address one anywhere.
+	t.Setenv("IAM_DELEGATION_APPS", cloudID)
+	t.Setenv("IAM_DELEGATION_AUDIENCES", "")
+	if status, body := delegated(t, app, nil); status != 400 || body["error"] != "invalid_target" {
+		t.Fatalf("an unset audience list admitted a delegation: status %d body %v", status, body)
+	}
 }
 
 func TestDelegate_nonMemberAndReservedRefused(t *testing.T) {
@@ -300,6 +307,8 @@ func TestDelegate_scopeResourceAndActorAreRequired(t *testing.T) {
 		{"no resource", url.Values{"resource": {""}}, "invalid_target"},
 		{"a client id for an audience", url.Values{"resource": {"hanzo-app"}}, "invalid_target"},
 		{"plain http", url.Values{"resource": {"http://api.hanzo.ai"}}, "invalid_target"},
+		{"another service", url.Values{"resource": {"https://admin.hanzo.ai"}}, "invalid_target"},
+		{"a path on the API", url.Values{"resource": {api + "/v1/kms"}}, "invalid_target"},
 		{"no actor", url.Values{"actor_token": {""}}, "invalid_grant"},
 		{"another client's token", url.Values{"actor_token": {foreign}}, "invalid_grant"},
 		{"a person's token", url.Values{"actor_token": {person}}, "invalid_grant"},
