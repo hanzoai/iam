@@ -179,5 +179,10 @@ func isSigningCert(cert *schema.Cert) bool {
 	if strings.EqualFold(cert.Type, "SSL") {
 		return false
 	}
+	// The delegation key is never published (schema.CertDelegation): a verifier
+	// that does not know what a delegated token is must not hold its key.
+	if cert.Delegates() {
+		return false
+	}
 	return signingAlgs[strings.ToUpper(strings.ReplaceAll(cert.CryptoAlgorithm, "-", ""))]
 }

@@ -47,11 +47,18 @@ import (
 // allow-list (IAM_DELEGATION_APPS: admin-owned clients only, fail closed), the
 // membership IAM checks itself, and how little the token that comes back can do.
 //
-// What comes back is the person's token narrowed four ways, and each narrowing is
-// a claim a consumer already reads:
+// What comes back is the person's token narrowed, and SIGNED BY A KEY NO PUBLIC
+// VERIFIER HOLDS (schema.CertDelegation). That is the narrowing that holds outside
+// cloud: every other resource server in the estate verifies against the public
+// JWKS and reads none of the claims below, so a delegated token signed by a
+// published key was the person to all of them. Under the delegation key its `kid`
+// resolves nowhere they look, and they refuse it without understanding it. Cloud
+// reads the key from PathDelegationKeys with the credential that asked for the
+// token. Inside cloud, each remaining narrowing is a claim it already reads:
 //
-//	orgs        the one org asked for, so no org switch reaches another, and the
-//	            org is never a reserved one, so the token is never SuperAdmin
+//	orgs        the one org asked for, as a member, so no org switch reaches
+//	            another and no admin role rides along; the org is never a
+//	            reserved one, so the token is never SuperAdmin
 //	scope       ai:inference (schema.Confined): cloud serves it model calls only,
 //	            and IAM accepts it as a bearer nowhere (verifyBearer)
 //	aud         an https URI, never a client id, so no consumer that admits a
@@ -162,14 +169,16 @@ func delegate(c *zip.Ctx, db orm.DB, client *schema.Application) error {
 	// own token spends by the shape rule (account.Payer ignores a claim naming
 	// another org), so the delegated token carries none there and spends the same.
 	id := identityOf(ctx, db, user)
-	id.Orgs = []schema.OrgRef{ref}
+	// Member, whatever the person's role there: a token delegated for model calls
+	// administers nothing, and a role it does not need is reach it should not carry.
+	id.Orgs = []schema.OrgRef{{Org: ref.Org, Role: store.RoleMember}}
 	if d.org != user.Owner {
 		id.Billing = ""
 	}
 	id.Act = &actor
-	signer, err := signerFor(ctx, db, client, tokenIssuer(c))
+	signer, err := delegationSigner(ctx, db, tokenIssuer(c))
 	if err != nil {
-		return tokenError(c, 500, "server_error", "")
+		return refuse(500, "server_error", "no delegation key is configured")
 	}
 	access, err := signer.SignUserToken(id, d.org, aud, "", scope, ttl, now)
 	if err != nil {
@@ -227,6 +236,86 @@ func actorProof(ctx context.Context, db orm.DB, c *zip.Ctx, client *schema.Appli
 		return Actor{}, "actor_token is invalid or expired"
 	}
 	return Actor{Sub: claims.Subject, Owner: client.Owner, Name: client.Name}, ""
+}
+
+// delegationCerts is every delegation key this IAM holds the row for: platform
+// owned, a signing algorithm, never TLS. The newest signs; all of them verify,
+// so a rotation adds a key before it signs and keeps it until what it signed has
+// expired.
+func delegationCerts(ctx context.Context, db orm.DB) ([]*schema.Cert, error) {
+	certs, err := store.ListCerts(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	out := certs[:0]
+	for _, c := range certs {
+		if c.Delegates() && policy.IsSigningOwner(c.Owner) && !strings.EqualFold(c.Type, "SSL") &&
+			signingAlgs[strings.ToUpper(strings.ReplaceAll(c.CryptoAlgorithm, "-", ""))] {
+			out = append(out, c)
+		}
+	}
+	return out, nil
+}
+
+// delegationSigner signs with the newest delegation key the deployment mounted.
+// None mounted is ErrNoSigningCert: a delegation is refused rather than signed
+// under a key the public JWKS carries.
+func delegationSigner(ctx context.Context, db orm.DB, issuer string) (*Signer, error) {
+	certs, err := delegationCerts(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	var newest *schema.Cert
+	for _, c := range certs {
+		if c.PrivateKey != "" && (newest == nil || c.CreatedTime > newest.CreatedTime) {
+			newest = c
+		}
+	}
+	if newest == nil {
+		return nil, ErrNoSigningCert
+	}
+	return NewSignerFromCert(newest, nil, issuer)
+}
+
+// delegationKeysHandler serves the public half of every delegation key, as a
+// JWKS, to a confidential client allowed to delegate — the one resource server
+// that verifies what it is handed, reading with the credential it delegates with.
+// To anyone else it answers as the token endpoint does: who are you, or not you.
+//
+// The key is not a secret; publishing it is the hazard. A verifier that fetches
+// the public JWKS and trusts what verifies would admit a delegated token as the
+// person. So it is not in that document, and this one is not an address a relying
+// party is ever pointed at.
+func delegationKeysHandler(db orm.DB) zip.Handler {
+	return func(c *zip.Ctx) error {
+		c.SetHeader("Cache-Control", "no-store")
+		ctx := c.Context()
+		id, secret := clientAuth(c)
+		if id == "" {
+			return tokenErrorClient(c, "client authentication required")
+		}
+		app, err := store.GetApplicationByClientId(ctx, db, id)
+		if err != nil {
+			return tokenError(c, 500, "server_error", "")
+		}
+		if app == nil || app.ClientSecret == "" || !app.Proves(secret) {
+			return tokenErrorClient(c, "client authentication failed")
+		}
+		if !delegationAllowed(app) {
+			return tokenError(c, 403, "unauthorized_client", "client is not permitted to delegate")
+		}
+		certs, err := delegationCerts(ctx, db)
+		if err != nil {
+			return tokenError(c, 500, "server_error", "")
+		}
+		keys := make([]any, 0, len(certs))
+		for _, cert := range certs {
+			if jwk, err := certToJWK(cert); err == nil {
+				keys = append(keys, jwk)
+			}
+		}
+		return c.JSON(200, map[string]any{"keys": keys})
+	}
 }
 
 // membership is the person's standing in org as their own token states it: the

@@ -5,6 +5,9 @@ package oidc
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -18,6 +21,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/keyring"
 	"github.com/hanzoai/iam/internal/testhttp"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
@@ -51,7 +55,29 @@ func delegationServer(t *testing.T) (*zip.App, orm.DB) {
 	}
 	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
 	seedMembership(t, db, "hanzo/alice", "acme", "member")
+	seedDelegationCert(t, db)
 	return app, db
+}
+
+// delegationKid is the delegation key's name, and so its `kid`.
+const delegationKid = "cert-delegation"
+
+// seedDelegationCert declares the delegation key and mounts its own material —
+// a key of its own, never the one the published certs share.
+func seedDelegationCert(t *testing.T, db orm.DB) {
+	t.Helper()
+	k, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := orm.New[schema.Cert](db)
+	c.Owner, c.Name, c.Scope, c.Type, c.CryptoAlgorithm = "admin", delegationKid, schema.CertDelegation, "x509", "RS256"
+	keyring.Set(delegationKid, rsaKeyToPEM(t, k))
+	t.Cleanup(func() { keyring.Forget(delegationKid) })
+	c.SetId("admin/" + delegationKid)
+	if err := c.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed delegation cert: %v", err)
+	}
 }
 
 // ownToken is a client's own machine token, the actor_token it presents.
@@ -167,8 +193,8 @@ func TestDelegate_homeOrgKeepsBillingClaim(t *testing.T) {
 		t.Fatalf("status = %d; body=%v", status, tok)
 	}
 	c, _ := verifyToken(context.Background(), db, tok["access_token"].(string))
-	if c.BillingAccount != "org:hanzo" || len(c.Orgs) != 1 || c.Orgs[0].Org != "hanzo" {
-		t.Errorf("billing/orgs = %q/%+v, want org:hanzo and [hanzo]", c.BillingAccount, c.Orgs)
+	if c.BillingAccount != "org:hanzo" || len(c.Orgs) != 1 || c.Orgs[0].Org != "hanzo" || c.Orgs[0].Role != "member" {
+		t.Errorf("billing/orgs = %q/%+v, want org:hanzo and [hanzo member]: an admin's delegated token pays as they do and administers nothing", c.BillingAccount, c.Orgs)
 	}
 }
 
@@ -327,14 +353,17 @@ func TestDelegate_tokenIsNotRefreshableOrExchangeableOrABearer(t *testing.T) {
 	}
 }
 
-// A resource server verifies it the standard way — JWKS, issuer, expiry — with
-// the same verifier cloud runs (hanzoai/authz/edge), and reads the person, the
-// org, the scope and the actor off it.
-func TestDelegate_verifiesWithTheEdgeVerifier(t *testing.T) {
-	app, _ := delegationServer(t)
-	_, tok := delegated(t, app, nil)
-	jwks := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp, err := testhttp.Do(app, httptest.NewRequest(r.Method, r.URL.Path, nil))
+// proxy serves app's handlers over real HTTP, adding auth when it is given, so a
+// verifier that fetches keys over the network reads what IAM serves.
+func proxy(t *testing.T, app *zip.App, auth string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		req := httptest.NewRequest(r.Method, r.URL.Path, nil)
+		req.Host = "hanzo.id"
+		if auth != "" {
+			req.Header.Set("Authorization", auth)
+		}
+		resp, err := testhttp.Do(app, req)
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return
@@ -344,14 +373,118 @@ func TestDelegate_verifiesWithTheEdgeVerifier(t *testing.T) {
 		w.WriteHeader(resp.StatusCode)
 		_, _ = io.Copy(w, resp.Body)
 	}))
-	defer jwks.Close()
+	t.Cleanup(srv.Close)
+	return srv
+}
 
-	v := edge.NewVerifier(jwks.URL+PathJWKS, []string{"https://hanzo.id"}, nil, time.Minute)
-	c, err := v.VerifyRaw(tok["access_token"].(string))
+func basic(id, secret string) string {
+	return "Basic " + base64.StdEncoding.EncodeToString([]byte(id+":"+secret))
+}
+
+// THE ABSENCE: the public JWKS never carries the delegation key, so every
+// verifier that reads it refuses a delegated token — admin-guard with its
+// allowed audiences (https://api.hanzo.ai among them), and the forge with none.
+func TestDelegate_publicJWKSNeverNamesTheDelegationKey(t *testing.T) {
+	app, _ := delegationServer(t)
+	_, tok := delegated(t, app, nil)
+	raw := tok["access_token"].(string)
+
+	r, body := do(t, app, formReqNoBody("GET", PathJWKS))
+	var set struct {
+		Keys []struct {
+			Kid string `json:"kid"`
+		} `json:"keys"`
+	}
+	if r.StatusCode != 200 || json.Unmarshal(body, &set) != nil || len(set.Keys) == 0 {
+		t.Fatalf("public jwks = %d %s", r.StatusCode, body)
+	}
+	for _, k := range set.Keys {
+		if k.Kid == delegationKid {
+			t.Fatal("the public JWKS publishes the delegation key")
+		}
+	}
+
+	public := proxy(t, app, "").URL + PathJWKS
+	guard := edge.NewVerifier(public, []string{"https://hanzo.id"},
+		[]string{"hanzo-guard", "hanzo-admin-guard", "hanzo-platform", "hanzo-console", "hanzo-id", api}, time.Minute)
+	if c, err := guard.VerifyRaw(raw); err == nil {
+		t.Fatalf("admin-guard accepts a delegated token as %q", c.Subject)
+	}
+	forge := edge.NewVerifier(public, []string{"https://hanzo.id"}, nil, time.Minute)
+	if c, err := forge.VerifyRaw(raw); err == nil {
+		t.Fatalf("the forge accepts a delegated token as %q", c.Subject)
+	}
+}
+
+// The delegation key is served to a client allowed to delegate and to no one
+// else, and with it the token verifies the standard way — the same verifier
+// cloud runs (hanzoai/authz/edge) — reading the person, the org and the scope.
+func TestDelegate_delegationKeysAreServedToTheDelegatingClientOnly(t *testing.T) {
+	app, db := delegationServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "console-secret"})
+	_, tok := delegated(t, app, nil)
+
+	for name, tc := range map[string]struct {
+		auth   string
+		status int
+	}{
+		"nobody":              {"", 401},
+		"a wrong secret":      {basic(cloudID, "nope"), 401},
+		"a client not listed": {basic("hanzo-console", "console-secret"), 403},
+	} {
+		req := formReqNoBody("GET", PathDelegationKeys)
+		if tc.auth != "" {
+			req.Header.Set("Authorization", tc.auth)
+		}
+		if r, _ := do(t, app, req); r.StatusCode != tc.status {
+			t.Errorf("%s: %d, want %d", name, r.StatusCode, tc.status)
+		}
+	}
+
+	keys := proxy(t, app, basic(cloudID, cloudSecret)).URL + PathDelegationKeys
+	c, err := edge.NewVerifier(keys, []string{"https://hanzo.id"}, nil, time.Minute).VerifyRaw(tok["access_token"].(string))
 	if err != nil {
-		t.Fatalf("edge verifier refused the delegated token: %v", err)
+		t.Fatalf("the delegation key does not verify the delegated token: %v", err)
 	}
 	if c.Home() != "acme" || c.Username() != "alice" || c.Sudo() || c.Machine() || !strings.Contains(c.Scope, schema.Inference) {
-		t.Fatalf("edge reads home %q user %q sudo %v machine %v scope %q", c.Home(), c.Username(), c.Sudo(), c.Machine(), c.Scope)
+		t.Fatalf("read home %q user %q sudo %v machine %v scope %q", c.Home(), c.Username(), c.Sudo(), c.Machine(), c.Scope)
+	}
+}
+
+// The delegation key signs delegated tokens and nothing else.
+func TestDelegate_theDelegationKeySignsNothingElse(t *testing.T) {
+	app, db := delegationServer(t)
+	// An application that names it signs no token.
+	rogue := seedApp(t, db, appOpts{clientID: "rogue", secret: "rogue-secret", grants: []string{"client_credentials"}})
+	rogue.Cert = delegationKid
+	if err := rogue.UpdateCtx(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if resp, body := postToken(t, app, url.Values{
+		"grant_type": {"client_credentials"}, "client_id": {"rogue"}, "client_secret": {"rogue-secret"},
+	}); resp.StatusCode == 200 {
+		t.Fatalf("an application signed with the delegation key: %v", body)
+	}
+	// A token under its kid that is not confined does not verify here.
+	cert, err := store.GetSigningCert(context.Background(), db, delegationKid)
+	if err != nil || cert == nil {
+		t.Fatalf("delegation cert: %v", err)
+	}
+	signer, err := NewSignerFromCert(cert, nil, "https://hanzo.id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wide, err := signer.SignUserToken(Identity{Id: "hanzo/alice", Name: "alice"}, "hanzo", api, "", "openid", time.Hour, nowFunc())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := verifyToken(context.Background(), db, wide); err == nil {
+		t.Fatal("an unconfined token signed by the delegation key verifies")
+	}
+	// And with no delegation key mounted, nothing is delegated at all.
+	keyring.Forget(delegationKid)
+	cert.PrivateKey = ""
+	if status, body := delegated(t, app, nil); status != 500 {
+		t.Fatalf("a delegation with no key mounted answered %d %v", status, body)
 	}
 }

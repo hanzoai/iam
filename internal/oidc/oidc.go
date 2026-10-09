@@ -24,17 +24,20 @@ import (
 // existing relying party hard-code. iam serves them directly; the transition
 // off v1 is a backend swap behind the same paths, never a parallel version.
 const (
-	PathAuthorize    = "/v1/iam/oauth/authorize"
-	PathToken        = "/v1/iam/oauth/token"
-	PathUserInfo     = "/v1/iam/oauth/userinfo"
-	PathLogout       = "/v1/iam/oauth/logout"
-	PathJWKS         = "/v1/iam/.well-known/jwks"
-	PathJWKSRoot     = "/.well-known/jwks"
-	PathDiscovery    = "/.well-known/openid-configuration"
-	PathDiscoveryV1  = "/v1/iam/.well-known/openid-configuration"
-	PathASMetadata   = "/.well-known/oauth-authorization-server"        // RFC 8414 (root)
-	PathASMetadataV1 = "/v1/iam/.well-known/oauth-authorization-server" // RFC 8414 (v1)
-	PathDevice       = "/v1/iam/oauth/device"                           // RFC 8628 device authorization
+	PathAuthorize = "/v1/iam/oauth/authorize"
+	PathToken     = "/v1/iam/oauth/token"
+	PathUserInfo  = "/v1/iam/oauth/userinfo"
+	PathLogout    = "/v1/iam/oauth/logout"
+	PathJWKS      = "/v1/iam/.well-known/jwks"
+	PathJWKSRoot  = "/.well-known/jwks"
+	// PathDelegationKeys serves the public half of the delegation key to a client
+	// allowed to delegate, and to nobody else (delegate.go).
+	PathDelegationKeys = "/v1/iam/oauth/delegation/keys"
+	PathDiscovery      = "/.well-known/openid-configuration"
+	PathDiscoveryV1    = "/v1/iam/.well-known/openid-configuration"
+	PathASMetadata     = "/.well-known/oauth-authorization-server"        // RFC 8414 (root)
+	PathASMetadataV1   = "/v1/iam/.well-known/oauth-authorization-server" // RFC 8414 (v1)
+	PathDevice         = "/v1/iam/oauth/device"                           // RFC 8628 device authorization
 	// PathDeviceInfo names the application a pending user_code belongs to — what
 	// the approval page must show a human before they authorize it.
 	PathDeviceInfo = "/v1/iam/oauth/device/info"
@@ -94,6 +97,9 @@ func Route(r *zip.Group, db orm.DB) {
 	// find it.
 	r.Raw(http.MethodGet, PathJWKS, jwksHandler(db))
 	r.Raw(http.MethodGet, PathJWKSRoot, jwksHandler(db))
+	// The delegation key, which the set above never carries: served only to a
+	// client allowed to delegate (delegate.go).
+	r.Raw(http.MethodGet, PathDelegationKeys, delegationKeysHandler(db))
 
 	// OAuth2 / OIDC protocol endpoints.
 	r.Raw(http.MethodGet, PathAuthorize, authorizeHandler(db))

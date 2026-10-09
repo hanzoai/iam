@@ -444,9 +444,26 @@ must exist, must not be reserved, and must be one the person's own token names
 (`store.MemberOrgRefs`) — a person in several orgs is minted into the one asked
 for or refused.
 
+**Signed by a key no public verifier holds.** The decisive narrowing. A Cert
+with `scope: delegation` (`schema.CertDelegation`) is never in the JWKS
+(`isSigningCert`), never signs for an application (`signerFor`), keys no session
+MAC (`PlatformSigningCert`), and verifies here only a confined token
+(`parseToken`). Every other verifier in the estate — admin-guard, Base, the forge,
+cms — checks a signature against the public JWKS and reads none of the claims
+below, so a delegated token under a published key WAS the person to all of them
+(red PoC, 2026-10-09). Under this key its `kid` resolves nowhere they look.
+Its public half is `GET /v1/iam/oauth/delegation/keys` (`PathDelegationKeys`),
+answered only to a client on `IAM_DELEGATION_APPS` presenting its secret
+(Basic); cloud reads it with the credential it delegates with. The newest mounted
+delegation key signs, every one verifies (add before signing, keep until what it
+signed expires). Provisioned like every signing key: a Cert row (`owner: admin`,
+`name: cert-delegation`, `scope: delegation`, `type: x509`, `RS256`) and a PEM
+of that name in the `IAM_SIGNING_KEYS` mount from KMS. None mounted → delegation
+answers 500, never a published key.
+
 **What comes back** is the person's token narrowed, each narrowing a claim
-consumers already read: `orgs` = that one org (role as held), `owner` =
-`organization` = it; `scope` = `ai:inference`; `aud` = the URI, `azp` empty (no
+cloud reads: `orgs` = that one org with role `member` (no admin role rides along),
+`owner` = `organization` = it; `scope` = `ai:inference`; `aud` = the URI, `azp` empty (no
 consumer that admits a token by its client — S3's federation — admits this one);
 `act {sub: admin/hanzo-cloud, owner, name}`; `billing_account` as the person's own
 token states it at home and none elsewhere (account.Payer ignores a home claim in

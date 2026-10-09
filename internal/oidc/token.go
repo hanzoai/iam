@@ -734,7 +734,11 @@ func signerFor(ctx context.Context, db orm.DB, app *schema.Application, issuer s
 	if err != nil {
 		return nil, err
 	}
-	if cert == nil {
+	// An application never signs with the delegation key, whatever its row names:
+	// that key is unpublished so that what it signs is refused everywhere a
+	// delegated token is not understood, and an ordinary token signed by it would
+	// be a token nobody can verify.
+	if cert == nil || cert.Delegates() {
 		return nil, ErrNoSigningCert
 	}
 	return NewSignerFromCert(cert, app, issuer)

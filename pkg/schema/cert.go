@@ -65,6 +65,26 @@ type Cert struct {
 	PrivateKey string `json:"-" xorm:"-" db:"-"`
 }
 
+// CertDelegation is the Scope of the one kind of signing Cert the JWKS never
+// publishes: the key delegated tokens are signed with (iam LLM.md "Delegation").
+//
+// A delegated token is a person's credential confined to model calls, and the
+// confinement lives in a claim (Inference) that only cloud and IAM read. Every
+// other verifier in the estate checks a signature against the public JWKS and
+// reads the person off the claims, so a token signed by a published key IS the
+// person to all of them, whatever its scope says. Signing with a key no public
+// verifier holds is what makes them refuse it without having to understand it:
+// the token's `kid` names nothing they can resolve.
+//
+// It signs nothing else. An application naming it signs no token (signerFor), a
+// token it signed that is not confined does not verify here (parseToken), and it
+// keys no session MAC (store.PlatformSigningCert). Its public half is served only
+// to a client allowed to delegate, over an authenticated read.
+const CertDelegation = "delegation"
+
+// Delegates reports whether the cert is a delegation key (CertDelegation).
+func (c *Cert) Delegates() bool { return c != nil && c.Scope == CertDelegation }
+
 // Mask returns a copy of the cert with its secret material removed — the one
 // place a Cert is prepared to cross the API. The private key signs every token
 // this IAM issues: it is mounted by the deployment, held in memory, signs in

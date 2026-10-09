@@ -109,6 +109,11 @@ func parseToken(ctx context.Context, db orm.DB, tokenStr string, extra ...jwt.Pa
 		if cert == nil {
 			return nil, errors.New("verify: unknown signing key")
 		}
+		// The delegation key signs confined tokens and nothing else; anything else
+		// under its kid was not minted by delegate.go.
+		if cert.Delegates() && !schema.Confined(claims.Scope) {
+			return nil, errors.New("verify: the delegation key signs confined tokens only")
+		}
 		pub, _, _, err := certPublicKey(cert)
 		if err != nil {
 			return nil, err

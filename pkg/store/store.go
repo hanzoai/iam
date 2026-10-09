@@ -778,7 +778,7 @@ func PlatformSigningCert(ctx context.Context, db orm.DB) (*schema.Cert, error) {
 	pick := func(eligible func(*schema.Cert) bool) *schema.Cert {
 		var best *schema.Cert
 		for _, c := range certs {
-			if c == nil || c.PrivateKey == "" || !policy.IsSigningOwner(c.Owner) || !eligible(c) {
+			if c == nil || c.PrivateKey == "" || !policy.IsSigningOwner(c.Owner) || c.Delegates() || !eligible(c) {
 				continue
 			}
 			if best == nil || c.Owner+"/"+c.Name < best.Owner+"/"+best.Name {
