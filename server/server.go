@@ -179,7 +179,7 @@ func Seed(ctx context.Context, db orm.DB, initDataPath string) (*seed.Summary, e
 // a rollout reads it as healthy and keeps going. Refusing here makes the pod never
 // reach ready, which is the one signal a rollout already stops on.
 //
-// THREE questions, because one key is not the whole job:
+// FOUR questions, because one key is not the whole job:
 //
 //   - PlatformSigningCert must resolve. It keys the session-cookie MAC
 //     (internal/sessions), so without it no browser session can be issued or read.
@@ -195,6 +195,9 @@ func Seed(ctx context.Context, db orm.DB, initDataPath string) (*seed.Summary, e
 //   - Where a cert carries BOTH a published certificate and a mounted key, the two
 //     must describe the same key, or the JWKS publishes one and the signer signs
 //     with another and every token is rejected.
+//   - When this process delegates (IAM_DELEGATION_APPS is set), a delegation key —
+//     the one the JWKS never publishes — must be mounted (oidc.RequireDelegation),
+//     or every delegation this replica answers is a 500.
 //
 // The application half is read ONLY for the reserved owner. An application row is
 // tenant-writable — an org admin registers applications in their own org and
@@ -231,7 +234,7 @@ func RequireSigning(ctx context.Context, db orm.DB) error {
 			"the JWKS would publish a key that did not sign the tokens; mount the key that matches the "+
 			"published certificate for %s", strings.Join(mismatched, ", "), pluralThem(len(mismatched)))
 	}
-	return nil
+	return oidc.RequireDelegation(ctx, db)
 }
 
 // unsignable names every signing cert this process must be able to sign under but

@@ -459,7 +459,10 @@ delegation key signs, every one verifies (add before signing, keep until what it
 signed expires). Provisioned like every signing key: a Cert row (`owner: admin`,
 `name: cert-delegation`, `scope: delegation`, `type: x509`, `RS256`) and a PEM
 of that name in the `IAM_SIGNING_KEYS` mount from KMS. None mounted → delegation
-answers 500, never a published key.
+answers 500, never a published key — and a process with `IAM_DELEGATION_APPS` set
+does not BOOT without one (`oidc.RequireDelegation`, the fourth question of
+`server.RequireSigning`), naming the certificate and where its PEM goes, so a
+keyless replica never serves a fraction of runs a 500.
 
 **What comes back** is the person's token narrowed, each narrowing a claim
 cloud reads: `orgs` = that one org with role `member` (no admin role rides along),

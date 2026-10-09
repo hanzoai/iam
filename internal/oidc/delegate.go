@@ -6,7 +6,9 @@ package oidc
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -15,6 +17,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/httpx"
+	"github.com/hanzoai/iam/internal/keyring"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -277,6 +280,41 @@ func delegationSigner(ctx context.Context, db orm.DB, issuer string) (*Signer, e
 		return nil, ErrNoSigningCert
 	}
 	return NewSignerFromCert(newest, nil, issuer)
+}
+
+// RequireDelegation is the boot question for delegation, asked beside the other
+// signing questions (server.RequireSigning): when IAM_DELEGATION_APPS names a
+// client, this process signs delegated tokens, so a delegation key must be
+// mounted HERE. A replica without one boots green and then answers every
+// delegation 500 — and with several replicas that is a fraction of coding runs
+// failing in a way nobody can see from a probe. So it does not boot, and says
+// which key it lacks and where it goes.
+//
+// How the key reaches the mount is the deployment's business; this asks only that
+// it is there.
+func RequireDelegation(ctx context.Context, db orm.DB) error {
+	if strings.TrimSpace(os.Getenv("IAM_DELEGATION_APPS")) == "" {
+		return nil
+	}
+	certs, err := delegationCerts(ctx, db)
+	if err != nil {
+		return fmt.Errorf("delegation key: %w", err)
+	}
+	var keyless []string
+	for _, c := range certs {
+		if c.PrivateKey != "" {
+			return nil
+		}
+		keyless = append(keyless, c.Name)
+	}
+	if len(keyless) == 0 {
+		return fmt.Errorf("delegation key: IAM_DELEGATION_APPS is set and no certificate is declared with scope %q — "+
+			"declare cert-delegation (owner admin, scope %q) and mount its PEM as cert-delegation in the directory $%s names",
+			schema.CertDelegation, schema.CertDelegation, keyring.EnvDir)
+	}
+	return fmt.Errorf("delegation key: IAM_DELEGATION_APPS is set and no key is mounted for %s — "+
+		"mount its PEM, named %s, in the directory $%s names",
+		strings.Join(keyless, ", "), keyless[0], keyring.EnvDir)
 }
 
 // delegationKeysHandler serves the public half of every delegation key, as a
