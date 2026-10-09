@@ -205,10 +205,14 @@ func TestDelegate_onlyTheAllowListedClient(t *testing.T) {
 	if status != 403 || body["error"] != "unauthorized_client" {
 		t.Fatalf("an exchange client delegated: status %d body %v", status, body)
 	}
-	// Refused rows land in the CLIENT's own org, never one it merely named.
+	// Refused rows land in the CLIENT's own org, never one it merely named, and
+	// carry nothing the client wrote: no person, no org, no run.
 	rows := auditRows(t, db, schema.ActionDelegate)
 	if len(rows) != 1 || rows[0].Owner != "admin" || rows[0].StatusCode != 403 {
 		t.Fatalf("refusal audit = %+v, want one 403 row filed under admin", rows)
+	}
+	if r := rows[0]; r.User != "" || r.Object != `{"actor":"hanzo-console"}` {
+		t.Fatalf("a refused client's row carries its own words: user %q object %s", r.User, r.Object)
 	}
 
 	// A tenant app whose clientId collides with the listed one acts for nobody.

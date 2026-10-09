@@ -87,14 +87,10 @@ func delegationAllowed(app *schema.Application) bool {
 func delegate(c *zip.Ctx, db orm.DB, client *schema.Application) error {
 	ctx := c.Context()
 	now := nowFunc()
-	d := delegation{
-		client:  client.ClientId,
-		subject: strings.TrimSpace(param(c, "requested_subject")),
-		org:     param(c, "org"),
-		run:     param(c, "run"),
-		ip:      httpx.ClientIP(c),
-		filed:   client.Owner,
-	}
+	// Until the client is known to be allowed to delegate, the row names the client
+	// and nothing it wrote: any tenant's confidential app reaches this branch, and a
+	// subject, org or run it chose would be its words filed as the platform's.
+	d := delegation{client: client.ClientId, ip: httpx.ClientIP(c), filed: client.Owner}
 	refuse := func(status int, code, desc string) error {
 		d.record(ctx, db, status, desc)
 		return tokenError(c, status, code, desc)
@@ -103,8 +99,10 @@ func delegate(c *zip.Ctx, db orm.DB, client *schema.Application) error {
 	if !delegationAllowed(client) {
 		return refuse(403, "unauthorized_client", "client is not permitted to delegate")
 	}
-	// From here the client is trusted to name the org, so the row is filed where
-	// that org's tenant reads it.
+	// From here the client is trusted to name the person, the org and the run, and
+	// the row is filed where that org's tenant reads it.
+	d.subject = strings.TrimSpace(param(c, "requested_subject"))
+	d.org, d.run = param(c, "org"), param(c, "run")
 	if d.org == "" || len(d.org) > 128 || policy.HasUnsafeRune(d.org) {
 		return refuse(400, "invalid_request", "org is required")
 	}
@@ -359,13 +357,12 @@ type delegation struct {
 
 // record writes the row. A failed write never fails the act; this is a record.
 func (d delegation) record(ctx context.Context, db orm.DB, status int, why string) {
-	object, _ := json.Marshal(map[string]any{
-		"actor": d.client,
-		"org":   clip(d.org, 128),
-		"run":   clip(d.run, 128),
-		"ttl":   int(d.ttl / time.Second),
-		"scope": schema.Inference,
-	})
+	object, _ := json.Marshal(struct {
+		Actor string `json:"actor"`
+		Org   string `json:"org,omitempty"`
+		Run   string `json:"run,omitempty"`
+		TTL   int    `json:"ttl,omitempty"`
+	}{d.client, clip(d.org, 128), clip(d.run, 128), int(d.ttl / time.Second)})
 	store.Record(ctx, db, &schema.AuditLog{
 		Owner:        d.filed,
 		Organization: d.filed,
