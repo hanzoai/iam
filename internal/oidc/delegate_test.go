@@ -500,3 +500,34 @@ func TestDelegate_theDelegationKeySignsNothingElse(t *testing.T) {
 		t.Fatalf("a delegation with no key mounted answered %d %v", status, body)
 	}
 }
+
+// The kill switch: the client that asked revokes the token at the end of its
+// run, and from then introspection — which cloud asks for a confined token —
+// answers it dead. Another client cannot.
+func TestDelegate_revokedByItsClientIsDead(t *testing.T) {
+	app, db := delegationServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "console-secret"})
+	_, tok := delegated(t, app, nil)
+	access := tok["access_token"].(string)
+	active := func() any {
+		_, raw := do(t, app, formReq("POST", PathIntrospect, url.Values{
+			"token": {access}, "client_id": {cloudID}, "client_secret": {cloudSecret},
+		}))
+		return decode(t, raw)["active"]
+	}
+	revoke := func(id, secret string) {
+		if r, _ := do(t, app, formReq("POST", PathRevoke, url.Values{
+			"token": {access}, "client_id": {id}, "client_secret": {secret},
+		})); r.StatusCode != 200 {
+			t.Fatalf("revoke as %s: %d", id, r.StatusCode)
+		}
+	}
+	revoke("hanzo-console", "console-secret")
+	if active() != true {
+		t.Fatal("another client killed a delegation it did not ask for")
+	}
+	revoke(cloudID, cloudSecret)
+	if active() != false {
+		t.Fatal("a revoked delegation still introspects active")
+	}
+}
