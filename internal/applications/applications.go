@@ -46,16 +46,22 @@ func authorizeOrganization(ctx context.Context, in *schema.Application) error {
 	return nil
 }
 
-// authorizeSharing gates isShared. A shared application serves every org's people,
-// and its sign-in resolves the members of its org from their own homes
-// (store.MemberByIdentifier), so turning it on is a platform decision about who a
-// tenant's form may reach: only a SuperAdmin may change it. A write that keeps the
-// stored value, the admin round trip, passes.
-func authorizeSharing(ctx context.Context, in *schema.Application, was bool) error {
-	if in.IsShared == was || authz.IsSuper(ctx) {
+// authorizeSpan gates an application that serves organizations other than its
+// own — one whose fields declare it (schema.Application.Spans: isShared, or an
+// orgChoiceMode other than ""/"None"). Such an application signs in every org's
+// people, and its redirect URIs decide where their codes go, so it is a platform
+// decision: only a SuperAdmin (authz.IsSuper) writes one. Everyone else writes
+// only an application that serves its own org alone, both as stored (existing,
+// nil on a create) and as written — so a non-SuperAdmin neither makes one, nor
+// edits one, nor confines one.
+func authorizeSpan(ctx context.Context, in, existing *schema.Application) error {
+	if authz.IsSuper(ctx) {
 		return nil
 	}
-	return zip.ErrForbidden("only a SuperAdmin may change whether an application is shared")
+	if in.Spans() || (existing != nil && existing.Spans()) {
+		return zip.ErrForbidden("only a SuperAdmin may write an application that serves other organizations")
+	}
+	return nil
 }
 
 // authorizePlatformRow gates a write to, or the removal of, one of the platform's
@@ -234,7 +240,9 @@ func getApplication(db orm.DB) zip.TypedHandler[ApplicationRef, schema.Applicati
 // Create registers an application in your organization — one product or site
 // your people sign in to, with its own client credentials, sign-in methods and
 // allowed redirect URIs. A name already used in the organization is refused
-// rather than overwritten.
+// rather than overwritten. An application that serves other organizations —
+// isShared, or any orgChoiceMode but "" and "None" — is created by a SuperAdmin
+// only.
 //
 // Exported so the legacy add-application alias reuses this exact path — one
 // create, two spellings.
@@ -249,7 +257,7 @@ func Create(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 		if err := authz.AuthorizeCert(ctx, db, in.Cert, ""); err != nil {
 			return nil, err
 		}
-		if err := authorizeSharing(ctx, in, false); err != nil {
+		if err := authorizeSpan(ctx, in, nil); err != nil {
 			return nil, err
 		}
 		// Which applications are the platform's own is the seed's to say
@@ -293,7 +301,9 @@ func Create(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 // Update changes an application's display, its sign-in methods and the redirect
 // URIs it may return to — the call that makes login work from a new host. Which
 // organization it belongs to and what it is named are fixed when it is created
-// and are not editable here.
+// and are not editable here. An application that serves other organizations —
+// isShared, or any orgChoiceMode but "" and "None" — is written by a SuperAdmin
+// only, before and after the change.
 //
 // Exported so the legacy update-application alias reuses this exact path — one
 // update, two spellings.
@@ -317,7 +327,7 @@ func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 		if err := authz.AuthorizeCert(ctx, db, in.Cert, existing.Cert); err != nil {
 			return nil, err
 		}
-		if err := authorizeSharing(ctx, in, existing.IsShared); err != nil {
+		if err := authorizeSpan(ctx, in, existing); err != nil {
 			return nil, err
 		}
 		if err := authorizePlatformRow(ctx, existing); err != nil {

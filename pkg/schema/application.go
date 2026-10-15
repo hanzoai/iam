@@ -19,6 +19,7 @@ import (
 	"crypto/subtle"
 	"net/url"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 )
 
@@ -244,42 +245,32 @@ func (a *Application) GetId() string {
 	return a.Owner + "/" + a.Name
 }
 
-// IsRedirectUriValid reports whether redirectUri is one of the application's
-// registered redirect URIs (RFC 6749 3.1.2.3). Match is exact string equality —
-// never a host-suffix, substring, or regex match — so a trusted origin can never
-// be leveraged to redeem another app's authorization code. New callbacks are
-// added by registering the exact URI, nothing else.
-//
-// The ONE exception is the loopback interface, where RFC 8252 §7.3 requires the
-// server to "allow any port": a native app binds an ephemeral port at runtime
-// (hanzo/cli binds 127.0.0.1:0) and therefore CANNOT know its redirect_uri at
-// registration time. Exact matching made that flow unsatisfiable — the
-// provisioner registers the portless http://127.0.0.1/callback (see
-// internal/provision, TypeCLI), the CLI sends http://127.0.0.1:51234/callback,
-// authorize answered 400 invalid_redirect_uri, the browser never came back, and
-// the CLI blocked on accept() forever. That hang was this comparison.
 // ServesAnyOrg reports whether this application admits a principal whose org is
-// not its own. It is the ONE spelling of tenant isolation's exemption, and it
-// exists because that predicate was written out four times — in mint, token,
-// signup and federation — and every copy got the same thing wrong.
+// not its own. It is the ONE spelling of tenant isolation's exemption: the code
+// mint, the password grant, impersonation, device approval and federation all
+// read it.
 //
-// The trap is `OrgChoiceMode`. It names the org picker the signup page offers,
-// and its vocabulary is "None" | "Select" | "Input" (plus our own "create"). So
-// "None" and "" mean exactly the same thing: this app offers NO org choice, and
-// is therefore confined to its own tenant. Every copy of the rule tested only
-// `== ""`, which reads as that but is not — an application carrying the
-// CANONICAL "None" fell through to the exemption and accepted a session from any
-// org at all. Measured before this existed: a session owned by "hanzo" minted a
-// valid authorization code for zoo-console, an application owned by "zoo".
-//
-// Nothing declared it that way on purpose. All 77 seeded applications carry "",
-// and the two that carried "None" (zoo-console, pars-console) were edited live
-// through the admin console — which writes the canonical spelling, so the UI's
-// correct value was the one the check could not read.
-//
-// A set, not a comparison, because the failure was a comparison that looked
-// complete. Adding a mode now means adding it here, where the reading of it is.
+// Both halves must hold. The application declares it (Spans), and the platform
+// owns the row: its Owner is the reserved admin org (policy.AdminOrg), which only
+// a SuperAdmin, the seed and the service-token upsert write. A row any other org
+// owns serves that org alone whatever it declares, so a declaration that reached
+// the store past the application write gate still mints nothing across tenants.
 func (a *Application) ServesAnyOrg() bool {
+	return a.Owner == policy.AdminOrg && a.Spans()
+}
+
+// Spans reports whether the application's own fields declare that it serves
+// every organization: IsShared, or an org choice mode that offers a choice. It
+// reads the declaration alone, whoever owns the row — the fact the application
+// write gate decides on. Tenant isolation reads ServesAnyOrg.
+//
+// `OrgChoiceMode` names the org picker the signup page offers, and its
+// vocabulary is "None" | "Select" | "Input" (plus our own "create"). "None" and
+// "" say the same thing: this app offers NO org choice and is confined to its
+// own tenant. A set, not a comparison, so the canonical "None" the admin console
+// writes reads as confined exactly as the "" a never-edited application carries.
+// Adding a mode means adding it here, where the reading of it is.
+func (a *Application) Spans() bool {
 	if a.IsShared {
 		return true
 	}
@@ -295,6 +286,20 @@ func (a *Application) ServesAnyOrg() bool {
 // carries. Both must read as confined.
 const orgChoiceNone = "None"
 
+// IsRedirectUriValid reports whether redirectUri is one of the application's
+// registered redirect URIs (RFC 6749 3.1.2.3). Match is exact string equality —
+// never a host-suffix, substring, or regex match — so a trusted origin can never
+// be leveraged to redeem another app's authorization code. New callbacks are
+// added by registering the exact URI, nothing else.
+//
+// The ONE exception is the loopback interface, where RFC 8252 §7.3 requires the
+// server to "allow any port": a native app binds an ephemeral port at runtime
+// (hanzo/cli binds 127.0.0.1:0) and therefore CANNOT know its redirect_uri at
+// registration time. Exact matching made that flow unsatisfiable — the
+// provisioner registers the portless http://127.0.0.1/callback (see
+// internal/provision, TypeCLI), the CLI sends http://127.0.0.1:51234/callback,
+// authorize answered 400 invalid_redirect_uri, the browser never came back, and
+// the CLI blocked on accept() forever. That hang was this comparison.
 func (a *Application) IsRedirectUriValid(redirectUri string) bool {
 	if redirectUri == "" {
 		return false

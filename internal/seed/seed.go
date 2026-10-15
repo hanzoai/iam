@@ -194,6 +194,9 @@ func Apply(ctx context.Context, db orm.DB, data *initData) (*Summary, error) {
 		if owner == "" {
 			owner = "admin"
 		}
+		// The row carries the owner its key names: tenant isolation reads Owner
+		// (schema.Application.ServesAnyOrg), and markPlatform keys on it.
+		a.Owner = owner
 		// A NEW declaration beside another owner's application of the same name would
 		// outrank it wherever a name alone is resolved (see store.NameHeldElsewhere),
 		// so it is refused. Only it: a tenant chose that name, and a tenant's choice

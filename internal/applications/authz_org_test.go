@@ -195,30 +195,130 @@ func TestCreate_AnApplicationNameIsHeldOnce(t *testing.T) {
 	}
 }
 
-// Sharing an application decides who its org's sign-in form may reach, so only a
-// SuperAdmin may change it. A tenant admin's round trip that keeps it is fine.
-func TestSharing_OnlyASuperAdminChangesIt(t *testing.T) {
+// spans lists every declaration that makes an application serve organizations
+// other than its own (schema.Application.Spans), as a JSON fragment.
+var spans = []struct{ name, body string }{
+	{"isShared", `"isShared":true`},
+	{"create", `"orgChoiceMode":"create"`},
+	{"Select", `"orgChoiceMode":"Select"`},
+	{"Input", `"orgChoiceMode":"Input"`},
+}
+
+// stored reads one application row back from the store.
+func (h *orgHarness) stored(t *testing.T, id string) *schema.Application {
+	t.Helper()
+	app, err := orm.Get[schema.Application](h.db, id)
+	if err != nil {
+		t.Fatalf("read %s: %v", id, err)
+	}
+	return app
+}
+
+// An application that serves other organizations is a SuperAdmin's to create:
+// a tenant admin is refused every declaration of it, and keeps the ordinary
+// confined one ("" or "None").
+func TestSpan_OnlyASuperAdminCreatesOne(t *testing.T) {
 	h := newOrgHarness(t)
 	boss := h.token(t, "acme/boss")
 	root := h.token(t, "admin/root")
 
-	if st := h.do(t, "POST", "/v1/iam/applications", boss, `{"owner":"acme","name":"acme-app","organization":"acme","clientId":"acme-app","isShared":true}`); st != 403 {
-		t.Fatalf("a tenant admin created a shared app: status=%d, want 403", st)
+	for _, sp := range spans {
+		name := "acme-" + strings.ToLower(sp.name)
+		body := `{"owner":"acme","name":"` + name + `","organization":"acme","clientId":"` + name + `","redirectUris":["https://elsewhere.example/cb"],` + sp.body + `}`
+		if st := h.do(t, "POST", "/v1/iam/applications", boss, body); st != 403 {
+			t.Fatalf("a tenant admin created an application with %s: status=%d, want 403", sp.name, st)
+		}
+		if app, _ := orm.Get[schema.Application](h.db, "acme/"+name); app != nil {
+			t.Fatalf("a refused create with %s left a row", sp.name)
+		}
 	}
-	if st := h.do(t, "POST", "/v1/iam/applications", boss, `{"owner":"acme","name":"acme-app","organization":"acme","clientId":"acme-app"}`); st != 200 {
-		t.Fatalf("an unshared app: status=%d, want 200", st)
+	for _, mode := range []string{"", "None"} {
+		name := "acme-confined" + strings.ToLower(mode)
+		if st := h.do(t, "POST", "/v1/iam/applications", boss, `{"owner":"acme","name":"`+name+`","organization":"acme","clientId":"`+name+`","orgChoiceMode":"`+mode+`"}`); st != 200 {
+			t.Fatalf("a tenant admin's confined application (orgChoiceMode %q): status=%d, want 200", mode, st)
+		}
 	}
-	if st := h.do(t, "PUT", "/v1/iam/applications/acme/acme-app", boss, `{"owner":"acme","name":"acme-app","organization":"acme","clientId":"acme-app","isShared":true}`); st != 403 {
-		t.Fatalf("a tenant admin shared an app: status=%d, want 403", st)
+
+	// A tenant admin cannot file a row under the platform owner either — the
+	// owner tenant isolation reads (schema.Application.ServesAnyOrg).
+	if st := h.do(t, "POST", "/v1/iam/applications", boss, `{"owner":"admin","name":"acme-platform","organization":"acme","clientId":"acme-platform"}`); st != 403 {
+		t.Fatalf("a tenant admin filed an application under admin: status=%d, want 403", st)
 	}
-	if st := h.do(t, "PUT", "/v1/iam/applications/acme/acme-app", root, `{"owner":"acme","name":"acme-app","organization":"acme","clientId":"acme-app","isShared":true}`); st != 200 {
-		t.Fatalf("a SuperAdmin shared an app: status=%d, want 200", st)
+
+	for _, sp := range spans {
+		name := "platform-" + strings.ToLower(sp.name)
+		if st := h.do(t, "POST", "/v1/iam/applications", root, `{"owner":"admin","name":"`+name+`","organization":"hanzo","clientId":"`+name+`",`+sp.body+`}`); st != 200 {
+			t.Fatalf("a SuperAdmin created a platform application with %s: status=%d, want 200", sp.name, st)
+		}
+		if !h.stored(t, "admin/"+name).ServesAnyOrg() {
+			t.Fatalf("the SuperAdmin's platform application with %s does not serve every org", sp.name)
+		}
 	}
-	if st := h.do(t, "PUT", "/v1/iam/applications/acme/acme-app", boss, `{"owner":"acme","name":"acme-app","organization":"acme","clientId":"acme-app","isShared":true,"displayName":"Acme"}`); st != 200 {
-		t.Fatalf("a tenant admin's edit that keeps sharing: status=%d, want 200", st)
+}
+
+// A tenant admin edits an ordinary application freely, and cannot turn one into
+// an application that serves other organizations; the stored row is untouched by
+// the refused write.
+func TestSpan_ATenantAdminCannotTurnItOn(t *testing.T) {
+	h := newOrgHarness(t)
+	boss := h.token(t, "acme/boss")
+
+	const base = `"owner":"acme","name":"acme-app","organization":"acme","clientId":"acme-app"`
+	if st := h.do(t, "POST", "/v1/iam/applications", boss, `{`+base+`,"redirectUris":["https://acme.example/cb"]}`); st != 200 {
+		t.Fatalf("seed: status=%d", st)
 	}
-	if st := h.do(t, "PUT", "/v1/iam/applications/acme/acme-app", boss, `{"owner":"acme","name":"acme-app","organization":"acme","clientId":"acme-app","isShared":false}`); st != 403 {
-		t.Fatalf("a tenant admin unshared an app: status=%d, want 403", st)
+	if st := h.do(t, "PUT", "/v1/iam/applications/acme/acme-app", boss, `{`+base+`,"displayName":"Acme","orgChoiceMode":"None","redirectUris":["https://acme.example/cb","https://acme.example/cb2"]}`); st != 200 {
+		t.Fatalf("a tenant admin's ordinary edit: status=%d, want 200", st)
+	}
+	if got := h.stored(t, "acme/acme-app"); got.DisplayName != "Acme" || len(got.RedirectUris) != 2 {
+		t.Fatalf("the ordinary edit did not land: displayName=%q redirectUris=%v", got.DisplayName, got.RedirectUris)
+	}
+	for _, sp := range spans {
+		if st := h.do(t, "PUT", "/v1/iam/applications/acme/acme-app", boss, `{`+base+`,"redirectUris":["https://elsewhere.example/cb"],`+sp.body+`}`); st != 403 {
+			t.Fatalf("a tenant admin turned on %s: status=%d, want 403", sp.name, st)
+		}
+		if got := h.stored(t, "acme/acme-app"); got.Spans() || len(got.RedirectUris) != 2 {
+			t.Fatalf("a refused %s write changed the row: spans=%v redirectUris=%v", sp.name, got.Spans(), got.RedirectUris)
+		}
+	}
+}
+
+// A tenant-owned application that serves other organizations — one a SuperAdmin
+// made so, or one in the store from before — is a SuperAdmin's to write: a tenant
+// admin may neither edit it, keeping the declaration, nor confine it.
+func TestSpan_ATenantAdminCannotWriteOneThatServesOtherOrgs(t *testing.T) {
+	h := newOrgHarness(t)
+	boss := h.token(t, "acme/boss")
+	root := h.token(t, "admin/root")
+
+	for _, sp := range spans {
+		name := "acme-" + strings.ToLower(sp.name)
+		base := `"owner":"acme","name":"` + name + `","organization":"acme","clientId":"` + name + `"`
+		if st := h.do(t, "POST", "/v1/iam/applications", root, `{`+base+`,`+sp.body+`}`); st != 200 {
+			t.Fatalf("a SuperAdmin created a tenant application with %s: status=%d, want 200", sp.name, st)
+		}
+		for _, body := range []string{
+			`{` + base + `,` + sp.body + `,"redirectUris":["https://elsewhere.example/cb"]}`,
+			`{` + base + `,` + sp.body + `,"displayName":"Acme"}`,
+			`{` + base + `,"displayName":"Acme"}`,
+			`{` + base + `,"isShared":false,"orgChoiceMode":"None"}`,
+		} {
+			if st := h.do(t, "PUT", "/v1/iam/applications/acme/"+name, boss, body); st != 403 {
+				t.Fatalf("a tenant admin wrote an application with %s (%s): status=%d, want 403", sp.name, body, st)
+			}
+		}
+		if got := h.stored(t, "acme/"+name); !got.Spans() || len(got.RedirectUris) != 0 || got.DisplayName == "Acme" {
+			t.Fatalf("a refused write changed the %s row: %+v", sp.name, got)
+		}
+		if st := h.do(t, "PUT", "/v1/iam/applications/acme/"+name, root, `{`+base+`,`+sp.body+`,"displayName":"Acme"}`); st != 200 {
+			t.Fatalf("a SuperAdmin's edit of an application with %s: status=%d, want 200", sp.name, st)
+		}
+		if st := h.do(t, "PUT", "/v1/iam/applications/acme/"+name, root, `{`+base+`}`); st != 200 {
+			t.Fatalf("a SuperAdmin confining an application with %s: status=%d, want 200", sp.name, st)
+		}
+		if st := h.do(t, "PUT", "/v1/iam/applications/acme/"+name, boss, `{`+base+`,"displayName":"Acme again"}`); st != 200 {
+			t.Fatalf("a tenant admin's edit once it is confined: status=%d, want 200", st)
+		}
 	}
 }
 

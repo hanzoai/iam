@@ -415,8 +415,28 @@ func TestApply_DefaultsEmptyOwnerToAdmin(t *testing.T) {
 	if org, err := orm.Get[schema.Organization](db, "admin/hanzo"); err != nil || org == nil {
 		t.Fatalf("owner-less org not under admin: %v", err)
 	}
-	if app, err := orm.Get[schema.Application](db, "admin/hanzo-console"); err != nil || app == nil {
+	if app, err := orm.Get[schema.Application](db, "admin/hanzo-console"); err != nil || app == nil || app.Owner != "admin" {
 		t.Fatalf("owner-less app not under admin: %v", err)
+	}
+}
+
+// An owner-less declaration is the platform's: its row carries the admin owner
+// its key names, so an application it declares to serve every org does
+// (schema.Application.ServesAnyOrg reads Owner), and it is marked the platform's.
+func TestApply_OwnerlessDeclarationIsThePlatforms(t *testing.T) {
+	db := openDB(t)
+	data := &initData{Applications: []*schema.Application{
+		{Name: "hanzo-app", ClientId: "hanzo-app", Organization: "hanzo", OrgChoiceMode: "create"},
+	}}
+	if _, err := Apply(context.Background(), db, data); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	app, err := orm.Get[schema.Application](db, "admin/hanzo-app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if app.Owner != "admin" || !app.ServesAnyOrg() || !app.Platform {
+		t.Fatalf("owner=%q servesAnyOrg=%v platform=%v, want admin/true/true", app.Owner, app.ServesAnyOrg(), app.Platform)
 	}
 }
 
@@ -438,7 +458,7 @@ func TestFromInitData_DefaultsMissingOwner(t *testing.T) {
 	if sum.Created["applications"] != 1 {
 		t.Fatalf("created=%d, want 1", sum.Created["applications"])
 	}
-	if app, err := orm.Get[schema.Application](db, "admin/console"); err != nil || app == nil {
+	if app, err := orm.Get[schema.Application](db, "admin/console"); err != nil || app == nil || app.Owner != "admin" {
 		t.Fatalf("owner-less app not under admin: %v", err)
 	}
 }

@@ -47,7 +47,8 @@ type Mint struct {
 // This is the ONE mint path. Every rule below is a security invariant, so it
 // lives here rather than in each endpoint:
 //   - Tenant isolation: the user's org must be permitted for this application —
-//     its own org, a shared app, or an app that lets users choose their org.
+//     its own org, or any org through an application that serves every org
+//     (schema.Application.ServesAnyOrg: it declares so AND the platform owns it).
 //     Without it a user in one tenant could obtain a token naming another.
 //   - Redirect binding: an exactly-registered redirect_uri (RFC 6749 §3.1.2.3);
 //     the token endpoint re-checks it. A supplied-but-unregistered URI is never
