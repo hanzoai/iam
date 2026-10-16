@@ -10,6 +10,8 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -385,7 +387,11 @@ func parseOriginMap(name, mapJSON string) (map[string]string, error) {
 // signinOrigin is the one spelling of a sign-in origin: `https://host[:port]`,
 // host lowercased, the default port and a trailing dot dropped, and nothing else —
 // no user, path, query or fragment, because the value is concatenated with the
-// callback path and handed to an IdP that compares it byte for byte.
+// callback path and handed to an IdP that compares it byte for byte. The host is
+// an ASCII DNS name (a browser sends an IDN as punycode, so a Unicode spelling
+// would never match the Host it arrives on) and never an IP literal; a port is
+// 1-65535 written plainly, because a browser reads `:0443` as the default port
+// and would be relocated to the same address forever.
 func signinOrigin(raw string) (string, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
@@ -395,13 +401,23 @@ func signinOrigin(raw string) (string, error) {
 		(u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
 		return "", fmt.Errorf("%q is not an https origin", raw)
 	}
-	host := strings.ToLower(u.Hostname())
-	host = strings.TrimSuffix(host, ".")
-	if host == "" {
-		return "", fmt.Errorf("%q names no host", raw)
+	host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
+	if host == "" || net.ParseIP(host) != nil || strings.ContainsAny(host, "[]") {
+		return "", fmt.Errorf("%q names no DNS host", raw)
 	}
-	if port := u.Port(); port != "" && port != "443" {
-		host = net.JoinHostPort(host, port)
+	for _, r := range host {
+		if !(r == '-' || r == '.' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9') {
+			return "", fmt.Errorf("%q is not an ASCII host name (write an IDN in punycode)", raw)
+		}
+	}
+	if port := u.Port(); port != "" {
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65535 || strconv.Itoa(n) != port {
+			return "", fmt.Errorf("%q has no usable port", raw)
+		}
+		if n != 443 {
+			host = net.JoinHostPort(host, port)
+		}
 	}
 	return "https://" + host, nil
 }
@@ -532,9 +548,22 @@ func issuerValues() []string {
 //
 // The origins judged are every one a host can resolve to: each the map names, and
 // each a host the map does not name falls to through its issuer.
+//
+// A host also signs in only within its own brand: an origin whose issuer is not
+// the host's own would show one brand's sign-in for another's, and would answer
+// a request begun on the host from the other brand's session, since there the
+// request is at its issuer.
 func signinOriginsTerminal(r *signinMap) error {
 	via := map[string]string{} // origin -> a host that resolves to it, for the error
 	for host, origin := range r.byHost {
+		u, err := url.Parse(origin)
+		if err != nil || u.Host == "" {
+			return fmt.Errorf("IAM_FEDERATION_ORIGIN_MAP: %s signs in at %q, which is not an origin", host, origin)
+		}
+		if a, b := resolveIssuer(host), resolveIssuer(u.Host); a != b {
+			return fmt.Errorf("IAM_FEDERATION_ORIGIN_MAP sends %s (issuer %s) to %s (issuer %s): "+
+				"a host signs in at an origin of its own issuer", host, a, origin, b)
+		}
 		via[origin] = host
 	}
 	for _, iss := range issuerValues() {
@@ -546,7 +575,13 @@ func signinOriginsTerminal(r *signinMap) error {
 			via[o] = u.Host
 		}
 	}
-	for origin, host := range via {
+	origins := make([]string, 0, len(via))
+	for origin := range via {
+		origins = append(origins, origin)
+	}
+	sort.Strings(origins) // one config, one error: the first origin that fails
+	for _, origin := range origins {
+		host := via[origin]
 		u, err := url.Parse(origin)
 		if err != nil || u.Host == "" {
 			return fmt.Errorf("IAM_FEDERATION_ORIGIN_MAP: %s signs in at %q, which is not an origin", host, origin)
