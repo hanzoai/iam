@@ -444,6 +444,109 @@ func TestFederation_OIDCCallbackProvisionsUserAndIssuesCode(t *testing.T) {
 	}
 }
 
+// A brand that signs people in on its own site runs the WHOLE browser leg there —
+// begin, cookie, IdP callback — and the tokens it ends in still carry the issuer.
+// This is hanzo.ai under IAM_FEDERATION_ORIGIN_MAP={"hanzo.ai":"https://hanzo.ai"}:
+// Google is handed https://hanzo.ai/v1/iam/oauth/callback (so its account chooser
+// names hanzo.ai), and `iss` stays https://hanzo.id for every verifier that pins it.
+func TestFederation_SigninHostRunsTheLegAndKeepsTheIssuer(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "webapp", signup: true, redirectURIs: []string{testRedirect}})
+	m := newMockOIDC(t, fedGoogleCID)
+	seedOIDCProvider(t, db, "webapp", m)
+	installIssuerResolver(t, "https://hanzo.id", testIssuerMap)
+	installFederationResolver(t, `{"hanzo.ai":"https://hanzo.ai"}`)
+	const callbackURL = "https://hanzo.ai" + PathFederationCallback
+
+	q := url.Values{
+		"response_type":         {"code"},
+		"client_id":             {"webapp"},
+		"redirect_uri":          {testRedirect},
+		"scope":                 {"openid email profile"},
+		"state":                 {fedAppState},
+		"code_challenge":        {pkce.Challenge(fedVerifier)},
+		"code_challenge_method": {"S256"},
+		"provider":              {fedProvGoogle},
+	}
+	req := formReqNoBody("GET", PathAuthorize+"?"+q.Encode())
+	req.Host = "hanzo.ai"
+	resp, _ := do(t, app, req)
+	if resp.StatusCode != 302 {
+		t.Fatalf("authorize on hanzo.ai: status %d (Location %q), want 302 to the IdP", resp.StatusCode, resp.Header.Get("Location"))
+	}
+	idp, err := url.Parse(resp.Header.Get("Location"))
+	if err != nil || !strings.HasPrefix(idp.String(), m.URL) {
+		t.Fatalf("authorize on hanzo.ai must go to the IdP; got %q", resp.Header.Get("Location"))
+	}
+	if got := idp.Query().Get("redirect_uri"); got != callbackURL {
+		t.Fatalf("the IdP was handed %q, want hanzo.ai's own callback %q", got, callbackURL)
+	}
+	cookie := cookieKV(resp.Header.Get("Set-Cookie"))
+	if !strings.HasPrefix(cookie, "__Host-hanzo_fed=") {
+		t.Fatalf("the begin on hanzo.ai must set the browser binding there; Set-Cookie %q", resp.Header.Get("Set-Cookie"))
+	}
+	// hanzo.ai has sibling hosts, so the binding is one no sibling can set: a
+	// `__Host-` cookie, which a browser keeps only Secure, at Path=/, with no Domain.
+	set := strings.ToLower(resp.Header.Get("Set-Cookie"))
+	for _, want := range []string{"path=/;", "secure", "httponly", "samesite=lax"} {
+		if !strings.Contains(set+";", want) {
+			t.Errorf("binding cookie %q lacks %q", resp.Header.Get("Set-Cookie"), want)
+		}
+	}
+	if strings.Contains(set, "domain=") {
+		t.Errorf("binding cookie %q names a Domain; a __Host- cookie with one is dropped by the browser", resp.Header.Get("Set-Cookie"))
+	}
+	m.mu.Lock()
+	m.nonce = idp.Query().Get("nonce")
+	m.mu.Unlock()
+
+	cq := url.Values{"state": {idp.Query().Get("state")}, "code": {"idp-code-1"}}
+	cb := formReqNoBody("GET", PathFederationCallback+"?"+cq.Encode())
+	cb.Host = "hanzo.ai"
+	cb.Header.Set("Cookie", cookie)
+	resp, _ = do(t, app, cb)
+	ret, _ := url.Parse(requireRedirect(t, resp, testRedirect))
+	code := ret.Query().Get("code")
+	if code == "" {
+		t.Fatalf("the callback on hanzo.ai must mint a code; got %q", ret.String())
+	}
+	m.mu.Lock()
+	presented := m.tokenForm.Get("redirect_uri")
+	m.mu.Unlock()
+	if presented != callbackURL {
+		t.Errorf("the IdP token exchange re-presented %q, want %q", presented, callbackURL)
+	}
+
+	// The code is redeemed ON hanzo.ai, the host the whole leg ran on, so nothing
+	// but the issuer resolver can be what puts https://hanzo.id in the tokens.
+	form := url.Values{"grant_type": {"authorization_code"}, "code": {code}, "client_id": {"webapp"},
+		"redirect_uri": {testRedirect}, "code_verifier": {fedVerifier}}
+	treq := formReq("POST", PathToken, form)
+	treq.Host = "hanzo.ai"
+	tokResp, body := do(t, app, treq)
+	tok := decode(t, body)
+	if tokResp.StatusCode != 200 {
+		t.Fatalf("code exchange: %d %v", tokResp.StatusCode, tok)
+	}
+	for _, kind := range []string{"access_token", "id_token"} {
+		raw, _ := tok[kind].(string)
+		var claims jwt.MapClaims
+		if _, _, err := jwt.NewParser().ParseUnverified(raw, &claims); err != nil {
+			t.Fatalf("%s: %v", kind, err)
+		}
+		if claims["iss"] != "https://hanzo.id" {
+			t.Errorf("%s iss = %v; signing in on hanzo.ai must leave the issuer at https://hanzo.id", kind, claims["iss"])
+		}
+	}
+	// And discovery asked on hanzo.ai names the same issuer.
+	dreq := formReqNoBody("GET", PathDiscovery)
+	dreq.Host = "hanzo.ai"
+	_, dbody := do(t, app, dreq)
+	if iss := decode(t, dbody)["issuer"]; iss != "https://hanzo.id" {
+		t.Errorf("discovery on hanzo.ai names issuer %v, want https://hanzo.id", iss)
+	}
+}
+
 // The GitHub dialect: token exchange + /user + /user/emails, provisioning by the
 // primary VERIFIED email.
 func TestFederation_GitHubCallbackProvisionsViaVerifiedEmail(t *testing.T) {

@@ -18,8 +18,8 @@ import "testing"
 // not log in.
 //
 // ⚠️ ASSERT THROUGH resolveFederationOrigin, NEVER resolveIssuer. The two were one
-// value until the origin was unbraided from the issuer; today, with no
-// IAM_FEDERATION_ORIGIN set, the federation resolver FALLS BACK to the issuer, so
+// value until the origin was unbraided from the issuer; today, for a host
+// IAM_FEDERATION_ORIGIN_MAP does not name, the federation resolver FALLS BACK to the issuer, so
 // both spellings pass and the wrong one is indistinguishable from the right one.
 // The moment an origin is pinned — which is the entire point of that split — a
 // test written against resolveIssuer keeps passing while the real callback moves.
@@ -48,25 +48,13 @@ func TestFederationCallbackIsTheRegisteredContract(t *testing.T) {
 	}
 }
 
-// What a pinned origin WOULD buy, and why it is not on offer yet.
-//
-// I wrote this test asserting that every host of one org folds onto ONE callback,
-// so a provider console holds one redirect_uri per org rather than one per brand
-// host. That property is desirable and it is NOT reachable: the begin leg sets the
-// `hanzo_fed` browser-binding cookie on the host that served it, host-only, and the
-// callback refuses an empty cookie — so a callback on a different host is never
-// given the cookie and every social sign-in on that brand fails closed. Asserting
-// it here made a broken configuration look supported.
-//
-// InitFederationResolver now refuses that config at boot
-// (TestFederationOriginCrossHostFoldIsRefusedAtBoot pins the refusal and its
-// wording). What remains true, and what this pins, is that a SAME-HOST map is a
-// no-op: each brand keeps its own callback, which is the list actually registered
-// with Google and GitHub today.
+// A same-host map is a no-op: each brand keeps its own callback, which is the
+// list registered with Google and GitHub. A host the map names as its OWN origin
+// gets a callback of its own — the line that has to be registered with every
+// external IdP before the map ships.
 func TestFederationCallbackPerBrandUnderASameHostMap(t *testing.T) {
 	t.Setenv("IAM_ISSUER", "https://hanzo.id")
 	t.Setenv("IAM_ISSUER_MAP", `{"hanzo.id":"https://hanzo.id","lux.id":"https://lux.id"}`)
-	t.Setenv("IAM_FEDERATION_ORIGIN", "https://hanzo.id")
 	t.Setenv("IAM_FEDERATION_ORIGIN_MAP", `{"hanzo.id":"https://hanzo.id","lux.id":"https://lux.id"}`)
 
 	prevIss, prevFed := activeResolver.Load(), activeFederationResolver.Load()
@@ -85,8 +73,14 @@ func TestFederationCallbackPerBrandUnderASameHostMap(t *testing.T) {
 		"lux.id":   "https://lux.id/v1/iam/oauth/callback",
 	} {
 		if got := resolveFederationOrigin(host) + PathFederationCallback; got != want {
-			t.Errorf("callback for %s = %s, want %s — each brand keeps its own until the "+
-				"begin leg can set the cookie on a folded origin", host, got, want)
+			t.Errorf("callback for %s = %s, want %s", host, got, want)
 		}
+	}
+
+	installFederationResolver(t, `{"hanzo.ai":"https://hanzo.ai"}`)
+	if got, want := resolveFederationOrigin("hanzo.ai")+PathFederationCallback, "https://hanzo.ai/v1/iam/oauth/callback"; got != want {
+		t.Errorf("callback for hanzo.ai = %s, want %s\n"+
+			"Register it with EVERY external IdP (the Google OAuth client AND the GitHub App) "+
+			"BEFORE the map ships: each refuses a redirect_uri it does not already hold.", got, want)
 	}
 }

@@ -349,7 +349,9 @@ func offers(ch *schema.LoginChallenge, mfaType string) bool {
 // The token needs no signature: it is 256 bits of crypto/rand compared against a
 // stored digest, the same shape as a recovery code and as the challenge id. There is
 // no second auth scheme here, and nothing to verify but equality.
-const rememberCookie = "hanzo_mfa_remember"
+//
+// `__Host-`, so no sibling of the sign-in origin can plant one (challengeCookie).
+const rememberCookie = "__Host-hanzo_mfa_remember"
 
 // mintRemember returns a fresh remember token for the browser and the digest to
 // store. The clear value leaves in a cookie and is never persisted.

@@ -202,6 +202,130 @@ func TestAuthorize_AliasHostRelocatesToIssuer(t *testing.T) {
 	})
 }
 
+// A host that is its own sign-in origin is answered IN PLACE, and a host folded
+// onto it is relocated to it — while every host the map does not name relocates
+// to its issuer exactly as before. The issuer is not what decides where a
+// browser signs in; the sign-in origin is.
+func TestAuthorize_SigninOriginDecidesTheRelocation(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "pub", redirectURIs: []string{testRedirect}})
+	installIssuerResolver(t, "https://hanzo.id", testIssuerMap)
+	installFederationResolver(t, `{"hanzo.ai":"https://hanzo.ai","www.hanzo.ai":"https://hanzo.ai"}`)
+
+	q := url.Values{
+		"response_type":  {"code"},
+		"client_id":      {"pub"},
+		"redirect_uri":   {testRedirect},
+		"state":          {"s-signin"},
+		"code_challenge": {pkce.Challenge("verifier-abcdefghijklmnopqrstuvwxyz-012345")},
+	}
+	target := authorizeURL(q)
+	for host, want := range map[string]string{
+		"hanzo.ai":     "",                          // its own origin: answered here
+		"HANZO.AI:443": "",                          // the same address
+		"www.hanzo.ai": "https://hanzo.ai" + target, // folded onto hanzo.ai
+		"hanzo.ai.":    "https://hanzo.ai" + target, // another host to a cookie jar
+		"iam.hanzo.ai": "https://hanzo.id" + target, // unnamed: its issuer, as before
+		"hanzo.id":     "",
+	} {
+		req := formReqNoBody("GET", target)
+		req.Host = host
+		resp, _ := do(t, app, req)
+		if want == "" {
+			// Answered here means the hosted login, on this host: relative, so it
+			// resolves to hanzo.ai's own page on hanzo.ai and hanzo.id's on hanzo.id.
+			if loc := resp.Header.Get("Location"); resp.StatusCode != 302 || !strings.HasPrefix(loc, hostedLoginPath+"?") {
+				t.Errorf("%s: %d to %q, want 302 to its own %s", host, resp.StatusCode, loc, hostedLoginPath)
+			}
+			continue
+		}
+		if resp.StatusCode != 307 || resp.Header.Get("Location") != want {
+			t.Errorf("%s: %d to %q, want 307 to %q", host, resp.StatusCode, resp.Header.Get("Location"), want)
+		}
+	}
+}
+
+// A sign-in origin that is not its issuer's host holds a session of its own, which
+// the issuer's sign-out does not end. So authorize there never answers silently
+// from it: the page asks, and prompt=none, which allows no page, is login_required.
+// At the issuer the same session answers as it always has.
+func TestAuthorize_NoSilentGrantAtADelegatedSigninOrigin(t *testing.T) {
+	app, db := newServer(t)
+	twoApps(t, db)
+	installIssuerResolver(t, "https://hanzo.id", testIssuerMap)
+	installFederationResolver(t, `{"hanzo.ai":"https://hanzo.ai"}`)
+	cookie := signIn(t, app, "portal")
+
+	ask := func(host string, q url.Values) *http.Response {
+		req := formReqNoBody("GET", authorizeURL(q))
+		req.Host = host
+		req.Header.Set("Cookie", cookie)
+		req.Header.Set("Sec-Fetch-Mode", "navigate")
+		req.Header.Set("Sec-Fetch-Site", "cross-site")
+		req.Header.Set("Sec-Fetch-Dest", "document")
+		resp, _ := do(t, app, req)
+		return resp
+	}
+	verifier := "verifier-second-app-0123456789012345678901234567890123"
+
+	// The issuer's own host answers from the session, straight to the callback.
+	if loc := requireRedirect(t, ask("hanzo.id", silentQuery(verifier)), secondRedirect); !strings.Contains(loc, "code=") {
+		t.Fatalf("hanzo.id should answer from its session; got %q", loc)
+	}
+	// hanzo.ai asks first: its own hosted page, no code.
+	resp := ask("hanzo.ai", silentQuery(verifier))
+	if loc := resp.Header.Get("Location"); resp.StatusCode != 302 || !strings.HasPrefix(loc, hostedLoginPath+"?") || strings.Contains(loc, "code=") {
+		t.Fatalf("hanzo.ai must ask before minting; %d to %q", resp.StatusCode, loc)
+	}
+	// prompt=none there is refused, to the client.
+	q := silentQuery(verifier)
+	q.Set("prompt", "none")
+	loc := requireRedirect(t, ask("hanzo.ai", q), secondRedirect)
+	if !strings.Contains(loc, "error=login_required") || strings.Contains(loc, "code=") {
+		t.Fatalf("prompt=none on hanzo.ai = %q, want error=login_required and no code", loc)
+	}
+}
+
+// A sign-in origin that would send the request on again is never steered to,
+// even when such a resolver is installed past the boot check.
+func TestAuthorize_NonTerminalSigninOriginServesInPlace(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "pub", redirectURIs: []string{testRedirect}})
+	installIssuerResolver(t, "https://hanzo.id", testIssuerMap)
+	installFederationResolver(t, `{"a.example":"https://b.example","b.example":"https://c.example"}`)
+
+	q := url.Values{"response_type": {"code"}, "client_id": {"pub"}, "redirect_uri": {testRedirect},
+		"code_challenge": {pkce.Challenge("verifier-abcdefghijklmnopqrstuvwxyz-012345")}}
+	req := formReqNoBody("GET", authorizeURL(q))
+	req.Host = "a.example"
+	resp, _ := do(t, app, req)
+	if loc := resp.Header.Get("Location"); resp.StatusCode != 302 || !strings.HasPrefix(loc, hostedLoginPath+"?") {
+		t.Fatalf("a ping-pong map must serve in place; got %d to %q", resp.StatusCode, loc)
+	}
+}
+
+// A map the boot refuses costs the move and nothing else: the server still comes
+// up, and every host signs in at its issuer.
+func TestRoute_RefusedSigninMapLeavesEveryHostAtItsIssuer(t *testing.T) {
+	installIssuerResolver(t, "https://hanzo.id", testIssuerMap)
+	t.Setenv("IAM_FEDERATION_ORIGIN_MAP", `{"hanzo.ai":"http://hanzo.ai"}`)
+	prev := activeFederationResolver.Swap(nil)
+	t.Cleanup(func() { activeFederationResolver.Store(prev) })
+	app, db := newServer(t) // registers the routes, which judge the map
+	seedApp(t, db, appOpts{clientID: "pub", redirectURIs: []string{testRedirect}})
+	if activeFederationResolver.Load() != nil {
+		t.Fatal("a refused map was installed")
+	}
+	q := url.Values{"response_type": {"code"}, "client_id": {"pub"}, "redirect_uri": {testRedirect},
+		"code_challenge": {pkce.Challenge("verifier-abcdefghijklmnopqrstuvwxyz-012345")}}
+	req := formReqNoBody("GET", authorizeURL(q))
+	req.Host = "hanzo.ai"
+	resp, _ := do(t, app, req)
+	if want := "https://hanzo.id" + authorizeURL(q); resp.StatusCode != 307 || resp.Header.Get("Location") != want {
+		t.Fatalf("refused map: hanzo.ai %d to %q, want 307 to its issuer", resp.StatusCode, resp.Header.Get("Location"))
+	}
+}
+
 // A confidential client may authorize without PKCE (it authenticates with its
 // secret at the token endpoint).
 func TestAuthorize_ConfidentialWithoutPKCEDelegates(t *testing.T) {

@@ -101,26 +101,15 @@ func newIssuerResolver(defaultIssuer, mapJSON string, devHostRelative bool) (*is
 		}
 		return r, nil
 	}
-	var raw map[string]string
-	if err := json.Unmarshal([]byte(mapJSON), &raw); err != nil {
-		return nil, fmt.Errorf("IAM_ISSUER_MAP: invalid JSON: %w", err)
+	byHost, err := parseOriginMap("IAM_ISSUER_MAP", mapJSON)
+	if err != nil {
+		return nil, err
 	}
-	if len(raw) > 0 && def == "" {
+	if len(byHost) > 0 && def == "" {
 		return nil, fmt.Errorf("IAM_ISSUER_MAP is set but IAM_ISSUER (the fail-closed default) is empty: " +
 			"an unknown host would have no pinned issuer to fall back to")
 	}
-	r.byHost = make(map[string]string, len(raw))
-	for host, iss := range raw {
-		h := normalizeHost(host)
-		v := normalizeIssuer(iss)
-		if h == "" || v == "" {
-			return nil, fmt.Errorf("IAM_ISSUER_MAP: empty host or issuer in entry %q:%q", host, iss)
-		}
-		if !strings.HasPrefix(v, "https://") {
-			return nil, fmt.Errorf("IAM_ISSUER_MAP: issuer for host %q must be an absolute https URL, got %q", h, v)
-		}
-		r.byHost[h] = v
-	}
+	r.byHost = byHost
 	return r, nil
 }
 
@@ -325,198 +314,340 @@ func issues(iss string) bool {
 // `iss` on the token describing the same person.
 func Issuer(host string) string { return resolveIssuer(host) }
 
-// The federation-origin resolver — the origin an EXTERNAL IdP calls back to.
+// The sign-in origin: where a browser sign-in on a host RUNS, and so the origin an
+// EXTERNAL IdP calls back to.
 //
-// This is a DIFFERENT VALUE from the issuer, and braiding the two is what broke
-// social sign-in on every brand. They pull in opposite directions:
+// This is a DIFFERENT VALUE from the issuer, and the two answer different people.
+// The issuer is an identifier a relying party pins (`iss`); moving it breaks every
+// token in flight and every verifier configured with it. The sign-in origin is the
+// address a PERSON sees: the authorize hop, the IdP callback, the second-factor
+// page. A provider that tells the person where they are signing in shows this one
+// — Google names the callback's domain until its brand is verified. So a brand
+// keeps its issuer and signs people in on its own site:
 //
-//   - The issuer must be PER-BRAND. An RP that discovered via lux.id pins `iss`
-//     to lux.id and rejects a hanzo.id-issued token. That is why the map exists.
-//   - The IdP callback must be PER-ORG-CONSTANT. Google and GitHub each hold ONE
-//     OAuth client per org with a FIXED list of authorized redirect URIs. A
-//     per-brand callback means every brand sends a redirect_uri the provider has
-//     never seen, and the provider answers `redirect_uri_mismatch`.
+//	IAM_FEDERATION_ORIGIN_MAP={"hanzo.ai":"https://hanzo.ai"}
 //
-// This is why the callback is per-org-constant: a provider holds one OAuth client
-// per org with a FIXED redirect-URI list, so a per-brand callback sends a
-// redirect_uri the provider never registered and the provider answers
-// `redirect_uri_mismatch`. Every social login then fails AT THE PROVIDER, where it
-// reads as a credentials or KMS fault rather than a callback-shape one, even
-// though the client_id reaches the provider intact. The fixed callback is the one
-// the provider has on file.
+// leaves `iss` at https://hanzo.id and runs the whole browser leg on hanzo.ai.
 //
-// Registering every brand host with every provider is the other way out, and it
-// is the wrong one — it makes each social provider carry a list of our apps and
-// grows with every brand we add. One origin per org means the provider knows
-// about the org and nothing else.
+// Every leg of a browser sign-in shares this one origin by construction, because
+// each leaves a host-only cookie for the next: the browser binding (begin to
+// callback), the second-factor challenge (callback to /login/mfa) and the session.
+// signinRelocation moves an authorize request to it before anything is set, the IdP
+// callback is registered at it, and the 2FA page is on it.
 //
-// Same type, same validation, same header-immunity as the issuer resolver — one
-// mechanism, two instances, so there is no second notion of "a pinned origin".
-// UNSET IS A NO-OP: with no IAM_FEDERATION_ORIGIN configured this falls through
-// to resolveIssuer, which is exactly today's behaviour.
-var activeFederationResolver atomic.Pointer[issuerResolver]
+// A host the map does not name signs in where its ISSUER'S host signs in: the
+// issuer's own entry when the map names that host, else the issuer itself. So
+// unset is exactly the behaviour before the split, naming hanzo.ai moves no other
+// brand, and naming an issuer's host moves its aliases with it — iam.hanzo.ai and
+// auth.hanzo.ai follow hanzo.id wherever hanzo.id signs in, rather than beginning
+// a sign-in whose callback is somewhere they are not.
+//
+// Every origin a host can resolve to must be TERMINAL — a request relocated there
+// signs in there rather than being sent on — and loadFederationResolver refuses a
+// config that is not: the begin leg would set the binding on one host while the
+// IdP returns to another, and every social sign-in would fail closed at the
+// callback. Refused, the map is not used and every host signs in at its issuer.
+//
+// The value is trusted CONFIG selected by the request host, never interpolated
+// from it, so a client can at most select a configured origin. Each origin is also
+// a redirect_uri every external IdP must already hold, `<origin>/v1/iam/oauth/callback`
+// on the Google OAuth client and the GitHub App alike (federation_contract_test.go).
+var activeFederationResolver atomic.Pointer[signinMap]
 
-// envFederationResolver builds the federation-origin resolver from
-// IAM_FEDERATION_ORIGIN + IAM_FEDERATION_ORIGIN_MAP once, lazily. Unlike the
-// issuer it is OPTIONAL: nothing pinned yields nil, and resolveFederationOrigin
-// falls back to the issuer. A malformed map degrades to the bare default rather
-// than booting a config an attacker could steer.
-var envFederationResolver = sync.OnceValue(func() *issuerResolver {
-	def := os.Getenv("IAM_FEDERATION_ORIGIN")
-	m := os.Getenv("IAM_FEDERATION_ORIGIN_MAP")
-	if strings.TrimSpace(def) == "" && strings.TrimSpace(m) == "" {
-		return nil
+// signinMap is IAM_FEDERATION_ORIGIN_MAP read: a normalized host to the normalized
+// origin it signs in at. Immutable once built.
+type signinMap struct {
+	byHost map[string]string
+}
+
+// parseOriginMap reads a JSON host-to-issuer map. Every key must be a host and
+// every value an absolute https URL; name is the variable, for the error.
+func parseOriginMap(name, mapJSON string) (map[string]string, error) {
+	var raw map[string]string
+	if err := json.Unmarshal([]byte(mapJSON), &raw); err != nil {
+		return nil, fmt.Errorf("%s: invalid JSON: %w", name, err)
 	}
-	r, err := newIssuerResolver(def, m, false)
-	if err != nil {
-		if r, err = newIssuerResolver(def, "", false); err != nil {
-			return nil
+	byHost := make(map[string]string, len(raw))
+	for host, origin := range raw {
+		h := normalizeHost(host)
+		v := normalizeIssuer(origin)
+		if h == "" || v == "" {
+			return nil, fmt.Errorf("%s: empty host or issuer in entry %q:%q", name, host, origin)
 		}
+		if !strings.HasPrefix(v, "https://") {
+			return nil, fmt.Errorf("%s: issuer for host %q must be an absolute https URL, got %q", name, h, v)
+		}
+		byHost[h] = v
+	}
+	return byHost, nil
+}
+
+// signinOrigin is the one spelling of a sign-in origin: `https://host[:port]`,
+// host lowercased, the default port and a trailing dot dropped, and nothing else —
+// no user, path, query or fragment, because the value is concatenated with the
+// callback path and handed to an IdP that compares it byte for byte.
+func signinOrigin(raw string) (string, error) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return "", err
+	}
+	if u.Scheme != "https" || u.Host == "" || u.User != nil || u.Opaque != "" ||
+		(u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		return "", fmt.Errorf("%q is not an https origin", raw)
+	}
+	host := strings.ToLower(u.Hostname())
+	host = strings.TrimSuffix(host, ".")
+	if host == "" {
+		return "", fmt.Errorf("%q names no host", raw)
+	}
+	if port := u.Port(); port != "" && port != "443" {
+		host = net.JoinHostPort(host, port)
+	}
+	return "https://" + host, nil
+}
+
+// newFederationResolver reads IAM_FEDERATION_ORIGIN_MAP. Nothing configured is nil.
+// There is no default: a default moved every brand the map did not name, so the
+// map is the one way to say where a host signs in.
+func newFederationResolver(mapJSON string) (*signinMap, error) {
+	m := strings.TrimSpace(mapJSON)
+	if m == "" {
+		return nil, nil
+	}
+	var raw map[string]string
+	if err := json.Unmarshal([]byte(m), &raw); err != nil {
+		return nil, fmt.Errorf("IAM_FEDERATION_ORIGIN_MAP: invalid JSON: %w", err)
+	}
+	r := &signinMap{byHost: make(map[string]string, len(raw))}
+	for host, origin := range raw {
+		h := normalizeHost(host)
+		if h == "" {
+			return nil, fmt.Errorf("IAM_FEDERATION_ORIGIN_MAP: empty host in entry %q:%q", host, origin)
+		}
+		v, err := signinOrigin(origin)
+		if err != nil {
+			return nil, fmt.Errorf("IAM_FEDERATION_ORIGIN_MAP: host %q: %w", h, err)
+		}
+		if prev, dup := r.byHost[h]; dup && prev != v {
+			return nil, fmt.Errorf("IAM_FEDERATION_ORIGIN_MAP: host %q is named twice, as %s and %s", h, prev, v)
+		}
+		r.byHost[h] = v
+	}
+	if len(r.byHost) == 0 {
+		return nil, nil
+	}
+	return r, nil
+}
+
+// federationOriginFor is r's sign-in origin for host: the host's own entry, else
+// its issuer host's entry, else its issuer.
+func federationOriginFor(r *signinMap, host string) string {
+	if o, ok := r.byHost[normalizeHost(host)]; ok {
+		return o
+	}
+	iss := resolveIssuer(host)
+	if u, err := url.Parse(iss); err == nil {
+		if o, ok := r.byHost[normalizeHost(u.Host)]; ok {
+			return o
+		}
+	}
+	return iss
+}
+
+// loadFederationResolver reads the sign-in origins from the environment and
+// judges them: parsed, and every origin a host can resolve to terminal. The one
+// reader, for the boot and for the lazy path alike, so neither can install a map
+// the other would refuse.
+func loadFederationResolver() (*signinMap, error) {
+	if strings.TrimSpace(os.Getenv("IAM_FEDERATION_ORIGIN")) != "" {
+		return nil, errors.New("IAM_FEDERATION_ORIGIN is not read: name each host that signs in " +
+			"somewhere other than its issuer in IAM_FEDERATION_ORIGIN_MAP")
+	}
+	r, err := newFederationResolver(os.Getenv("IAM_FEDERATION_ORIGIN_MAP"))
+	if err != nil || r == nil {
+		return nil, err
+	}
+	if err := signinOriginsTerminal(r); err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+// envFederationResolver is loadFederationResolver once, lazily, for a request that
+// reaches a handler before InitFederationResolver ran. A refused config is nil:
+// every host signs in at its issuer.
+var envFederationResolver = sync.OnceValue(func() *signinMap {
+	r, err := loadFederationResolver()
+	if err != nil {
+		return nil
 	}
 	return r
 })
 
-// InitFederationResolver parses the federation origin config once at startup. A
-// malformed or non-https pin is a HARD error, on the same footing as the issuer:
-// a bad value here does not mint wrong tokens, but it does hand an external IdP a
-// callback origin, so it must fail the boot LOUD rather than degrade silently.
-// Called from serve() alongside InitIssuerResolver.
+// InitFederationResolver reads the sign-in origins and installs them, or reports
+// why it would not. routeFederation calls it, the one place `iam serve` and an
+// embedding host (cloud) both pass, and a refusal leaves every host signing in at
+// its issuer: social sign-in keeps working where it worked before, rather than the
+// process that serves every identity request refusing to start over one map.
 func InitFederationResolver() error {
-	def := os.Getenv("IAM_FEDERATION_ORIGIN")
-	m := os.Getenv("IAM_FEDERATION_ORIGIN_MAP")
-	if strings.TrimSpace(def) == "" && strings.TrimSpace(m) == "" {
-		return nil // unconfigured → federation follows the issuer, as before
-	}
-	r, err := newIssuerResolver(def, m, false)
+	r, err := loadFederationResolver()
 	if err != nil {
 		return err
 	}
-	if err := federationOriginIsReachable(r, m); err != nil {
-		return err
-	}
-	activeFederationResolver.Store(r)
-	return nil
-}
-
-// federationOriginIsReachable refuses, AT BOOT, a federation origin the browser
-// could not complete a sign-in against.
-//
-// The begin leg sets the `hanzo_fed` anti-forgery cookie on whatever host served
-// it, with NO Domain attribute — deliberately host-only, because it is the
-// login-CSRF defence. The callback then REQUIRES it: an empty cookie is refused
-// ("the federation session could not be verified"), with no exemption.
-//
-// So pointing a host's callback at a DIFFERENT host cannot work. The cookie is
-// written on the host the person started at and is never presented to the origin
-// the IdP returns to, so every social sign-in on that brand fails closed — not at
-// deploy time, but the first time a human tries to log in, with an error that
-// describes the symptom rather than the config.
-//
-// That is the whole intended use of these two variables ("one callback per org",
-// so a provider console holds one redirect_uri instead of one per brand host), and
-// it is unreachable until the begin leg also sets the cookie on the federation
-// origin — a redirect hop that does not exist yet. Refusing to boot is the honest
-// answer: this file already fails loud on a misconfigured ISSUER rather than
-// silently minting tokens under the wrong `iss`, and the same reasoning applies to
-// silently breaking every social login.
-//
-// Same-host folding is still permitted, because it changes no origin: a map that
-// sends a host to its own issuer origin is a no-op and passes.
-func federationOriginIsReachable(fed *issuerResolver, mapJSON string) error {
-	if strings.TrimSpace(mapJSON) == "" {
-		return nil // only a default is pinned; per-host folding is what breaks
-	}
-	var hosts map[string]string
-	if err := json.Unmarshal([]byte(mapJSON), &hosts); err != nil {
-		return nil // newIssuerResolver already judged the map; do not double-report
-	}
-	for host := range hosts {
-		fedOrigin := fed.issuerFor(host)
-		issOrigin := resolveIssuer(host)
-		if fedOrigin == "" || issOrigin == "" || fedOrigin == issOrigin {
-			continue
-		}
-		return fmt.Errorf(
-			"IAM_FEDERATION_ORIGIN_MAP points %s at %s while its issuer is %s: the "+
-				"hanzo_fed browser-binding cookie is host-only, so it is set on %s and "+
-				"never presented to %s, and every social sign-in on that host would fail "+
-				"closed. Folding callbacks onto one origin needs the begin leg to set the "+
-				"cookie there first",
-			host, fedOrigin, issOrigin, issOrigin, fedOrigin)
+	if r != nil {
+		activeFederationResolver.Store(r)
 	}
 	return nil
 }
 
-// resolveFederationOrigin is THE seam the IdP callback origin routes through.
-// host is the same TRUSTED request host the issuer resolver takes, so a
-// client-supplied header can at most SELECT a configured org's origin — it can
-// never inject one, and the federation leg keeps the header-immunity the issuer
-// leg has. Unconfigured → the issuer, i.e. the pre-split behaviour.
-func resolveFederationOrigin(host string) string {
-	if r := activeFederationResolver.Load(); r != nil {
-		return r.issuerFor(host)
-	}
-	if r := envFederationResolver(); r != nil {
-		return r.issuerFor(host)
-	}
-	return resolveIssuer(host)
-}
-
-// issuerRelocation reports whether a request to a native endpoint arrived on a host
-// other than its brand's pinned issuer, and if so, the absolute URL of the SAME
-// request at that issuer.
-//
-// This is the redirect hop the boot check (federationOriginIsReachable) names as
-// missing. A browser flow leaves host-only cookies behind at every step — the
-// hanzo_fed browser binding on the federation begin, the session on a password
-// login — while the IdP callback and the tokens' `iss` live at the PINNED
-// issuer. Serving the native endpoints on an alias host therefore strands those
-// cookies where nothing returns: measured live, an authorize on iam.hanzo.ai
-// set hanzo_fed on iam.hanzo.ai and registered the Google callback at hanzo.id,
-// so every social sign-in begun there failed closed with "the federation
-// session could not be verified". One relocation before anything is minted or
-// set, and every downstream leg — hosted login, session, federation begin and
-// callback — shares one origin by construction.
-//
-// The target is trusted config (never the request), so this can relocate but
-// not open-redirect. Fail-closed: a blank issuer, an unparsable issuer, or an
-// issuer the resolver does not map to ITSELF (a miswritten fold that would
-// ping-pong browsers) all answer "no relocation" — the pre-hop behaviour.
-func issuerRelocation(c *zip.Ctx) (string, bool) {
+// issuerValues is every issuer this IAM can name: the pinned default and each
+// brand's.
+func issuerValues() []string {
 	r := activeResolver.Load()
 	if r == nil {
 		r = envIssuerResolver()
 	}
 	if r == nil {
+		return nil
+	}
+	out := make([]string, 0, len(r.byHost)+1)
+	if r.def != "" {
+		out = append(out, r.def)
+	}
+	for _, v := range r.byHost {
+		out = append(out, v)
+	}
+	return out
+}
+
+// signinOriginsTerminal refuses a map under which a sign-in relocated to an origin
+// would be sent on again.
+//
+// signinRelocation moves an authorize request to its host's origin and will not
+// move it a second time, so a request reaching a non-terminal origin begins there:
+// the binding is set on that host, host-only, and the IdP is handed the NEXT
+// origin's callback, where the cookie is never presented. Every social sign-in
+// through that host would fail closed with "the federation session could not be
+// verified" — at a person's first attempt, not at deploy.
+//
+// The origins judged are every one a host can resolve to: each the map names, and
+// each a host the map does not name falls to through its issuer.
+func signinOriginsTerminal(r *signinMap) error {
+	via := map[string]string{} // origin -> a host that resolves to it, for the error
+	for host, origin := range r.byHost {
+		via[origin] = host
+	}
+	for _, iss := range issuerValues() {
+		u, err := url.Parse(iss)
+		if err != nil || u.Host == "" {
+			continue
+		}
+		if o := federationOriginFor(r, u.Host); via[o] == "" {
+			via[o] = u.Host
+		}
+	}
+	for origin, host := range via {
+		u, err := url.Parse(origin)
+		if err != nil || u.Host == "" {
+			return fmt.Errorf("IAM_FEDERATION_ORIGIN_MAP: %s signs in at %q, which is not an origin", host, origin)
+		}
+		if next := federationOriginFor(r, u.Host); next != origin {
+			return fmt.Errorf(
+				"IAM_FEDERATION_ORIGIN_MAP sends %s to %s, which signs in at %s: the "+
+					"hanzo_fed browser-binding cookie is host-only, so a sign-in begun at %s "+
+					"would set it there while the IdP returns to %s, and every social sign-in "+
+					"would fail closed. Map %s to itself",
+				host, origin, next, u.Host, next, u.Host)
+		}
+	}
+	return nil
+}
+
+// resolveFederationOrigin is THE seam the sign-in origin routes through: the IdP
+// callback, the 2FA page and the authorize relocation all read it. host is the
+// request host as zip reads it, so a client can at most select a configured
+// origin. Unconfigured, it is the host's issuer.
+func resolveFederationOrigin(host string) string {
+	r := activeFederationResolver.Load()
+	if r == nil {
+		r = envFederationResolver()
+	}
+	if r == nil {
+		return resolveIssuer(host)
+	}
+	return federationOriginFor(r, host)
+}
+
+// atIssuer reports whether the request arrived on its issuer's own host. A sign-in
+// origin that is not (hanzo.ai, signing in for hanzo.id) holds a session of its
+// own, which the issuer's sign-out does not end, so authorize there never answers
+// silently from it: the page asks "continue as" first.
+func atIssuer(c *zip.Ctx) bool {
+	if activeResolver.Load() == nil && envIssuerResolver() == nil {
+		return true // nothing pinned: a hand-built server answers as it always has
+	}
+	host := strings.TrimSpace(c.Host())
+	u, err := url.Parse(resolveIssuer(host))
+	return err == nil && u.Host != "" && sameAddress(u.Host, host)
+}
+
+// sameAddress compares two Host values as a browser addresses them: case aside,
+// and with https's default port the same as none. A trailing dot is a different
+// host to a browser's cookie jar, so it stays significant.
+func sameAddress(a, b string) bool {
+	trim := func(h string) string { return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(h)), ":443") }
+	return trim(a) == trim(b)
+}
+
+// signinRelocation reports whether an authorize request arrived on a host other
+// than its sign-in origin, and if so, the absolute URL of the SAME request there.
+//
+// A browser flow leaves host-only cookies behind at every step — the browser
+// binding on the federation begin, the session on a password login — while the IdP
+// callback lives at the sign-in origin. Serving authorize on an alias host
+// therefore strands those cookies where nothing returns: measured live, an
+// authorize on iam.hanzo.ai set the binding on iam.hanzo.ai and registered the
+// Google callback at hanzo.id, so every social sign-in begun there failed closed
+// with "the federation session could not be verified". One relocation before
+// anything is minted or set, and every downstream leg — hosted login, session,
+// federation begin and callback — shares one origin by construction. A host that
+// is its own sign-in origin (hanzo.ai under the map above) is answered in place.
+//
+// The target is trusted config (never the request), so this can relocate but
+// not open-redirect. Fail-closed: no issuer pinned at all, an unparsable origin,
+// or an origin that would send the request on again (a miswritten map that would
+// ping-pong browsers) all answer "no relocation".
+func signinRelocation(c *zip.Ctx) (string, bool) {
+	if activeResolver.Load() == nil && envIssuerResolver() == nil {
 		// Nothing pinned (a hand-built server; a real boot hard-errors first).
 		// The fixed fallback is a fail-closed placeholder, not an address to
 		// steer browsers to.
 		return "", false
 	}
-	// The FULL host, port included. issuerFor normalizes for its own map lookup,
-	// so a brand still resolves from "lux.id:443"; passing the stripped host
-	// instead meant the dev branch could never see a port and relocated a request
-	// on 127.0.0.1:38080 to 127.0.0.1 — a port nothing serves, reached by a 307
-	// the browser follows before anything says why.
+	// The FULL host, port included. The resolvers normalize for their own map
+	// lookups, so a brand still resolves from "lux.id:443"; passing the stripped
+	// host instead meant the dev branch could never see a port and relocated a
+	// request on 127.0.0.1:38080 to 127.0.0.1 — a port nothing serves, reached by
+	// a 307 the browser follows before anything says why.
 	host := strings.TrimSpace(c.Host())
-	iss := r.issuerFor(host)
-	if host == "" || iss == "" {
+	origin := resolveFederationOrigin(host)
+	if host == "" || origin == "" {
 		return "", false
 	}
-	// Already answering ON the issuer's own address: nothing to relocate. Compare
-	// the address the request ARRIVED on against the issuer's, rather than
-	// rebuilding one with a hardcoded scheme — "https://"+host is false for every
-	// http dev issuer, so the short-circuit never fired and every request
-	// relocated to itself minus its port.
-	if u, err := url.Parse(iss); err == nil && strings.EqualFold(u.Host, host) {
-		return "", false
-	}
-	u, err := url.Parse(iss)
+	u, err := url.Parse(origin)
 	if err != nil || u.Host == "" {
 		return "", false
 	}
-	if r.issuerFor(u.Host) != iss {
+	// Already answering ON the origin's own address: nothing to relocate. Compare
+	// the address the request ARRIVED on against the origin's, rather than
+	// rebuilding one with a hardcoded scheme — "https://"+host is false for every
+	// http dev issuer, so the short-circuit never fired and every request
+	// relocated to itself minus its port.
+	if sameAddress(u.Host, host) {
 		return "", false
 	}
-	return iss + c.Fiber().OriginalURL(), true
+	if resolveFederationOrigin(u.Host) != origin {
+		return "", false
+	}
+	return origin + c.Fiber().OriginalURL(), true
 }

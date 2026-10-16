@@ -78,15 +78,16 @@ type authorizeRequest struct {
 // refused where the person can see it rather than being bounced onwards.
 func authorizeHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
-		// A sign-in must run AT its brand's issuer, because everything a flow
+		// A sign-in must run AT its sign-in origin, because everything a flow
 		// sets along the way — the hanzo_fed browser binding, the session — is a
-		// host-only cookie, while the IdP callback and `iss` are pinned to the
-		// issuer. Answering on an alias host (iam.hanzo.ai, www.zoolabs.id, any
-		// host the map folds) strands those cookies and social sign-in fails
-		// closed at the callback. So an alias is answered with the same request
-		// relocated to the issuer, before anything is minted or set; 307 keeps
-		// the method. See issuerRelocation for the fail-closed guards.
-		if loc, ok := issuerRelocation(c); ok {
+		// host-only cookie, while the IdP callback is pinned to that origin.
+		// Answering on an alias host (iam.hanzo.ai, www.zoolabs.id, any host the
+		// map folds) strands those cookies and social sign-in fails closed at the
+		// callback. So an alias is answered with the same request relocated to
+		// the origin, before anything is minted or set; 307 keeps the method. A
+		// host that is its own sign-in origin (hanzo.ai) is answered in place.
+		// See signinRelocation for the fail-closed guards.
+		if loc, ok := signinRelocation(c); ok {
 			return c.Redirect(307, loc)
 		}
 		ctx := c.Context()
@@ -154,10 +155,21 @@ func authorizeHandler(db orm.DB) zip.Handler {
 
 		// SINGLE SIGN-ON. A live session answers the request outright — this is
 		// the branch that means "log in once at the issuer and every other app
-		// already knows you". It is skipped only when the client asked for a
-		// screen (prompt=login / select_account), and its refusals are the OIDC
-		// error codes prompt=none is owed.
-		if !p.interactive() {
+		// already knows you". It is skipped when the client asked for a screen
+		// (prompt=login / select_account), and its refusals are the OIDC error
+		// codes prompt=none is owed.
+		//
+		// It is also skipped on a sign-in origin that is not the issuer's own host
+		// (hanzo.ai signing in for hanzo.id). That origin holds a session of its
+		// own, and the issuer's sign-out ends the issuer's session, not that one,
+		// so answering from it would sign someone back in after they signed out.
+		// The hosted page there asks "continue as" instead; prompt=none, which
+		// allows no page, is refused.
+		if !p.interactive() && !atIssuer(c) {
+			if p.none {
+				return authorizeErrorRedirect(c, q, errLoginRequired, "no session at this sign-in origin may answer without the person")
+			}
+		} else if !p.interactive() {
 			code, refusal := silentGrant(c, db, app, q)
 			if refusal == "" {
 				return authorizeCodeRedirect(c, q, code)
@@ -204,9 +216,10 @@ func hostedLoginTarget(app *schema.Application) string {
 	if app.SigninUrl != "" {
 		return app.SigninUrl
 	}
-	// Relative on purpose. issuerRelocation has already moved a request that
-	// arrived on an alias to its issuer, before anything is minted or set, so by
-	// here the host IS the issuer and this resolves there.
+	// Relative on purpose. signinRelocation has already moved a request that
+	// arrived on an alias to its sign-in origin, before anything is minted or
+	// set, so by here the host IS that origin and this resolves there: on hanzo.id
+	// the id SPA, on hanzo.ai the site's own page, which the edge serves at this path.
 	return hostedLoginPath
 }
 

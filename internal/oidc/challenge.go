@@ -127,7 +127,11 @@ func TakeChallenge(ctx context.Context, db orm.DB, id, kind string, now time.Tim
 // its beego session: a host-only, HttpOnly cookie the browser returns on the
 // finishing request. Script cannot read it; it is bound to the ceremony's own
 // short life.
-const challengeCookie = "hanzo_challenge"
+//
+// `__Host-`, as the session and the federation binding are: a sign-in origin with
+// sibling hosts (hanzo.ai) would otherwise let one of them plant a challenge id of
+// its own, scoped to a longer path, ahead of the real one in every later request.
+const challengeCookie = "__Host-hanzo_challenge"
 
 // SetChallenge writes the challenge id for the finishing request to return.
 // HttpOnly keeps script out of it; SameSite=Lax lets the portal's own POST carry

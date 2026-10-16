@@ -359,35 +359,26 @@ func discoveryIssuer(t *testing.T, app *zip.App, host string) (issuer, jwksURI s
 	return issuer, jwksURI
 }
 
-// The federation origin is a DIFFERENT value from the issuer, and the split is
-// the whole point: the issuer must stay per-brand (an RP pins `iss`), while the
-// IdP callback must be one org-constant string because a social provider holds
-// ONE OAuth client with a FIXED redirect_uri list. Braided, every brand sent a
-// redirect_uri the provider had never seen and social login failed everywhere.
-// A cross-host fold is REFUSED AT BOOT, because the browser could not complete a
-// sign-in against it.
-//
-// This test used to assert that iam.hanzo.ai's callback folds onto hanzo.id — the
-// stated purpose of the split, so a provider console holds one redirect_uri per org
-// instead of one per brand host. The separation of issuer from callback origin is
-// right, and the issuer half still holds and is still asserted below. The fold half
-// cannot work yet: beginFederation sets the `hanzo_fed` anti-forgery cookie on the
-// host that served it with NO Domain attribute (host-only, deliberately — it is the
-// login-CSRF defence), and the callback refuses an empty cookie with no exemption.
-// Set on iam.hanzo.ai, it is never presented to hanzo.id, so every social sign-in on
-// that brand would fail closed — at a human's first login attempt, not at deploy,
-// with an error naming the symptom rather than the config.
-//
-// Failing to boot is the honest answer, matching how this file already treats a
-// misconfigured issuer. Completing the feature means the begin leg redirecting to
-// the federation origin so the cookie is written THERE first; when that lands, this
-// test flips back to asserting the fold.
-func TestFederationOriginCrossHostFoldIsRefusedAtBoot(t *testing.T) {
-	t.Setenv("IAM_ISSUER", "https://hanzo.id")
-	t.Setenv("IAM_ISSUER_MAP", `{"hanzo.id":"https://hanzo.id","lux.id":"https://lux.id","iam.hanzo.ai":"https://iam.hanzo.ai"}`)
-	t.Setenv("IAM_FEDERATION_ORIGIN", "https://hanzo.id")
-	t.Setenv("IAM_FEDERATION_ORIGIN_MAP", `{"hanzo.id":"https://hanzo.id","iam.hanzo.ai":"https://hanzo.id","lux.id":"https://lux.id"}`)
+// installFederationResolver swaps a sign-in origin map built from mapJSON into the
+// process for the duration of a test — the activeFederationResolver seam
+// InitFederationResolver drives at boot — restoring the prior one on cleanup.
+func installFederationResolver(t *testing.T, mapJSON string) {
+	t.Helper()
+	r, err := newFederationResolver(mapJSON)
+	if err != nil {
+		t.Fatalf("newFederationResolver(%q): %v", mapJSON, err)
+	}
+	prev := activeFederationResolver.Swap(r)
+	t.Cleanup(func() { activeFederationResolver.Store(prev) })
+}
 
+// bootFederation runs InitFederationResolver over (issuer default, issuer map,
+// sign-in map) as a boot would, restoring both resolvers afterwards.
+func bootFederation(t *testing.T, issuer, issuerMap, signinMap string) error {
+	t.Helper()
+	t.Setenv("IAM_ISSUER", issuer)
+	t.Setenv("IAM_ISSUER_MAP", issuerMap)
+	t.Setenv("IAM_FEDERATION_ORIGIN_MAP", signinMap)
 	prevIss, prevFed := activeResolver.Load(), activeFederationResolver.Load()
 	t.Cleanup(func() { activeResolver.Store(prevIss); activeFederationResolver.Store(prevFed) })
 	activeResolver.Store(nil)
@@ -395,64 +386,162 @@ func TestFederationOriginCrossHostFoldIsRefusedAtBoot(t *testing.T) {
 	if err := InitIssuerResolver(); err != nil {
 		t.Fatalf("InitIssuerResolver: %v", err)
 	}
+	return InitFederationResolver()
+}
 
-	err := InitFederationResolver()
-	if err == nil {
-		t.Fatal("InitFederationResolver accepted a cross-host fold; the hanzo_fed cookie " +
-			"is host-only, so every social sign-in on iam.hanzo.ai would fail closed")
+// The sign-in origin is a DIFFERENT value from the issuer, and the split is the
+// whole point: the issuer must stay per-brand (an RP pins `iss`), while the IdP
+// callback must be a string the social provider already holds. A fold of one
+// host onto another's origin is reachable because authorize relocates the
+// request to the origin BEFORE beginFederation sets the host-only binding cookie,
+// so the cookie is written where the IdP returns. What is refused at boot is a
+// fold onto an origin that would send the request on again: the relocation will
+// not move it twice, so the begin runs on the middle host and the cookie is
+// stranded there.
+func TestFederationOriginFoldBootsOnlyOntoATerminalOrigin(t *testing.T) {
+	const issuers = `{"hanzo.id":"https://hanzo.id","lux.id":"https://lux.id","iam.hanzo.ai":"https://iam.hanzo.ai"}`
+
+	t.Run("onto a terminal origin boots", func(t *testing.T) {
+		if err := bootFederation(t, "https://hanzo.id", issuers, `{"iam.hanzo.ai":"https://hanzo.id"}`); err != nil {
+			t.Fatalf("a fold onto a terminal origin must boot: %v", err)
+		}
+		if got := resolveFederationOrigin("iam.hanzo.ai"); got != "https://hanzo.id" {
+			t.Errorf("iam.hanzo.ai signs in at %q, want the fold https://hanzo.id", got)
+		}
+		// The ISSUER half of the split is untouched and still per-brand: that is
+		// what an RP pins.
+		if got := resolveIssuer("iam.hanzo.ai"); got != "https://iam.hanzo.ai" {
+			t.Errorf("issuer for iam.hanzo.ai = %q, want per-brand https://iam.hanzo.ai", got)
+		}
+	})
+
+	t.Run("onto an origin that sends it on is refused", func(t *testing.T) {
+		// hanzo.id signs in at pars.id, so a request relocated from iam.hanzo.ai to
+		// hanzo.id would begin there and hand the IdP pars.id's callback.
+		err := bootFederation(t, "https://hanzo.id", issuers, `{"iam.hanzo.ai":"https://hanzo.id","hanzo.id":"https://pars.id"}`)
+		if err == nil {
+			t.Fatal("InitFederationResolver accepted a fold onto a non-terminal origin; the binding " +
+				"cookie is host-only, so every social sign-in through iam.hanzo.ai would fail closed")
+		}
+		for _, want := range []string{"iam.hanzo.ai", "hanzo_fed", "host-only"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("boot error must name %q so the operator can act on it; got: %v", want, err)
+			}
+		}
+		// The resolver must NOT be installed on a refusal — a half-applied config is
+		// how a boot guard turns into the outage it was meant to prevent.
+		if activeFederationResolver.Load() != nil {
+			t.Error("a refused federation config was installed anyway")
+		}
+		if got := resolveFederationOrigin("iam.hanzo.ai"); got != "https://iam.hanzo.ai" {
+			t.Errorf("refused, iam.hanzo.ai signs in at %q, want its issuer https://iam.hanzo.ai", got)
+		}
+	})
+}
+
+// Naming an issuer's host moves the hosts that fold into that issuer with it.
+// iam.hanzo.ai and auth.hanzo.ai are not named, and their issuer is hanzo.id: if
+// they kept signing in at hanzo.id while hanzo.id signs in at hanzo.ai, a begin on
+// them would set the binding there and hand the IdP hanzo.id's callback, which no
+// request returns to. So they follow hanzo.id to hanzo.ai.
+func TestFederationOriginAliasesFollowTheirIssuer(t *testing.T) {
+	if err := bootFederation(t, "https://hanzo.id", testIssuerMap, `{"hanzo.id":"https://hanzo.ai","hanzo.ai":"https://hanzo.ai"}`); err != nil {
+		t.Fatalf("boot: %v", err)
 	}
-	for _, want := range []string{"iam.hanzo.ai", "hanzo_fed", "host-only"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("boot error must name %q so the operator can act on it; got: %v", want, err)
+	for host, want := range map[string]string{
+		"hanzo.id":        "https://hanzo.ai",
+		"hanzo.ai":        "https://hanzo.ai",
+		"iam.hanzo.ai":    "https://hanzo.ai",
+		"unknown.example": "https://hanzo.ai",
+		"lux.id":          "https://lux.id",
+		"iam.lux.network": "https://lux.id",
+	} {
+		if got := resolveFederationOrigin(host); got != want {
+			t.Errorf("sign-in origin for %s = %q, want %q", host, got, want)
 		}
 	}
-	// The resolver must NOT be installed on a refusal — a half-applied config is
-	// how a boot guard turns into the outage it was meant to prevent.
-	if activeFederationResolver.Load() != nil {
-		t.Error("a refused federation config was installed anyway")
-	}
-	// The ISSUER half of the split is untouched and still per-brand: that is what an
-	// RP pins, and it is correct today.
-	if got := resolveIssuer("iam.hanzo.ai"); got != "https://iam.hanzo.ai" {
-		t.Errorf("issuer for iam.hanzo.ai = %q, want per-brand https://iam.hanzo.ai", got)
+	if got := resolveIssuer("hanzo.ai"); got != "https://hanzo.id" {
+		t.Errorf("issuer for hanzo.ai = %q; the issuer does not move", got)
 	}
 }
 
-// A same-host map changes no origin, so it is a no-op and must still boot — the
-// guard rejects unreachable folds, not the feature's existence.
-func TestFederationOriginSameHostMapBoots(t *testing.T) {
-	t.Setenv("IAM_ISSUER", "https://hanzo.id")
-	t.Setenv("IAM_ISSUER_MAP", `{"hanzo.id":"https://hanzo.id","lux.id":"https://lux.id"}`)
-	t.Setenv("IAM_FEDERATION_ORIGIN", "https://hanzo.id")
-	t.Setenv("IAM_FEDERATION_ORIGIN_MAP", `{"hanzo.id":"https://hanzo.id","lux.id":"https://lux.id"}`)
-
-	prevIss, prevFed := activeResolver.Load(), activeFederationResolver.Load()
-	t.Cleanup(func() { activeResolver.Store(prevIss); activeFederationResolver.Store(prevFed) })
-	activeResolver.Store(nil)
-	activeFederationResolver.Store(nil)
-	if err := InitIssuerResolver(); err != nil {
-		t.Fatalf("InitIssuerResolver: %v", err)
+// A brand signs people in on its own site and keeps its issuer: the host the map
+// names is its own sign-in origin, and every host it does not name signs in at its
+// issuer exactly as before, so naming hanzo.ai moves no other brand.
+func TestFederationOriginMapNamesOneHost(t *testing.T) {
+	installIssuerResolver(t, "https://hanzo.id", testIssuerMap)
+	installFederationResolver(t, `{"hanzo.ai":"https://hanzo.ai"}`)
+	for host, want := range map[string]string{
+		"hanzo.ai":       "https://hanzo.ai",
+		"HANZO.AI:443":   "https://hanzo.ai",
+		"hanzo.id":       "https://hanzo.id",
+		"iam.hanzo.ai":   "https://hanzo.id",
+		"lux.id":         "https://lux.id",
+		"id.zoo.network": "https://id.zoo.network",
+	} {
+		if got := resolveFederationOrigin(host); got != want {
+			t.Errorf("sign-in origin for %s = %q, want %q", host, got, want)
+		}
 	}
-	if err := InitFederationResolver(); err != nil {
-		t.Fatalf("a same-host federation map must boot: %v", err)
+	if got := resolveIssuer("hanzo.ai"); got != "https://hanzo.id" {
+		t.Errorf("issuer for hanzo.ai = %q; signing in on hanzo.ai must not move `iss` off https://hanzo.id", got)
+	}
+	if err := signinOriginsTerminal(activeFederationResolver.Load()); err != nil {
+		t.Errorf("a self-mapped host must be terminal: %v", err)
+	}
+}
+
+// A sign-in origin is handed to an IdP that compares it byte for byte, after the
+// callback path is appended to it. So there is one spelling — https, a host, a
+// port only when it is not 443 — and anything that would put a path, a query, a
+// credential or a fragment into the callback is refused.
+func TestFederationOriginHasOneSpelling(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://hanzo.ai":       "https://hanzo.ai",
+		"https://hanzo.ai/":      "https://hanzo.ai",
+		"https://HANZO.AI":       "https://hanzo.ai",
+		"https://hanzo.ai.":      "https://hanzo.ai",
+		"https://hanzo.ai:443":   "https://hanzo.ai",
+		"https://hanzo.ai:8443":  "https://hanzo.ai:8443",
+		" https://test.hanzo.ai": "https://test.hanzo.ai",
+	} {
+		r, err := newFederationResolver(`{"hanzo.ai":"` + in + `"}`)
+		if err != nil {
+			t.Errorf("%q refused: %v", in, err)
+			continue
+		}
+		if got := r.byHost["hanzo.ai"]; got != want {
+			t.Errorf("%q read as %q, want %q", in, got, want)
+		}
+	}
+	for _, in := range []string{
+		"http://hanzo.ai", "https://hanzo.ai/x", "https://u:p@hanzo.ai", "https://hanzo.ai?q=1",
+		"https://hanzo.ai#f", "hanzo.ai", "https://", "https://hanzo.ai?",
+	} {
+		if _, err := newFederationResolver(`{"hanzo.ai":"` + in + `"}`); err == nil {
+			t.Errorf("%q accepted as a sign-in origin", in)
+		}
+	}
+	if _, err := newFederationResolver(`{"hanzo.ai":"https://hanzo.ai","HANZO.AI":"https://test.hanzo.ai"}`); err == nil {
+		t.Error("one host named twice with two origins was accepted; which one wins would differ per pod")
+	}
+}
+
+// The default is gone, because it moved every brand the map did not name: set, it
+// is refused rather than silently ignored.
+func TestFederationOriginDefaultIsRefused(t *testing.T) {
+	t.Setenv("IAM_FEDERATION_ORIGIN", "https://hanzo.id")
+	err := bootFederation(t, "https://hanzo.id", testIssuerMap, `{"hanzo.ai":"https://hanzo.ai"}`)
+	if err == nil || !strings.Contains(err.Error(), "IAM_FEDERATION_ORIGIN_MAP") {
+		t.Fatalf("IAM_FEDERATION_ORIGIN must be refused naming the map; got %v", err)
 	}
 	if got := resolveFederationOrigin("lux.id"); got != "https://lux.id" {
-		t.Errorf("lux federation origin = %q, want https://lux.id", got)
+		t.Errorf("refused, lux.id signs in at %q, want its issuer", got)
 	}
 }
 
 func TestFederationOriginUnsetFollowsIssuer(t *testing.T) {
-	t.Setenv("IAM_ISSUER", "https://hanzo.id")
-	t.Setenv("IAM_ISSUER_MAP", `{"lux.id":"https://lux.id"}`)
-	t.Setenv("IAM_FEDERATION_ORIGIN", "")
-	t.Setenv("IAM_FEDERATION_ORIGIN_MAP", "")
-
-	activeResolver.Store(nil)
-	activeFederationResolver.Store(nil)
-	if err := InitIssuerResolver(); err != nil {
-		t.Fatalf("InitIssuerResolver: %v", err)
-	}
-	if err := InitFederationResolver(); err != nil {
+	if err := bootFederation(t, "https://hanzo.id", `{"lux.id":"https://lux.id"}`, ""); err != nil {
 		t.Fatalf("InitFederationResolver on empty config: %v", err)
 	}
 	for _, h := range []string{"lux.id", "hanzo.id", "unknown.example"} {
@@ -462,14 +551,16 @@ func TestFederationOriginUnsetFollowsIssuer(t *testing.T) {
 	}
 }
 
-// A non-https or malformed pin must fail the BOOT, not degrade: this value is
-// handed to an external IdP.
-func TestFederationOriginBadConfigFailsBoot(t *testing.T) {
-	t.Setenv("IAM_FEDERATION_ORIGIN", "http://not-https.example")
-	t.Setenv("IAM_FEDERATION_ORIGIN_MAP", "")
-	activeFederationResolver.Store(nil)
-	if err := InitFederationResolver(); err == nil {
-		t.Error("InitFederationResolver accepted a non-https origin; want a hard boot error")
+// A malformed map is refused, not half-read: this value is handed to an external
+// IdP.
+func TestFederationOriginBadConfigIsRefused(t *testing.T) {
+	for _, m := range []string{`{"hanzo.ai":"http://not-https.example"}`, `{not json`, `{"":"https://hanzo.ai"}`} {
+		if err := bootFederation(t, "https://hanzo.id", testIssuerMap, m); err == nil {
+			t.Errorf("InitFederationResolver accepted %s", m)
+		}
+		if activeFederationResolver.Load() != nil {
+			t.Errorf("a refused map %s was installed", m)
+		}
 	}
 }
 

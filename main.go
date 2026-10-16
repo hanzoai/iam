@@ -108,16 +108,6 @@ func serve(ctx context.Context, storeBackend, dbPath, sqlAddr, zapAddr, httpAddr
 		return fmt.Errorf("serve: %w", err)
 	}
 
-	// Pin the ORG-constant origin external IdPs call back to. Separate from the
-	// issuer on purpose: the issuer must vary per brand (an RP pins `iss`), while
-	// a social provider holds ONE OAuth client per org with a FIXED redirect_uri
-	// list — so a per-brand callback is one the provider has never seen and it
-	// answers redirect_uri_mismatch. Unset keeps the pre-split behaviour (the
-	// federation origin follows the issuer).
-	if err := oidc.InitFederationResolver(); err != nil {
-		return fmt.Errorf("serve: %w", err)
-	}
-
 	// NO DELIVERY TRANSPORT IS BOUND HERE, and the line below is the whole reason.
 	//
 	// Everything code-shaped reads one predicate — otp.DeliveryConfigured, which

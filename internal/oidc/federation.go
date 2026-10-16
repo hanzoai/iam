@@ -57,7 +57,17 @@ const PathMfaVerify = "/login/mfa"
 
 // fedCookieName is the per-transaction anti-forgery cookie the begin leg sets and
 // the callback checks — the browser binding that defeats login-CSRF.
-const fedCookieName = "hanzo_fed"
+//
+// The `__Host-` prefix is what makes it a binding, for the reason the session
+// cookie carries one (sessions.CookieName): a browser stores a `__Host-` cookie
+// only Secure, at Path=/ and with no Domain, so no sibling host can set it. A
+// sign-in origin with siblings (hanzo.ai, whose *.hanzo.ai hosts include
+// published sites) would otherwise let one of them Set-Cookie `hanzo_fed=<the
+// attacker's own transaction>; Domain=hanzo.ai`, send the victim to the
+// attacker's callback URL, and have the victim's browser complete the attacker's
+// sign-in — login CSRF. Path=/ is the prefix's price: the cookie rides every
+// request to the sign-in origin for the ten minutes it lives, HttpOnly.
+const fedCookieName = "__Host-hanzo_fed"
 
 // fedStateTTL bounds how long a federation transaction (and its cookie) is
 // redeemable. Short, because it only has to survive one IdP round-trip.
@@ -70,7 +80,16 @@ const fedStateTTL = 10 * time.Minute
 // half-working POST path, form_post support is a deliberate future change (it needs
 // SameSite=None + its own CSRF analysis). The callback self-authenticates via the
 // single-use state + the browser cookie.
+//
+// The sign-in origins are judged here, where the callback they name is
+// registered: it is the one place `iam serve` and a host that embeds IAM (cloud)
+// both pass. A map that would strand the browser binding is refused and said so,
+// and every host keeps signing in at its issuer, so a bad value costs the move to
+// a sign-in origin and never the process that answers every identity request.
 func routeFederation(r *zip.Group, db orm.DB) {
+	if err := InitFederationResolver(); err != nil {
+		log.Printf("iam: sign-in origins refused, every host signs in at its issuer: %v", err)
+	}
 	r.Raw(http.MethodGet, PathFederationCallback, federationCallbackHandler(db))
 }
 
@@ -677,11 +696,11 @@ func federationCallbackURL(c *zip.Ctx) string {
 }
 
 // federationBaseURL is the pinned public origin the IdP callback is registered
-// under — the SAME per-brand issuer the tokens carry, resolved through the ONE
-// issuer resolver (issuer.go) keyed on the TRUSTED request host (c.Host(), which
-// ignores X-Forwarded-Host). So a brand's federation callback is registered at
-// that brand's pinned origin, header-immune and never steered to an attacker
-// origin. See resolveIssuer for the fail-closed resolution order.
+// under — the request host's sign-in origin (issuer.go), keyed on the TRUSTED
+// request host (c.Host(), which ignores X-Forwarded-Host). It is the host's issuer
+// unless IAM_FEDERATION_ORIGIN_MAP names another, as it does to sign Hanzo in on
+// hanzo.ai while tokens still say hanzo.id. Header-immune, never steered to an
+// attacker origin. See resolveFederationOrigin for the resolution order.
 func federationBaseURL(c *zip.Ctx) string {
 	return resolveFederationOrigin(c.Host())
 }
@@ -746,12 +765,13 @@ func fedTx(st *schema.FederationState) string {
 
 // setBindCookie writes the per-transaction anti-forgery cookie: HttpOnly + Secure,
 // SameSite=Lax (so it IS sent on the IdP's top-level GET back to the callback),
-// scoped to the callback path, expiring with the transaction.
+// host-only at Path=/ as its `__Host-` name requires, expiring with the
+// transaction.
 func setBindCookie(c *zip.Ctx, value string) {
 	c.Fiber().Cookie(&fiber.Cookie{
 		Name:     fedCookieName,
 		Value:    value,
-		Path:     PathFederationCallback,
+		Path:     "/",
 		MaxAge:   int(fedStateTTL / time.Second),
 		Secure:   true,
 		HTTPOnly: true,
@@ -768,7 +788,7 @@ func clearBindCookie(c *zip.Ctx) {
 	c.Fiber().Cookie(&fiber.Cookie{
 		Name:     fedCookieName,
 		Value:    "",
-		Path:     PathFederationCallback,
+		Path:     "/",
 		MaxAge:   -1,
 		Secure:   true,
 		HTTPOnly: true,

@@ -80,6 +80,47 @@ a request line reaches access logs) · `/v1/iam/scim/v2/Users`. PKCE `S256` alwa
 Brands set `serverUrl`: hanzo→iam.hanzo.ai, lux→lux.id, zoo→zoo.id,
 bootnode→id.bootno.de, pars→pars.id (white-label by domain).
 
+## Sign-in origins — where a person signs in, apart from the issuer
+
+`iss` is what a relying party pins; the sign-in origin is the address a person
+sees: the authorize hop, the IdP callback and `/login/mfa`. Google shows the
+callback's domain until its brand is verified, which is why hanzo.ai's Google
+button said "to continue to hanzo.id". `IAM_FEDERATION_ORIGIN_MAP` (`internal/oidc/issuer.go`)
+names hosts that sign in somewhere other than their issuer:
+
+    IAM_FEDERATION_ORIGIN_MAP={"hanzo.ai":"https://hanzo.ai","www.hanzo.ai":"https://hanzo.ai"}
+
+- A named host's authorize is answered in place (or relocated, 307, to its
+  origin), the binding cookie is set there, the IdP is handed
+  `<origin>/v1/iam/oauth/callback`, and tokens still say `iss=https://hanzo.id`
+  (`TestFederation_SigninHostRunsTheLegAndKeepsTheIssuer` redeems on hanzo.ai and
+  fails if `tokenIssuer` ever reads the sign-in origin).
+- An unnamed host follows its ISSUER host's entry, else its issuer: naming
+  hanzo.id moves iam.hanzo.ai and auth.hanzo.ai with it. Unset is the old behaviour.
+- One spelling: `https://host[:port]`, lowercased, no `:443`, no path, query,
+  user or fragment. `IAM_FEDERATION_ORIGIN` (a default) is refused: it moved
+  every brand the map did not name.
+- Every reachable origin must be terminal. A map that is not is refused at
+  route registration (`routeFederation`), LOGGED, and every host signs in at its
+  issuer; it never stops the process (cloud runs `strategy: Recreate`).
+- Off its issuer's host, authorize never answers silently from a session: that
+  origin's `__Host-hanzo_session` is not ended by the issuer's sign-out, so the
+  page asks "continue as" and `prompt=none` is `login_required`. Cross-origin
+  sign-out (ending hanzo.ai's session from hanzo.id and the reverse) is not built.
+- The binding, challenge and remember cookies are `__Host-` (`__Host-hanzo_fed`,
+  `__Host-hanzo_challenge`, `__Host-hanzo_mfa_remember`), so no sibling of a
+  sign-in origin with siblings (*.hanzo.ai) can plant one.
+- Every origin in the map must be on the Google OAuth client and the GitHub App
+  (`hanzo-platform`) BEFORE the map ships; each refuses a redirect_uri it lacks.
+  The edge must route the host's `/v1/iam/oauth/{authorize,callback,federation/mfa}`
+  to IAM (universe `charts/app/values/hanzo/cloud.yaml` `iam-signin`) and serve
+  `/login/mfa` and the hosted login (`/login/oauth/authorize`) as pages.
+- In cloud, `zip.Ctx.Host()` honours `X-Forwarded-Host` (`TrustProxy`, private
+  ranges trusted; the ingress sets it before an `api-host` rewrite), so the
+  "header-immune" wording elsewhere in `issuer.go`, `token.go` and `webauthn.go` is
+  true of `iam serve` only. A caller can still only select a configured value, for
+  its own requests.
+
 ## A principal is `owner`/`name` — org and USERNAME, on every surface
 
 **The rule.** `owner` is the org. `name` is the USERNAME (`<name>` of
