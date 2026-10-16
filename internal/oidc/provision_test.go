@@ -168,7 +168,7 @@ func TestProvision_PersonalHappyPath(t *testing.T) {
 	ctx := context.Background()
 	seedUserIn(t, db, "landing", "dave", "dave@example.com")
 
-	out, err := provision(ctx, db, claim{owner: "landing", name: "dave", slug: "dave", display: "Dave", personal: true})
+	out, err := provision(ctx, db, claim{move: true, owner: "landing", name: "dave", slug: "dave", display: "Dave", personal: true})
 	if err != nil {
 		t.Fatalf("provision: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestProvision_FounderHoldsTheDefaultKey(t *testing.T) {
 	ctx := context.Background()
 	seedUserIn(t, db, "landing", "dave", "dave@example.com")
 
-	out, err := provision(ctx, db, claim{owner: "landing", name: "dave", slug: "dave", display: "Dave", personal: true})
+	out, err := provision(ctx, db, claim{move: true, owner: "landing", name: "dave", slug: "dave", display: "Dave", personal: true})
 	if err != nil {
 		t.Fatalf("provision: %v", err)
 	}
@@ -229,7 +229,7 @@ func TestProvision_FounderHoldsTheDefaultKey(t *testing.T) {
 		t.Fatalf("the secret speaks for %s/%s in %s, want dave/dave in dave", h.User.Owner, h.User.Name, h.Org)
 	}
 
-	again, err := provision(ctx, db, claim{owner: "dave", name: "dave", slug: "dave", display: "Dave", personal: true})
+	again, err := provision(ctx, db, claim{move: true, owner: "dave", name: "dave", slug: "dave", display: "Dave", personal: true})
 	if err != nil {
 		t.Fatalf("replay: %v", err)
 	}
@@ -246,14 +246,14 @@ func TestProvision_Idempotent(t *testing.T) {
 	ctx := context.Background()
 	seedUserIn(t, db, "landing", "dave", "dave@example.com")
 
-	first, err := provision(ctx, db, claim{owner: "landing", name: "dave", slug: "dave", display: "Dave", personal: true})
+	first, err := provision(ctx, db, claim{move: true, owner: "landing", name: "dave", slug: "dave", display: "Dave", personal: true})
 	if err != nil {
 		t.Fatalf("first provision: %v", err)
 	}
 
 	// Second call resolves the caller under its NEW identity (owner==name==dave),
 	// exactly as callerOf would after the re-key.
-	second, err := provision(ctx, db, claim{owner: "dave", name: "dave", slug: "dave", display: "Dave", personal: true})
+	second, err := provision(ctx, db, claim{move: true, owner: "dave", name: "dave", slug: "dave", display: "Dave", personal: true})
 	if err != nil {
 		t.Fatalf("second provision (replay): %v", err)
 	}
@@ -294,7 +294,7 @@ func TestProvision_AtomicRollbackAndRedrive(t *testing.T) {
 
 			// Inject the fault.
 			fdb := &faultyDB{DB: real, failOnPut: tc.step}
-			cl := claim{owner: "landing", name: "dave", slug: "dave", display: "Dave", personal: true}
+			cl := claim{move: true, owner: "landing", name: "dave", slug: "dave", display: "Dave", personal: true}
 			if _, err := provision(ctx, fdb, cl); err == nil {
 				t.Fatalf("step %d: expected provision to fail", tc.step)
 			}
@@ -343,12 +343,12 @@ func TestProvision_TenantIsolation(t *testing.T) {
 	seedUserIn(t, db, "landing", "alice", "alice@example.com")
 	seedUserIn(t, db, "landing", "mallory", "mallory@example.com")
 
-	if _, err := provision(ctx, db, claim{owner: "landing", name: "alice", slug: "acme", display: "Acme", personal: false}); err != nil {
+	if _, err := provision(ctx, db, claim{move: true, owner: "landing", name: "alice", slug: "acme", display: "Acme", personal: false}); err != nil {
 		t.Fatalf("alice provision: %v", err)
 	}
 
 	// Mallory tries to claim acme.
-	_, err := provision(ctx, db, claim{owner: "landing", name: "mallory", slug: "acme", display: "Acme", personal: false})
+	_, err := provision(ctx, db, claim{move: true, owner: "landing", name: "mallory", slug: "acme", display: "Acme", personal: false})
 	if err == nil {
 		t.Fatalf("mallory must not claim alice's org")
 	}
@@ -377,7 +377,7 @@ func TestProvision_ReservedRejected(t *testing.T) {
 	seedUserIn(t, db, "landing", "eve", "eve@example.com")
 
 	for _, slug := range []string{"admin", "built-in", "app"} {
-		_, err := provision(ctx, db, claim{owner: "landing", name: "eve", slug: slug, display: slug, personal: false})
+		_, err := provision(ctx, db, claim{move: true, owner: "landing", name: "eve", slug: slug, display: slug, personal: false})
 		ft, ok := err.(*fault)
 		if !ok || ft.status != 400 {
 			t.Fatalf("slug %q: want 400 reserved, got %v", slug, err)
@@ -420,7 +420,7 @@ func TestProvision_ResumeUnderAutocommit(t *testing.T) {
 	real := openTestDB(t)
 	ctx := context.Background()
 	seedUserIn(t, real, "landing", "dave", "dave@example.com")
-	cl := claim{owner: "landing", name: "dave", slug: "dave", display: "Dave", personal: true}
+	cl := claim{move: true, owner: "landing", name: "dave", slug: "dave", display: "Dave", personal: true}
 
 	// Autocommit (no rollback) + fault at the user-move write (Put #2).
 	faulty := &autocommitDB{DB: &faultyDB{DB: real, failOnPut: 2}}
@@ -468,7 +468,7 @@ func TestProvision_FounderFencesResume(t *testing.T) {
 
 	// Alice's onboard faults after the org write (autocommit → org persists, founder=alice).
 	faulty := &autocommitDB{DB: &faultyDB{DB: real, failOnPut: 2}}
-	if _, err := provision(ctx, faulty, claim{owner: "landing", name: "alice", slug: "acme", display: "Acme"}); err == nil {
+	if _, err := provision(ctx, faulty, claim{move: true, owner: "landing", name: "alice", slug: "acme", display: "Acme"}); err == nil {
 		t.Fatalf("expected Alice's provision to fault")
 	}
 	if org, _ := store.GetOrganizationByName(ctx, real, "acme"); org == nil {
@@ -476,7 +476,7 @@ func TestProvision_FounderFencesResume(t *testing.T) {
 	}
 
 	// Mallory tries to complete/claim Alice's half-provisioned org → refused.
-	_, err := provision(ctx, &autocommitDB{DB: real}, claim{owner: "landing", name: "mallory", slug: "acme", display: "Acme"})
+	_, err := provision(ctx, &autocommitDB{DB: real}, claim{move: true, owner: "landing", name: "mallory", slug: "acme", display: "Acme"})
 	if ft, ok := err.(*fault); !ok || ft.status != 409 {
 		t.Fatalf("mallory must be refused (409) on Alice's founded org, got %v", err)
 	}
@@ -485,7 +485,7 @@ func TestProvision_FounderFencesResume(t *testing.T) {
 	}
 
 	// Alice retries → resumes her own org.
-	if _, err := provision(ctx, &autocommitDB{DB: real}, claim{owner: "landing", name: "alice", slug: "acme", display: "Acme"}); err != nil {
+	if _, err := provision(ctx, &autocommitDB{DB: real}, claim{move: true, owner: "landing", name: "alice", slug: "acme", display: "Acme"}); err != nil {
 		t.Fatalf("alice must resume her own org, got %v", err)
 	}
 	if a, _ := store.GetUserByName(ctx, real, "acme", "alice"); a == nil || !a.IsAdmin {
@@ -501,11 +501,11 @@ func TestProvision_SecondOrgRefused(t *testing.T) {
 	ctx := context.Background()
 	seedUserIn(t, db, "landing", "dave", "dave@example.com")
 
-	if _, err := provision(ctx, db, claim{owner: "landing", name: "dave", slug: "dave", display: "Dave", personal: true}); err != nil {
+	if _, err := provision(ctx, db, claim{move: true, owner: "landing", name: "dave", slug: "dave", display: "Dave", personal: true}); err != nil {
 		t.Fatalf("first onboard: %v", err)
 	}
 	// Now admin of "dave"; founding "daveteam" must be refused.
-	_, err := provision(ctx, db, claim{owner: "dave", name: "dave", slug: "daveteam", display: "Dave Team"})
+	_, err := provision(ctx, db, claim{move: true, owner: "dave", name: "dave", slug: "daveteam", display: "Dave Team"})
 	if ft, ok := err.(*fault); !ok || ft.status != 409 {
 		t.Fatalf("founding a second org must be refused 409, got %v", err)
 	}
@@ -526,11 +526,11 @@ func TestProvision_StaleCredentialReplay(t *testing.T) {
 	ctx := context.Background()
 	seedUserIn(t, db, "landing", "dave", "dave@example.com")
 
-	if _, err := provision(ctx, db, claim{owner: "landing", name: "dave", slug: "dave", display: "Dave", personal: true}); err != nil {
+	if _, err := provision(ctx, db, claim{move: true, owner: "landing", name: "dave", slug: "dave", display: "Dave", personal: true}); err != nil {
 		t.Fatalf("first onboard: %v", err)
 	}
 	// Replay with the STALE pre-move owner ("landing") — dave now lives in "dave".
-	out, err := provision(ctx, db, claim{owner: "landing", name: "dave", slug: "dave", display: "Dave", personal: true})
+	out, err := provision(ctx, db, claim{move: true, owner: "landing", name: "dave", slug: "dave", display: "Dave", personal: true})
 	if err != nil {
 		t.Fatalf("stale-credential replay must converge, got %v", err)
 	}
@@ -560,7 +560,7 @@ func TestProvision_ConcurrentSameSlugOneWinner(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			if _, err := provision(ctx, db, claim{owner: "landing", name: fmt.Sprintf("u%d", i), slug: "team", display: "Team", personal: false}); err == nil {
+			if _, err := provision(ctx, db, claim{move: true, owner: "landing", name: fmt.Sprintf("u%d", i), slug: "team", display: "Team", personal: false}); err == nil {
 				atomic.AddInt64(&success, 1)
 			}
 		}(i)
@@ -592,7 +592,7 @@ func TestProvision_ConcurrentSameCallerConverges(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, _ = provision(ctx, db, claim{owner: "landing", name: "dave", slug: "dave", display: "Dave", personal: true})
+			_, _ = provision(ctx, db, claim{move: true, owner: "landing", name: "dave", slug: "dave", display: "Dave", personal: true})
 		}()
 	}
 	wg.Wait()
@@ -623,7 +623,7 @@ func TestProvision_ConvergesAFounderWhoHoldsNoKey(t *testing.T) {
 	ctx := context.Background()
 	seedUserIn(t, db, "landing", "erin", "erin@example.com")
 
-	if _, err := provision(ctx, db, claim{owner: "landing", name: "erin", slug: "erin", display: "Erin"}); err != nil {
+	if _, err := provision(ctx, db, claim{move: true, owner: "landing", name: "erin", slug: "erin", display: "Erin"}); err != nil {
 		t.Fatalf("provision: %v", err)
 	}
 	k, err := orm.Get[schema.Key](db, "erin/default")
@@ -634,7 +634,7 @@ func TestProvision_ConvergesAFounderWhoHoldsNoKey(t *testing.T) {
 		t.Fatalf("drop the default key: %v", err)
 	}
 
-	out, err := provision(ctx, db, claim{owner: "erin", name: "erin", slug: "erin", display: "Erin"})
+	out, err := provision(ctx, db, claim{move: true, owner: "erin", name: "erin", slug: "erin", display: "Erin"})
 	if err != nil {
 		t.Fatalf("replay: %v", err)
 	}
@@ -650,7 +650,7 @@ func TestProvision_ConvergesAFounderWhoHoldsNoKey(t *testing.T) {
 		t.Fatalf("it speaks for %s/%s in %s, want erin/erin in erin", h.User.Owner, h.User.Name, h.Org)
 	}
 
-	again, err := provision(ctx, db, claim{owner: "erin", name: "erin", slug: "erin", display: "Erin"})
+	again, err := provision(ctx, db, claim{move: true, owner: "erin", name: "erin", slug: "erin", display: "Erin"})
 	if err != nil {
 		t.Fatalf("second replay: %v", err)
 	}
@@ -671,7 +671,7 @@ func TestProvision_HeldNameRefused(t *testing.T) {
 	seedUserIn(t, db, "landing", "eve", "eve@example.com")
 	seedUserIn(t, db, "widgets", "mallory", "mallory@example.com") // left behind by a removed "widgets"
 
-	_, err := provision(ctx, db, claim{owner: "landing", name: "eve", slug: "widgets", display: "Widgets"})
+	_, err := provision(ctx, db, claim{move: true, owner: "landing", name: "eve", slug: "widgets", display: "Widgets"})
 	if ft, ok := err.(*fault); !ok || ft.status != 409 {
 		t.Fatalf("want 409 for a held name, got %v", err)
 	}
@@ -689,13 +689,13 @@ func TestProvision_HeldNamesAndHiddenDisplayRefused(t *testing.T) {
 	seedUserIn(t, db, "landing", "eve", "eve@example.com")
 
 	for _, slug := range []string{"osage", "luxfi", "hanzo-inc", "hanzo-community", "zooai"} {
-		_, err := provision(ctx, db, claim{owner: "landing", name: "eve", slug: slug, display: slug})
+		_, err := provision(ctx, db, claim{move: true, owner: "landing", name: "eve", slug: slug, display: slug})
 		if ft, ok := err.(*fault); !ok || ft.status != 400 {
 			t.Fatalf("slug %q: want 400 held, got %v", slug, err)
 		}
 	}
 	for _, display := range []string{"Acme\u202eeVIL", "\u3164", "\u2800", "Ac\u2028me"} {
-		_, err := provision(ctx, db, claim{owner: "landing", name: "eve", slug: "acme", display: display})
+		_, err := provision(ctx, db, claim{move: true, owner: "landing", name: "eve", slug: "acme", display: display})
 		if ft, ok := err.(*fault); !ok || ft.status != 400 {
 			t.Fatalf("display %q: want 400, got %v", display, err)
 		}

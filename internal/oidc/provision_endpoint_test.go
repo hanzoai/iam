@@ -113,9 +113,16 @@ func TestProvisionEndpoint_ServiceToken(t *testing.T) {
 		t.Fatalf("pre-pay model grants no trial — trialGranted must be absent")
 	}
 
-	// Idempotent replay (caller re-resolved under its new org) → same org, no second
-	// secret.
-	st2, m2 := postProvision(t, app, "svc-secret-value", `{"owner":"dave","name":"dave","personal":true}`)
+	// The person stays where they are and owns the org by membership.
+	if moved, _ := store.GetUserByName(context.Background(), db, "dave", "dave"); moved != nil {
+		t.Fatalf("provision moved the person into the org: %+v", moved)
+	}
+	if m, _ := store.GetMembership(context.Background(), db, "landing/dave", "dave"); m == nil || m.Role != store.RoleOwner {
+		t.Fatalf("landing/dave's membership of dave = %+v, want owner", m)
+	}
+
+	// Idempotent replay → same org, no second secret.
+	st2, m2 := postProvision(t, app, "svc-secret-value", body)
 	if st2 != 200 {
 		t.Fatalf("replay: status=%d body=%v", st2, m2)
 	}
@@ -149,8 +156,8 @@ func TestProvisionEndpoint_ReturnsTheFoundersDefaultKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("no default key at dave/default: %v", err)
 	}
-	if k.User != "dave/dave" || k.DisplayName != "Default" {
-		t.Fatalf("dave/default is %q held by %q, want \"Default\" held by dave/dave", k.DisplayName, k.User)
+	if k.User != "landing/dave" || k.DisplayName != "Default" {
+		t.Fatalf("dave/default is %q held by %q, want \"Default\" held by landing/dave", k.DisplayName, k.User)
 	}
 	if m["accessKey"] != k.AccessKey {
 		t.Fatalf("accessKey = %v, want the default key's %q", m["accessKey"], k.AccessKey)
@@ -160,11 +167,11 @@ func TestProvisionEndpoint_ReturnsTheFoundersDefaultKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("accessSecret does not authenticate: %s", store.Reason(err))
 	}
-	if h.User.Owner != "dave" || h.User.Name != "dave" || h.Org != "dave" {
-		t.Fatalf("accessSecret speaks for %s/%s in %s, want dave/dave in dave", h.User.Owner, h.User.Name, h.Org)
+	if h.User.Owner != "landing" || h.User.Name != "dave" || h.Org != "dave" {
+		t.Fatalf("accessSecret speaks for %s/%s in %s, want landing/dave in dave", h.User.Owner, h.User.Name, h.Org)
 	}
 
-	st, m = postProvision(t, app, "svc-secret-value", `{"owner":"dave","name":"dave","personal":true}`)
+	st, m = postProvision(t, app, "svc-secret-value", `{"owner":"landing","name":"dave","personal":true}`)
 	if st != 200 {
 		t.Fatalf("replay: status=%d body=%v", st, m)
 	}

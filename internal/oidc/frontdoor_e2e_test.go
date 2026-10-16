@@ -157,9 +157,10 @@ func TestUpdatePreferences_ShallowMergeRoundTrip(t *testing.T) {
 	}
 }
 
-// onboard creates the named org and MOVES the caller into it as admin (their owner
-// becomes the new slug); the console reads {org:<slug>} and re-authenticates.
-func TestOnboard_CreatesOrgAndMovesCaller(t *testing.T) {
+// onboard creates the named org and makes the caller its owner by membership. The
+// caller's account stays where it is: hanzo/alice before and after, not admin of
+// anything new by the row, owner of acme-inc on its roster.
+func TestOnboard_CreatesOrgTheCallerOwns(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
 	seedRichUser(t, db)
@@ -177,13 +178,14 @@ func TestOnboard_CreatesOrgAndMovesCaller(t *testing.T) {
 	if org, _ := store.GetOrganizationByName(ctx, db, "acme-inc"); org == nil || org.Owner != "admin" {
 		t.Fatalf("onboard did not create the acme-inc org: %+v", org)
 	}
-	// alice moved out of hanzo and into acme-inc as admin.
-	if old, _ := store.GetUserByName(ctx, db, "hanzo", "alice"); old != nil {
-		t.Errorf("alice was not moved out of hanzo")
+	if u, _ := store.GetUserByName(ctx, db, "hanzo", "alice"); u == nil {
+		t.Fatal("alice is no longer hanzo/alice; onboarding moves nobody")
 	}
-	moved, _ := store.GetUserByName(ctx, db, "acme-inc", "alice")
-	if moved == nil || !moved.IsAdmin {
-		t.Fatalf("alice not moved into acme-inc as admin: %+v", moved)
+	if moved, _ := store.GetUserByName(ctx, db, "acme-inc", "alice"); moved != nil {
+		t.Fatalf("alice was moved into acme-inc: %+v", moved)
+	}
+	if m, err := store.GetMembership(ctx, db, "hanzo/alice", "acme-inc"); err != nil || m == nil || m.Role != store.RoleOwner {
+		t.Fatalf("alice's membership of acme-inc = %+v (%v), want owner", m, err)
 	}
 }
 

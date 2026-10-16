@@ -449,7 +449,7 @@ func found(ctx context.Context, db orm.DB, user *schema.User) (string, error) {
 	}
 	out, err := provision(ctx, db, claim{
 		owner: user.Owner, name: user.Name,
-		slug: slug, display: user.Name, personal: true,
+		slug: slug, display: user.Name, personal: true, move: true,
 	})
 	if err != nil {
 		return "", err

@@ -1237,8 +1237,8 @@ Decide, then do it in ONE place.
 
 Founding the org works and is the good part. `POST /v1/iam/onboard` (session) and
 `POST /v1/iam/admin/provision` (service token) both drive one converge: org row +
-founder moved in as its admin + one `<slug>-default` metered credential + the
-founder's owner membership. Driven live 2026-08-13 against hanzo.id: org created,
+the founder's owner membership + one `<slug>/default` metered credential the
+founder holds; the founder's account is not moved (3 below). Driven live 2026-08-13 against hanzo.id: org created,
 `pk-live-…`/`sk-live-…` returned once, roster correct.
 
 Adding the SECOND person is where it stops, in three independent places, and only
@@ -1279,30 +1279,29 @@ belong to, or create a new one" above a form that only creates one
 (`id` `pkgs/onboarding` OrgStep states this deliberately: "Joining an existing org
 happens by invitation, handled outside this flow" — there is no outside).
 
-**3. Founding an org locks the founder out of the login endpoint.** The move re-keys
-the identity, and sign-in resolves the account inside the org the FORM states —
-`resolveLoginUser(ctx, db, f.Organization, identifier)`. The portal always states
-the APP's org (`id` `pkgs/auth/src/ui/LoginForm.tsx`: `app?.organization`), which
-for `hanzo-console` is `hanzo`. Measured 2026-08-13 in a real browser: a founder
-moved into their new org typed the correct password at hanzo.id and got "the
-username or password is incorrect"; the control — the same password, the same
-screen, a probe still sitting in `hanzo` — signed in and landed on `/onboarding`.
-The server already supports the right answer (`organization=<slug>` posted to
-`/v1/iam/login` returns 200 for the same account); nothing tells the screen which
-org to name. Orgs that were hand-given an application of their own are unaffected
-— `karma-style`→`karma`, `sdm-cloud`→`sdm` — which is why this has not been
-reported: every org with a live customer has an app, and every self-service org
-does not.
+**3. Founding an org locked the founder out of sign-in — fixed: onboarding moves
+nobody.** `POST /v1/iam/onboard`, `POST /v1/iam/admin/provision` and cloud's
+`POST /v1/account/orgs` each found an org beside the caller's account: org row
+(Founder stamped), the caller's owner membership, and `<org>/default` held by the
+caller. The account, how it signs in and its sessions do not change; the org
+rides the next token's `orgs` claim and the org switch. The move these used to do
+re-keyed the founder to `<org>/<name>`, and sign-in, which resolves an address in
+the APP's org, found nobody: measured 2026-10-16 on hanzo.ai, a password user who
+created an org was told "No account for this email yet" and offered a second
+account, and hanzo.id answered "the username or password is incorrect". Pinned by
+`oidc.TestOnboard_TheFounderIsStillFoundByAddress` (the identifier answers
+account:false on the move) and `TestOnboard_AnOrgFoundedAtTwoDoorsHasOneOwner`
+(founding at cloud and then at hanzo.id moved the person and left a ghost owner).
+A signup at a founding application (`orgChoiceMode: create`, Charter) still moves
+the account it just made into its personal org — `claim.move` — and the
+registration reach (`store.GetSignupByEmail`) is what keeps it findable there.
 
-NOT fixed here, deliberately. Every candidate touches an authentication boundary:
-a cross-org fallback by address is the F-2 collision this repo removed on purpose
-(it resolved `z@hanzo.ai` onto `admin/*` and coupled lockout counters across
-rows), a domain→org map is a new tenant primitive the Organization schema has no
-field for, and an org picker on the login screen is policy about what a stranger
-may learn. Decide it, then do it in ONE place — and note the same 2026-08-13
-census that measured it: 82 orgs, 354 human accounts, **279 of them (79%) sitting
-in org `hanzo`**, which is the P0 above and the reason the second person has
-nowhere to be.
+Census 2026-10-16 (read-only, 520 accounts): no customer was in the moved-by-
+onboarding state (two such rows, one staff and one service). 50 accounts outside
+`hanzo` that hanzo.ai serves cannot sign in by address there for other reasons:
+29 hold an address registered twice (14 addresses; ambiguity is refused), 17
+carry no registration (legacy rows, staff and brand-org accounts), 4 are shadowed
+by an account living in `hanzo` with the same address.
 
 ## Brand rules (hard)
 - Never call Hanzo an "LLM gateway"; never position vs LiteLLM. Full AI cloud, not a proxy.

@@ -88,8 +88,8 @@ func TestOnboard_FounderGetsAFirstClassOrg(t *testing.T) {
 	ctx := context.Background()
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
 	seedFounder(t, db, "hanzo", "alice")
-	// The boot backfill files every user's HOME-org membership; the move must not
-	// strand it on an identity that no longer exists.
+	// The boot backfill files every user's HOME-org membership; founding an org
+	// leaves it where it is.
 	if _, err := store.EnsureMembership(ctx, db, "hanzo/alice", "hanzo", store.RoleMember); err != nil {
 		t.Fatalf("seed home membership: %v", err)
 	}
@@ -103,11 +103,15 @@ func TestOnboard_FounderGetsAFirstClassOrg(t *testing.T) {
 		t.Fatalf("onboard org = %v, want first-start", env["org"])
 	}
 
-	// The org is real and stamped to its founder.
-	moved, err := store.GetUserByName(ctx, db, "first-start", "alice")
-	if err != nil || moved == nil {
-		t.Fatalf("founder not resolvable in the org they founded: %v", err)
+	// The founder's account is the one they signed up with, untouched.
+	alice, err := store.GetUserByName(ctx, db, "hanzo", "alice")
+	if err != nil || alice == nil || alice.IsAdmin {
+		t.Fatalf("hanzo/alice = %+v (%v), want the same account, admin of nothing new", alice, err)
 	}
+	if moved, _ := store.GetUserByName(ctx, db, "first-start", "alice"); moved != nil {
+		t.Fatalf("the founder was moved into the org: %+v", moved)
+	}
+	// The org is real and stamped to its founder.
 	org, err := store.GetOrganizationByName(ctx, db, "first-start")
 	if err != nil || org == nil {
 		t.Fatalf("org row missing: %v", err)
@@ -115,64 +119,51 @@ func TestOnboard_FounderGetsAFirstClassOrg(t *testing.T) {
 	if org.DisplayName != "First-Start" {
 		t.Errorf("org displayName = %q, want %q", org.DisplayName, "First-Start")
 	}
-	if org.Founder != moved.Model.Id() {
-		t.Errorf("org.Founder = %q, want the founder's storage id %q", org.Founder, moved.Model.Id())
+	if org.Founder != alice.Model.Id() {
+		t.Errorf("org.Founder = %q, want the founder's storage id %q", org.Founder, alice.Model.Id())
 	}
 
-	// It has a ROSTER: the founder is on it, as owner. Without this the org is born
-	// with nobody on it and no team flow can read who owns it.
-	m, err := store.GetMembership(ctx, db, "first-start/alice", "first-start")
-	if err != nil {
-		t.Fatalf("read membership: %v", err)
-	}
-	if m == nil {
-		t.Fatalf("no membership row: the founder is not on their own org's roster")
-	}
-	if m.Role != store.RoleOwner {
-		t.Errorf("membership role = %q, want %q", m.Role, store.RoleOwner)
-	}
+	// It has a ROSTER: the founder is on it, as owner, and that row is how they own
+	// it at all.
 	roster, err := store.MembershipsByOrg(ctx, db, "first-start")
-	if err != nil || len(roster) != 1 || roster[0].User != "first-start/alice" {
-		t.Errorf("org roster = %+v, want exactly the founder", roster)
+	if err != nil || len(roster) != 1 || roster[0].User != "hanzo/alice" || roster[0].Role != store.RoleOwner {
+		t.Fatalf("org roster = %+v (%v), want exactly hanzo/alice as owner", roster, err)
+	}
+	// Its default key is the founder's.
+	if k, _ := orm.Get[schema.Key](db, "first-start/default"); k == nil || k.User != "hanzo/alice" {
+		t.Errorf("first-start/default = %+v, want it held by hanzo/alice", k)
 	}
 
-	// It rides the `orgs` claim, which is what the @hanzo/iam switcher renders.
-	refs := store.MemberOrgRefs(ctx, db, moved)
-	if len(refs) == 0 || refs[0].Org != "first-start" {
-		t.Errorf("orgs claim = %+v, want the founded org", refs)
+	// It rides the `orgs` claim, which is what the @hanzo/iam switcher renders,
+	// after the home org.
+	refs := store.MemberOrgRefs(ctx, db, alice)
+	if len(refs) != 2 || refs[0].Org != "hanzo" || refs[1].Org != "first-start" || refs[1].Role != store.RoleOwner {
+		t.Errorf("orgs claim = %+v, want hanzo then first-start as owner", refs)
+	}
+	if home, _ := store.GetMembership(ctx, db, "hanzo/alice", "hanzo"); home == nil {
+		t.Error("the founder's home membership was removed")
 	}
 
-	// The move re-keyed the identity, so the PREVIOUS home membership must not be
-	// left naming a user that no longer exists.
-	if stale, _ := store.GetMembership(ctx, db, "hanzo/alice", "hanzo"); stale != nil {
-		t.Errorf("stale membership left on the old org's roster: %+v", stale)
-	}
-
-	// The founder is still signed in. The re-key invalidates the cookie's
-	// (owner, name) key, so onboarding must hand back a session under the new one —
-	// otherwise a person is signed out by their own signup.
-	fresh := cookieKV(resp.Header.Get("Set-Cookie"))
-	if fresh == "" {
-		t.Fatalf("onboarding did not re-issue the session cookie across the re-key")
-	}
+	// The founder's session is the one they had: nothing was re-keyed.
 	req := formReqNoBody("GET", PathAccount)
-	req.Header.Set("Cookie", fresh)
+	req.Header.Set("Cookie", cookie)
 	_, body := do(t, app, req)
 	acct := decode(t, body)
-	if acct["status"] != "ok" {
-		t.Fatalf("re-issued session does not resolve the caller: %s", body)
-	}
 	data, _ := acct["data"].(map[string]any)
-	if data["owner"] != "first-start" || data["isAdmin"] != true {
-		t.Errorf("account after onboarding = owner:%v isAdmin:%v, want first-start / true", data["owner"], data["isAdmin"])
+	if acct["status"] != "ok" || data["owner"] != "hanzo" {
+		t.Fatalf("the founder's session after onboarding = %s, want hanzo/alice", body)
 	}
 
-	// The superseded cookie is revoked, not left as a second live credential.
-	old := formReqNoBody("GET", PathAccount)
-	old.Header.Set("Cookie", cookie)
-	_, oldBody := do(t, app, old)
-	if decode(t, oldBody)["status"] == "ok" {
-		t.Errorf("the pre-re-key session cookie still authenticates: %s", oldBody)
+	// And they sign in again with the address and password they signed up with.
+	// A move re-keyed them to first-start/alice, and the sign-in, which looks an
+	// address up in the app's org, found nobody.
+	_, lbody := do(t, app, jsonReq("POST", PathLogin, map[string]string{
+		"organization": "hanzo", "application": "conf", "clientId": "conf",
+		"username": "alice@example.com", "password": "pw",
+		"redirectUri": testRedirect, "scope": "openid", "type": "code",
+	}))
+	if m := decode(t, lbody); m["status"] != "ok" {
+		t.Fatalf("signing in again by address after founding an org: %v", m)
 	}
 }
 
@@ -202,7 +193,7 @@ func TestOnboard_ForeignIdentityCannotTakeOrJoinTheOrg(t *testing.T) {
 		t.Errorf("intruder was granted membership of another founder's org: %+v", m)
 	}
 	roster, _ := store.MembershipsByOrg(ctx, db, "first-start")
-	if len(roster) != 1 || roster[0].User != "first-start/alice" {
+	if len(roster) != 1 || roster[0].User != "hanzo/alice" {
 		t.Errorf("roster = %+v, want only the founder", roster)
 	}
 	// And the intruder was not moved: their identity is untouched.

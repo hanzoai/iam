@@ -11,11 +11,10 @@ import (
 	"testing"
 )
 
-// Provisioning moves its founder into the org they found, which re-keys their
-// identity from <old>/<name> to <org>/<name>. The refresh token they signed in
-// with names the old key; it must keep renewing, and the token it mints names
-// the org they now live in, at the head of its `orgs`. A founder whose session died here was told their
-// org was not created when it was.
+// A founder keeps the account they signed in with, so the refresh token they hold
+// keeps renewing, and the token it mints carries the org they founded beside their
+// home org. A founder whose session died here was told their org was not created
+// when it was.
 func TestProvision_FounderKeepsRenewing(t *testing.T) {
 	t.Setenv("IAM_SERVICE_TOKEN", "svc-secret-value")
 	app, db := newServer(t)
@@ -38,7 +37,7 @@ func TestProvision_FounderKeepsRenewing(t *testing.T) {
 
 	status, out := refresh(t, app, "pub", rt, nil)
 	if status != 200 {
-		t.Fatalf("refresh after the founder moved: %d %v, want 200", status, out)
+		t.Fatalf("refresh after founding an org: %d %v, want 200", status, out)
 	}
 	at, _ := out["access_token"].(string)
 	parts := strings.Split(at, ".")
@@ -59,8 +58,9 @@ func TestProvision_FounderKeepsRenewing(t *testing.T) {
 	if err := json.Unmarshal(raw, &claims); err != nil {
 		t.Fatal(err)
 	}
-	// The home org leads `orgs`; the founder lives in acme now.
-	if claims.Name != "alice" || len(claims.Orgs) == 0 || claims.Orgs[0].Org != "acme" {
-		t.Fatalf("renewed token names %s in %+v, want alice at home in acme", claims.Name, claims.Orgs)
+	// The home org leads `orgs`, and the founder owns acme.
+	if claims.Name != "alice" || len(claims.Orgs) != 2 || claims.Orgs[0].Org != "hanzo" ||
+		claims.Orgs[1].Org != "acme" || claims.Orgs[1].Role != "owner" {
+		t.Fatalf("renewed token names %s in %+v, want alice at home in hanzo, owner of acme", claims.Name, claims.Orgs)
 	}
 }

@@ -15,18 +15,16 @@ import (
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
-// POST /v1/iam/onboard — first-run org onboarding. A signed-in user with no org of
-// their own creates one (named, or a one-click `<username>` personal org) and is
-// MOVED into it as its admin, so everyone always has an org. The org IS the tenant's
-// billing account, so the same call provisions its ONE org-scoped API key — the
-// signup path lands a funded, metered, callable identity in one idempotent step.
+// POST /v1/iam/onboard — org onboarding. A signed-in person creates an org (named,
+// or a one-click `<username>` personal org) and owns it by membership. Their own
+// account is not touched: who they are and how they sign in are the same before and
+// after, and they reach the org through the signed `orgs` claim of their next token
+// and the org switch. The org IS a billing account, so the same call provisions its
+// ONE org-scoped API key, held by the founder.
 //
-// Because an IAM user's org IS their identity, the move re-keys the caller (their
-// subject becomes slug/name), so the console re-authenticates after a success.
-//
-// Idempotent + retry-safe: the whole converge (org + admin move + key) runs through
-// the provision() primitive, which ensures each resource atomically — a retry or a
-// partial failure re-drives to the SAME org + user + key, never a duplicate.
+// Idempotent + retry-safe: the whole converge (org + owner + key) runs through the
+// provision() primitive, which ensures each resource atomically — a retry or a
+// partial failure re-drives to the SAME org + owner + key, never a duplicate.
 //
 // The response is the console's own {org}/{error} contract (NOT the casibase
 // envelope): {"org":"<slug>", ...key} on success, an {"error":"..."} with a 4xx/5xx
@@ -91,18 +89,17 @@ func onboardHandler(db orm.DB) zip.Handler {
 			slug, display = personalOrgSlug(name), name
 		}
 		// provisionAndRespond validates the slug (length + policy.IsReservedOrg) and
-		// drives the ONE atomic provision — org + admin move + hashed metered
-		// credential — replacing the old non-atomic create-then-move (no orphan on a
-		// mid-flight fault, resumable via the Founder stamp).
+		// drives the ONE atomic provision — org + owner membership + hashed metered
+		// credential — with no orphan on a mid-flight fault, resumable via the
+		// Founder stamp.
 		return provisionAndRespond(c, db, owner, name, slug, display, f.Personal)
 	}
 }
 
-// PathProvision is the service-token admin provisioning endpoint. It is the ONE
-// atomic op the cloud onboarding orchestrator (api.hanzo.ai) calls, on behalf of a
-// named user, instead of a separate create-org + move-user pair — so the production
-// signup path converges to one org + admin + credential exactly like the
-// self-service endpoint, with no partial-failure orphan between two calls.
+// PathProvision is the service-token admin provisioning endpoint: the ONE atomic
+// op a platform service drives on behalf of a named user, so it converges to one
+// org + owner + credential exactly like the self-service endpoint, with no
+// partial-failure orphan between two calls.
 const PathProvision = "/v1/iam/admin/provision"
 
 // provisionForm is the service-token provision body: the target identity to
@@ -117,9 +114,9 @@ type provisionForm struct {
 	Personal bool   `json:"personal"`
 }
 
-// provisionServiceHandler sets up an account on someone's behalf — the same
-// onboarding a person gets themselves, driven by one of your own services
-// instead of by them.
+// provisionServiceHandler founds an org on someone's behalf — the same onboarding
+// a person gets themselves, driven by one of your own services instead of by
+// them. The person keeps their account and owns the org by membership.
 //
 // It authenticates as your service rather than as a person, which is why the
 // person to provision is named in the request. The setup it performs is
@@ -179,11 +176,11 @@ func provisionAndRespond(c *zip.Ctx, db orm.DB, owner, name, slug, display strin
 		return onboardErr(c, 500, "server_error")
 	}
 
-	// The converge MOVED the caller into the org it just founded, which re-keys the
-	// identity — so the session cookie the browser is holding names a user that no
-	// longer exists, and the very next request would read as signed OUT. Carry the
-	// live session across to the new key (a no-op on the bearer path, whose subject
-	// is a stable UUID the re-key does not touch).
+	// A converge that MOVED the caller re-keys the identity, so the session cookie
+	// the browser is holding names a user that no longer exists, and the very next
+	// request would read as signed OUT. Carry the live session across to the new key
+	// (a no-op on the bearer path, whose subject is a stable UUID the re-key does not
+	// touch). Onboarding moves nobody, so it has nothing to carry.
 	if out.movedFrom != "" && out.movedFrom != out.org {
 		sessions.Rekey(c.Context(), c.Fiber(), db, out.org)
 	}
