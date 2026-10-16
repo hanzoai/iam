@@ -25,7 +25,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -35,9 +34,9 @@ import (
 
 	"github.com/hanzoai/iam/internal/compare"
 	"github.com/hanzoai/iam/internal/oidc"
-	"github.com/hanzoai/iam/internal/provision"
 	"github.com/hanzoai/iam/internal/routes"
 	"github.com/hanzoai/iam/internal/seed"
+	"github.com/hanzoai/iam/pkg/provision"
 	_ "github.com/hanzoai/iam/pkg/schema" // registers the v2 entity kinds
 	"github.com/hanzoai/iam/pkg/store"
 	"github.com/hanzoai/iam/server"
@@ -253,66 +252,14 @@ func provisionCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			doc, err := provision.Parse(raw)
-			if err != nil {
-				return err
-			}
-			clients, err := provision.Derive(doc)
-			if err != nil {
-				return err
-			}
 			if token == "" {
 				token = os.Getenv("IAM_SERVICE_TOKEN")
 			}
-			if token == "" && !dryRun {
-				return fmt.Errorf("no service token: pass --token or set IAM_SERVICE_TOKEN")
-			}
-
-			out := cmd.OutOrStdout()
 			r := &provision.Reconciler{BaseURL: url, Token: token, DryRun: dryRun}
 			if credentials != "" {
 				r.Credentials = provision.DirCredentials(credentials)
 			}
-			var failed int
-			for _, res := range r.Apply(cmd.Context(), clients) {
-				if res.Err != nil {
-					failed++
-					fmt.Fprintf(out, "  FAIL     %-28s %v\n", res.Client.Name, res.Err)
-					continue
-				}
-				fmt.Fprintf(out, "  %-8s %-28s %s\n", res.Action, res.Client.Name,
-					strings.Join(res.Client.RedirectUris, " "))
-			}
-			// Accounts converge in the SAME run as the clients, because they are one
-			// document and a half-applied document is the state nobody can reason
-			// about. The run report is the audit record (the Job keeps the pod so
-			// `kubectl logs` can read it), so it says what each account is, WHAT
-			// AUTHORITY it asks for, and whether a credential was actually delivered —
-			// "converged", "privileged" and "usable" are three different facts and a
-			// line that shows only the first hides the other two. The admin bit is
-			// printed for every account, including the false ones: a grant is
-			// reviewable only beside the accounts that do not have it. It never prints
-			// the credential itself.
-			accounts := provision.Accounts(doc)
-			for _, res := range r.ApplyAccounts(cmd.Context(), accounts) {
-				name := res.Account.Org + "/" + res.Account.Account.Name
-				if res.Err != nil {
-					failed++
-					fmt.Fprintf(out, "  FAIL     %-28s %v\n", name, res.Err)
-					continue
-				}
-				cred := "credential preserved"
-				if res.Credential {
-					cred = "credential set"
-				}
-				fmt.Fprintf(out, "  %-8s %-28s %s account, isAdmin=%t, %s\n",
-					res.Action, name, res.Account.Account.Type, res.Admin, cred)
-			}
-			fmt.Fprintf(out, "%d app(s), %d account(s), %d failed\n", len(clients), len(accounts), failed)
-			if failed > 0 {
-				return fmt.Errorf("%d item(s) did not converge", failed)
-			}
-			return nil
+			return provision.Converge(cmd.Context(), r, raw, cmd.OutOrStdout())
 		},
 	}
 	f := cmd.Flags()
