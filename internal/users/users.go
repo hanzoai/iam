@@ -469,6 +469,13 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 	u := &in.User
 	u.Owner, u.Name = owner, name
 	u.Email = store.NormalizeEmail(u.Email)
+	// How the account signs in — its password, its address, its phone — changes
+	// only under Credentials.
+	if what := credentialChange(existing, u, in.Password); what != "" {
+		if err := Credentials(ctx, a.db, existing.Owner, existing.Name, what); err != nil {
+			return nil, err
+		}
+	}
 	// Preserve immutable identity and creation provenance. Id is the stable OIDC
 	// `sub` (and the authz principal key): like CreatedTime it is carried from the
 	// stored row and a body-supplied value is IGNORED — mutating it would move the
@@ -632,6 +639,48 @@ func (a *API) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 // a membership write names a USER in the admin org while authorizing the org it
 // grants, so without this an org's admin could add a SuperAdmin to their org or
 // take them out of it.
+// Credentials is the rule for changing how ANOTHER account signs in — its
+// password, its address or phone, its second factor. In an org whose name the
+// platform holds (authz.IsHeldOrg: the brands, their directories, the platform's
+// own names) the members are not one tenant with its admins: a customer who
+// lives there is the platform's to serve, not its staff's to sign in as. So
+// there only the person themselves, a SuperAdmin, or a platform application
+// holding the user-administration capability (the SuperAdmin's console) changes
+// them, and each such change is audited. Anywhere else an org's admin
+// administers its own members as before.
+//
+// It is asked after Authorize and the entity check, which decide whether the
+// caller may write the row at all; this decides whether that write may include
+// how its owner signs in.
+//
+// A call with no principal is the embedding host's own, in process, and is
+// trusted as Authorize trusts it.
+func Credentials(ctx context.Context, db orm.DB, owner, name, what string) error {
+	p, ok := principal.From(ctx)
+	if !ok {
+		return nil
+	}
+	if p.App == nil && !p.Machine && p.Org == owner && strings.EqualFold(p.User, name) {
+		return nil
+	}
+	if !policy.IsHeldOrg(owner) {
+		return nil
+	}
+	if (p.Sudo && p.App == nil) || p.App != nil {
+		by := p.Org + "/" + p.User
+		if p.App != nil {
+			by = "app:" + p.App.Owner + "/" + p.App.Name
+		}
+		store.Record(ctx, db, &schema.AuditLog{
+			Owner: owner, Organization: owner, User: owner + "/" + name,
+			Action: schema.ActionSuperAdmin, Object: "credentials:" + what + " by " + by,
+			Method: "PUT", StatusCode: 200,
+		})
+		return nil
+	}
+	return zip.ErrForbidden("in " + owner + " only the person or a SuperAdmin changes how an account signs in")
+}
+
 func Authorize(ctx context.Context, owner string) error {
 	if p, ok := principal.From(ctx); ok && p.Sudo && p.App == nil {
 		return nil
@@ -695,3 +744,20 @@ var decoy = sync.OnceValue(func() string {
 
 // nowRFC3339 is the single timestamp format for v1-compatible string times.
 func nowRFC3339() string { return time.Now().UTC().Format(time.RFC3339) }
+
+// credentialChange names what of an account's sign-in a write changes — "" when
+// none. A full-row write that leaves the address or phone out erases it, and an
+// erasure is a change.
+func credentialChange(existing, next *schema.User, password string) string {
+	var what []string
+	if password != "" {
+		what = append(what, "password")
+	}
+	if store.NormalizeEmail(next.Email) != store.NormalizeEmail(existing.Email) {
+		what = append(what, "email")
+	}
+	if store.NormalizePhone(next.Phone) != store.NormalizePhone(existing.Phone) {
+		what = append(what, "phone")
+	}
+	return strings.Join(what, ",")
+}

@@ -136,7 +136,9 @@ func TestOrgAdminManagesOwnOrgOnly(t *testing.T) {
 		body               any
 	}{
 		{"create user in own org", "POST", "/v1/iam/users", user("hanzo", "newhire")},
-		{"update self org's user", "PUT", "/v1/iam/users/hanzo/alice", user("hanzo", "alice")},
+		// A profile edit: hanzo's name is held, so how a member signs in is the
+		// member's own and a SuperAdmin's (users.Credentials), never its admin's.
+		{"update self org's user", "PUT", "/v1/iam/users/hanzo/alice", map[string]any{"user": map[string]any{"owner": "hanzo", "name": "alice", "displayName": "Alice"}}},
 		{"register app in own org", "POST", "/v1/iam/applications", map[string]any{"owner": "hanzo", "name": "hanzo-app", "clientId": "hanzo-app"}},
 	}
 	for _, c := range allow {

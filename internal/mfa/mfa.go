@@ -133,6 +133,13 @@ func target(c *zip.Ctx, db orm.DB, req *setupReq) (owner, name string, err error
 	if err := users.Authorize(c.Context(), owner); err != nil {
 		return "", "", err
 	}
+	// A second factor is how the account signs in, so another account's is
+	// changed only under users.Credentials.
+	if !self {
+		if err := users.Credentials(c.Context(), db, owner, name, "mfa"); err != nil {
+			return "", "", err
+		}
+	}
 	return owner, name, nil
 }
 

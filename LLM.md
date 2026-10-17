@@ -1227,6 +1227,17 @@ no one), the delegation (403), `principal.Scope`/`ScopeRead`, the org listing an
 the registry's password path. The `groups` claim leaves out what opens nothing. The
 `orgs` claim stays whole, because its first entry is who the person is.
 
+Two takeover doors close on the same reading. In an org whose name is held
+(authz.IsHeldOrg) an org admin is not its members' credential administrator:
+users.Credentials lets only the person, a SuperAdmin or a platform application
+holding the user-administration capability change another account's password,
+address, phone or second factor, or file a passkey or token for it, and writes
+an audit row (`superadmin`, `credentials:<what> by <who>`) for every such change
+(users.Update, mfa, authz.AuthorizeUser). And a confidential client minting over
+`/v1/iam/tokens/issue` proves itself, not the person: the token names it in
+`act`, lives at most an hour, is audited, and is minted only for the people its
+org signs in (living there or in its directory, or registered by its apps).
+
 What a plain member of a brand org keeps: their account, and founding an org
 (`POST /v1/iam/onboard`), which then is the first org their set opens and so the
 one they act in. What is still open: signup files new people in the brand org

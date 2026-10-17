@@ -56,8 +56,8 @@ func TestAdd_refusesAPasskeyPlantedForAReservedUser(t *testing.T) {
 	r := newRig(t)
 	before := r.credsFor(t, "admin/root")
 
-	if st := r.write(t, "hanzo/boss",
-		`{"owner":"hanzo","name":"plant","user":"admin/root","credentialId":"AAAA","publicKey":"AAAA","userVerified":true}`); st != 403 {
+	if st := r.write(t, "acme/boss",
+		`{"owner":"acme","name":"plant","user":"admin/root","credentialId":"AAAA","publicKey":"AAAA","userVerified":true}`); st != 403 {
 		t.Fatalf("planting a passkey for admin/root: status=%d, want 403", st)
 	}
 	if after := r.credsFor(t, "admin/root"); after != before {
@@ -68,8 +68,8 @@ func TestAdd_refusesAPasskeyPlantedForAReservedUser(t *testing.T) {
 // The same gate refuses a plant aimed at ANOTHER tenant's user.
 func TestAdd_refusesAPasskeyPlantedForAnotherTenant(t *testing.T) {
 	r := newRig(t)
-	if st := r.write(t, "hanzo/boss",
-		`{"owner":"hanzo","name":"plant","user":"orgb/carol","credentialId":"AAAA","publicKey":"AAAA"}`); st != 403 {
+	if st := r.write(t, "acme/boss",
+		`{"owner":"acme","name":"plant","user":"orgb/carol","credentialId":"AAAA","publicKey":"AAAA"}`); st != 403 {
 		t.Fatalf("planting a passkey for orgb/carol: status=%d, want 403", st)
 	}
 }
@@ -78,8 +78,8 @@ func TestAdd_refusesAPasskeyPlantedForAnotherTenant(t *testing.T) {
 // subject, it does not forbid the enrollment an admin may legitimately do.
 func TestAdd_allowsAPasskeyForAnOwnMember(t *testing.T) {
 	r := newRig(t)
-	if st := r.write(t, "hanzo/boss",
-		`{"owner":"hanzo","name":"alice-newkey","user":"hanzo/alice","credentialId":"AAAA","publicKey":"AAAA"}`); st != 200 {
+	if st := r.write(t, "acme/boss",
+		`{"owner":"acme","name":"alice-newkey","user":"acme/alice","credentialId":"AAAA","publicKey":"AAAA"}`); st != 200 {
 		t.Fatalf("registering a passkey for an own member: status=%d, want 200", st)
 	}
 }

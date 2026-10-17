@@ -87,8 +87,31 @@ func TestIssueUserToken_mintsTargetUserToken(t *testing.T) {
 	if claims.Subject != "hanzo/alice" || claims.Owner != "hanzo" {
 		t.Fatalf("subject/owner = %q/%q, want hanzo/alice / hanzo", claims.Subject, claims.Owner)
 	}
-	if exp, _ := dataMap(t, body)["expiresIn"].(float64); exp <= 0 {
-		t.Fatalf("expiresIn = %v, want > 0", dataMap(t, body)["expiresIn"])
+	// The client proved itself and not the person, so the token says so: it names
+	// the client in `act`, and lives at most an hour.
+	if claims.Act == nil || claims.Act.Name != "hanzo-console" || claims.Act.Owner != "admin" || claims.Imp {
+		t.Fatalf("act = %+v imp=%v, want the client hanzo-console named as the actor", claims.Act, claims.Imp)
+	}
+	if exp, _ := dataMap(t, body)["expiresIn"].(float64); exp <= 0 || exp > 3600 {
+		t.Fatalf("expiresIn = %v, want 0 < n <= 3600", dataMap(t, body)["expiresIn"])
+	}
+	// A token the client minted for someone is no account caller: it founds no org
+	// and writes nothing of the person's.
+	if owner, name, ok := callerFrom(context.Background(), db, "", access); ok {
+		t.Fatalf("an acted-for token resolved as the account holder %s/%s", owner, name)
+	}
+}
+
+// A client acts only for the people its own org signs in: one whose account lives
+// in another org, registered by none of hanzo's applications, is refused.
+func TestIssueUserToken_anotherOrgsPersonIsRefused(t *testing.T) {
+	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedUserInOrg(t, db, "acme", "dana", "dana@acme.test", "pw")
+	resp, body := do(t, app, keyReq("POST", PathTokensIssue, "hanzo-console", "top-secret", "?id=acme/dana"))
+	if resp.StatusCode != 403 {
+		t.Fatalf("a token for another org's person: %d %s", resp.StatusCode, body)
 	}
 }
 

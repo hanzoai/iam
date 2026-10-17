@@ -432,8 +432,8 @@ func TestMFA_changingAFactorEndsOtherSessions(t *testing.T) {
 }
 
 // TestMFA_crossUserRequiresAdmin: a regular user cannot enroll/disable MFA on
-// ANOTHER user — the general user-write policy refuses it (403). An org-admin and
-// a super over that user CAN.
+// ANOTHER user — the general user-write policy refuses it (403). A SuperAdmin
+// can; in a held org like hanzo, its org admin cannot.
 func TestMFA_crossUserRequiresAdmin(t *testing.T) {
 	h := newHarness(t)
 	alice := h.token(t, "hanzo/alice") // regular
@@ -449,10 +449,11 @@ func TestMFA_crossUserRequiresAdmin(t *testing.T) {
 		t.Fatalf("regular user disabling another user's MFA: status=%d, want 403", st)
 	}
 
-	// org-admin → a user in the SAME org: allowed.
+	// org-admin → a user in the SAME org: hanzo's name is held, so its admin is
+	// not its members' credential administrator (users.Credentials).
 	if st, m := h.do(t, "POST", mfa.PathInitiate, boss,
-		`{"owner":"hanzo","name":"alice"}`); st != 200 || m["status"] != "ok" {
-		t.Fatalf("org-admin initiating a same-org user's MFA: status=%d body=%v", st, m)
+		`{"owner":"hanzo","name":"alice"}`); st != 403 {
+		t.Fatalf("hanzo's admin initiating a member's MFA: status=%d body=%v", st, m)
 	}
 	// super → anyone: allowed.
 	if st, m := h.do(t, "POST", mfa.PathInitiate, super,

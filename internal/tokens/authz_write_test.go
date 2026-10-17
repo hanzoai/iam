@@ -22,10 +22,10 @@ import (
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
-// hanzoAdmin is an org-admin of hanzo — it may act for its own members, never for
+// hanzoAdmin is an org-admin of acme — it may act for its own members, never for
 // a reserved-org user.
 func hanzoAdmin() context.Context {
-	return principal.Bind(context.Background(), &principal.Principal{Org: "hanzo", User: "boss", Admin: true})
+	return principal.Bind(context.Background(), &principal.Principal{Org: "acme", User: "boss", Admin: true})
 }
 
 func statusOf(t *testing.T, err error) int {
@@ -53,7 +53,7 @@ func seedWithHash(t *testing.T, db orm.DB, owner, name, user, refreshHash string
 func TestAdd_refusesATokenForAReservedSubject(t *testing.T) {
 	db := openDB(t)
 	_, err := addToken(db)(hanzoAdmin(), &schema.Token{
-		Owner: "hanzo", Name: "forge", User: "admin/root",
+		Owner: "acme", Name: "forge", User: "admin/root",
 		RefreshTokenHash: "0badc0de", PublicGrant: true, Scope: "openid",
 	})
 	if err == nil {
@@ -62,7 +62,7 @@ func TestAdd_refusesATokenForAReservedSubject(t *testing.T) {
 	if got := statusOf(t, err); got != 403 {
 		t.Fatalf("status=%d, want 403", got)
 	}
-	if _, gerr := orm.Get[schema.Token](db, "hanzo/forge"); gerr == nil {
+	if _, gerr := orm.Get[schema.Token](db, "acme/forge"); gerr == nil {
 		t.Fatal("a refused plant persisted a row")
 	}
 }
@@ -73,7 +73,7 @@ func TestAdd_refusesATokenForAReservedSubject(t *testing.T) {
 func TestAdd_ignoresCallerSuppliedHashes(t *testing.T) {
 	db := openDB(t)
 	out, err := addToken(db)(hanzoAdmin(), &schema.Token{
-		Owner: "hanzo", Name: "own", User: "hanzo/alice",
+		Owner: "acme", Name: "own", User: "acme/alice",
 		RefreshTokenHash: "0badc0de", AccessTokenHash: "0badc0de",
 	})
 	if err != nil {
@@ -82,7 +82,7 @@ func TestAdd_ignoresCallerSuppliedHashes(t *testing.T) {
 	if out.Token.RefreshTokenHash != "" || out.Token.AccessTokenHash != "" {
 		t.Fatalf("caller hashes survived: refresh=%q access=%q", out.Token.RefreshTokenHash, out.Token.AccessTokenHash)
 	}
-	stored, err := orm.Get[schema.Token](db, "hanzo/own")
+	stored, err := orm.Get[schema.Token](db, "acme/own")
 	if err != nil {
 		t.Fatalf("load stored: %v", err)
 	}
@@ -95,9 +95,9 @@ func TestAdd_ignoresCallerSuppliedHashes(t *testing.T) {
 // either — a planted refresh hash on an EXISTING row is the same lever.
 func TestUpdate_cannotSetTheRefreshHash(t *testing.T) {
 	db := openDB(t)
-	seedWithHash(t, db, "hanzo", "sess", "hanzo/alice", "realhash")
+	seedWithHash(t, db, "acme", "sess", "acme/alice", "realhash")
 	out, err := updateToken(db)(hanzoAdmin(), &schema.Token{
-		Owner: "hanzo", Name: "sess", User: "hanzo/alice",
+		Owner: "acme", Name: "sess", User: "acme/alice",
 		RefreshTokenHash: "0badc0de", Scope: "openid",
 	})
 	if err != nil {
@@ -113,7 +113,7 @@ func TestUpdate_cannotSetTheRefreshHash(t *testing.T) {
 func TestAdd_allowsATokenForAnOwnMember(t *testing.T) {
 	db := openDB(t)
 	if _, err := addToken(db)(hanzoAdmin(), &schema.Token{
-		Owner: "hanzo", Name: "own2", User: "hanzo/alice", Scope: "openid",
+		Owner: "acme", Name: "own2", User: "acme/alice", Scope: "openid",
 	}); err != nil {
 		t.Fatalf("recording a token for an own member: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestAdd_allowsATokenForAnOwnMember(t *testing.T) {
 func TestAdd_ignoresCallerSuppliedCodes(t *testing.T) {
 	db := openDB(t)
 	out, err := addToken(db)(hanzoAdmin(), &schema.Token{
-		Owner: "hanzo", Name: "grant", User: "hanzo/alice",
+		Owner: "acme", Name: "grant", User: "acme/alice",
 		Code: "chosen-code", UserCode: "CHOSEN", Scope: "openid",
 	})
 	if err != nil {
@@ -135,7 +135,7 @@ func TestAdd_ignoresCallerSuppliedCodes(t *testing.T) {
 	if out.Token.Code != "" || out.Token.UserCode != "" {
 		t.Fatalf("caller codes survived: code=%q userCode=%q", out.Token.Code, out.Token.UserCode)
 	}
-	stored, err := orm.Get[schema.Token](db, "hanzo/grant")
+	stored, err := orm.Get[schema.Token](db, "acme/grant")
 	if err != nil {
 		t.Fatalf("load stored: %v", err)
 	}
@@ -149,14 +149,14 @@ func TestAdd_ignoresCallerSuppliedCodes(t *testing.T) {
 func TestUpdate_cannotSetTheCode(t *testing.T) {
 	db := openDB(t)
 	tok := orm.New[schema.Token](db)
-	tok.Owner, tok.Name, tok.User = "hanzo", "sess", "hanzo/alice"
+	tok.Owner, tok.Name, tok.User = "acme", "sess", "acme/alice"
 	tok.Code, tok.UserCode = "realcode", "REALUC"
-	tok.SetId(tokenId("hanzo", "sess"))
+	tok.SetId(tokenId("acme", "sess"))
 	if err := tok.CreateCtx(context.Background()); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	out, err := updateToken(db)(hanzoAdmin(), &schema.Token{
-		Owner: "hanzo", Name: "sess", User: "hanzo/alice",
+		Owner: "acme", Name: "sess", User: "acme/alice",
 		Code: "chosen-code", UserCode: "CHOSEN", Scope: "openid",
 	})
 	if err != nil {

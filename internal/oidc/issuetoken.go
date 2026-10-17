@@ -80,8 +80,18 @@ func issueUserTokenHandler(db orm.DB) zip.Handler {
 		if status != 0 {
 			return mintErr(c, status, msg)
 		}
+		// The client proves only itself, never that the person asked, so it acts
+		// only for the people its own org signs in, and every token it mints names
+		// it in `act`: whoever reads the token sees the person was acted for, and
+		// nothing that keys on the person — a holder, an account write, a founding
+		// — takes it for them.
+		if ok, err := ownUser(ctx, db, clientApp, user); err != nil {
+			return mintErr(c, 500, "server_error")
+		} else if !ok {
+			return mintErr(c, 403, "the user is not one this application signs in")
+		}
 
-		access, ttl, err := MintUserToken(ctx, db, clientApp, user,
+		access, ttl, err := mintActedToken(ctx, db, clientApp, user,
 			strings.TrimSpace(c.Query("aud")), c.Host(), c.Path())
 		if err != nil {
 			return mintErr(c, 500, "server_error")
@@ -132,6 +142,63 @@ func MintUserToken(ctx context.Context, db orm.DB, clientApp *schema.Application
 		Application:     clientApp.Name,
 		Organization:    user.Owner,
 		User:            natural, // the row's User stays the (owner/name) key
+		TokenType:       "Bearer",
+		ExpiresIn:       int(ttl.Seconds()),
+		AccessTokenHash: hashToken(access),
+	}
+	row.Name = "iut-" + hashToken(access)[:32]
+	if err := store.PersistToken(ctx, db, row); err != nil {
+		return "", 0, err
+	}
+	recordMint(ctx, db, schema.ActionIssueUserToken, clientApp.ClientId, natural, path)
+	return access, ttl, nil
+}
+
+// ownUser reports whether user is one the client's org signs in: an account
+// that lives in the org or in its brand's directory, or one an application of
+// the org registered. A SuperAdmin target was already admitted, or refused, by
+// the reserved-org rule in mintTarget.
+func ownUser(ctx context.Context, db orm.DB, app *schema.Application, user *schema.User) (bool, error) {
+	org := app.Organization
+	switch {
+	case policy.IsSigningOwner(user.Owner):
+		return adminMintAllowed(app), nil
+	case org == "":
+		return false, nil
+	case user.Owner == org || user.Owner == policy.DirectoryOf(org):
+		return true, nil
+	}
+	return store.RegisteredIn(ctx, db, org, user)
+}
+
+// mintActedToken is the token a client mints for a person over tokens/issue:
+// the person's identity with the client named in `act`, at most an hour, written
+// to the token store and the audit trail as every mint is. It is MintUserToken
+// with the actor stated, because the client proved itself and not the person.
+func mintActedToken(ctx context.Context, db orm.DB, clientApp *schema.Application, user *schema.User, aud, host, path string) (string, time.Duration, error) {
+	now := nowFunc()
+	if aud == "" {
+		aud = defaultUserAudience(ctx, db, user, clientApp)
+	}
+	signer, err := signerFor(ctx, db, clientApp, resolveIssuer(host))
+	if err != nil {
+		return "", 0, err
+	}
+	ttl := appTTL(clientApp)
+	if ttl > asMaxTTL {
+		ttl = asMaxTTL
+	}
+	natural := user.Owner + "/" + user.Name
+	actor := Actor{Sub: clientApp.GetId(), Owner: clientApp.Owner, Name: clientApp.Name}
+	access, err := signer.SignAct(identityOf(ctx, db, user), user.Owner, aud, clientApp.ClientId, actor, ttl, now)
+	if err != nil {
+		return "", 0, err
+	}
+	row := &schema.Token{
+		Owner:           user.Owner,
+		Application:     clientApp.Name,
+		Organization:    user.Owner,
+		User:            natural,
 		TokenType:       "Bearer",
 		ExpiresIn:       int(ttl.Seconds()),
 		AccessTokenHash: hashToken(access),

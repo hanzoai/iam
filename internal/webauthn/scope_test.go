@@ -63,16 +63,16 @@ func newRig(t *testing.T) *rig {
 	t.Cleanup(func() { _ = db.Close() })
 
 	seedCert(t, db, policy.AdminOrg, kid, pemOf(t, key))
-	seedUser(t, db, "hanzo", "boss", true)   // administers hanzo
-	seedUser(t, db, "hanzo", "alice", false) // a plain member
-	seedUser(t, db, "hanzo", "bob", false)   // another plain member
+	seedUser(t, db, "acme", "boss", true)   // administers acme
+	seedUser(t, db, "acme", "alice", false) // a plain member
+	seedUser(t, db, "acme", "bob", false)   // another plain member
 	seedUser(t, db, "orgb", "carol", true)   // a different tenant
 	seedUser(t, db, policy.AdminOrg, "z", false)
 
-	seedKey(t, db, "hanzo", "alice-laptop", "hanzo/alice")
-	seedKey(t, db, "hanzo", "alice-phone", "hanzo/alice")
-	seedKey(t, db, "hanzo", "bob-yubikey", "hanzo/bob")
-	seedKey(t, db, "hanzo", "boss-laptop", "hanzo/boss")
+	seedKey(t, db, "acme", "alice-laptop", "acme/alice")
+	seedKey(t, db, "acme", "alice-phone", "acme/alice")
+	seedKey(t, db, "acme", "bob-yubikey", "acme/bob")
+	seedKey(t, db, "acme", "boss-laptop", "acme/boss")
 	seedKey(t, db, "orgb", "carol-laptop", "orgb/carol")
 
 	app := zip.New(zip.Config{AppName: "webauthn-test", DisableStartupMessage: true})
@@ -150,7 +150,7 @@ func same(got []string, want ...string) bool {
 func TestList_aMemberSeesOnlyTheirOwn(t *testing.T) {
 	r := newRig(t)
 
-	status, got, body := r.list(t, "hanzo/alice", "")
+	status, got, body := r.list(t, "acme/alice", "")
 	if status != 200 {
 		t.Fatalf("status=%d body=%s, want 200", status, body)
 	}
@@ -169,7 +169,7 @@ func TestList_aMemberSeesOnlyTheirOwn(t *testing.T) {
 func TestList_aMemberCannotNameAnother(t *testing.T) {
 	r := newRig(t)
 
-	_, got, body := r.list(t, "hanzo/alice", "?user=hanzo/bob")
+	_, got, body := r.list(t, "acme/alice", "?user=acme/bob")
 	if strings.Contains(body, "bob-yubikey") {
 		t.Fatalf("alice read bob's passkeys by naming him: %s", body)
 	}
@@ -183,7 +183,7 @@ func TestList_aMemberCannotNameAnother(t *testing.T) {
 func TestList_anOrgAdminMayNameTheirOwnMember(t *testing.T) {
 	r := newRig(t)
 
-	status, got, body := r.list(t, "hanzo/boss", "?user=hanzo/alice")
+	status, got, body := r.list(t, "acme/boss", "?user=acme/alice")
 	if status != 200 {
 		t.Fatalf("status=%d body=%s, want 200", status, body)
 	}
@@ -196,9 +196,9 @@ func TestList_anOrgAdminMayNameTheirOwnMember(t *testing.T) {
 func TestList_anOrgAdminCannotReachAnotherTenant(t *testing.T) {
 	r := newRig(t)
 
-	_, _, body := r.list(t, "hanzo/boss", "?user=orgb/carol")
+	_, _, body := r.list(t, "acme/boss", "?user=orgb/carol")
 	if strings.Contains(body, "carol-laptop") {
-		t.Fatalf("hanzo's admin read orgb's passkeys: %s", body)
+		t.Fatalf("acme's admin read orgb's passkeys: %s", body)
 	}
 }
 
@@ -208,7 +208,7 @@ func TestList_anOrgAdminCannotReachAnotherTenant(t *testing.T) {
 func TestList_anAdminDefaultsToTheirOwn(t *testing.T) {
 	r := newRig(t)
 
-	status, got, body := r.list(t, "hanzo/boss", "")
+	status, got, body := r.list(t, "acme/boss", "")
 	if status != 200 {
 		t.Fatalf("status=%d body=%s, want 200", status, body)
 	}

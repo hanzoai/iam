@@ -230,12 +230,22 @@ func AuthorizeRef(ctx context.Context, method, kind, home, ref string) error {
 // A token or a passkey filed under a SuperAdmin is a credential that speaks as
 // the platform's operator, so it also asks users.Authorize: only a SuperAdmin
 // files one for an account in the admin org.
-func AuthorizeUser(ctx context.Context, method, user string) error {
+//
+// Filing one (POST, PUT) is a change to how that account signs in, so it is also
+// asked users.Credentials: in an org whose name the platform holds, only the
+// person or a SuperAdmin files a credential for an account. Revoking one is not.
+func AuthorizeUser(ctx context.Context, db orm.DB, method, user string) error {
 	if err := AuthorizeRef(ctx, method, "users", "", user); err != nil || user == "" {
 		return err
 	}
-	owner, _, _ := strings.Cut(user, "/")
-	return users.Authorize(ctx, owner)
+	owner, name, _ := strings.Cut(user, "/")
+	if err := users.Authorize(ctx, owner); err != nil {
+		return err
+	}
+	if method == "POST" || method == "PUT" {
+		return users.Credentials(ctx, db, owner, name, "credential")
+	}
+	return nil
 }
 
 // AuthorizeGrant gates the rows a grant NAMES in its subject lists — the users,

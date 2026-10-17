@@ -26,11 +26,11 @@ import (
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
-// actingForAlice binds an org-admin of hanzo to ctx — the caller these store-
-// contract cases run as, since registering or renaming a passkey for hanzo/alice
+// actingForAlice binds an org-admin of acme to ctx — the caller these store-
+// contract cases run as, since registering or renaming a passkey for acme/alice
 // now authorizes the subject, and an org's admin may act for its own member.
 func actingForAlice(base context.Context) context.Context {
-	return principal.Bind(base, &principal.Principal{Org: "hanzo", User: "boss", Admin: true})
+	return principal.Bind(base, &principal.Principal{Org: "acme", User: "boss", Admin: true})
 }
 
 func newDB(t *testing.T) orm.DB {
@@ -86,9 +86,9 @@ func TestGetWebauthnCredential(t *testing.T) {
 		owner, key string
 		wantStatus int // 0 => success
 	}{
-		{name: "found", seed: true, owner: "hanzo", key: "laptop"},
-		{name: "absent is not found", owner: "hanzo", key: "ghost", wantStatus: 404},
-		{name: "store gone is internal", seed: true, closeDB: true, owner: "hanzo", key: "laptop", wantStatus: 500},
+		{name: "found", seed: true, owner: "acme", key: "laptop"},
+		{name: "absent is not found", owner: "acme", key: "ghost", wantStatus: 404},
+		{name: "store gone is internal", seed: true, closeDB: true, owner: "acme", key: "laptop", wantStatus: 500},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -130,9 +130,9 @@ func TestAddWebauthnCredential(t *testing.T) {
 		wantStatus int // 0 => success
 	}{
 		{name: "owner required", key: "laptop", wantStatus: 400},
-		{name: "name required", owner: "hanzo", wantStatus: 400},
-		{name: "registered", owner: "hanzo", key: "laptop"},
-		{name: "store gone is internal", owner: "hanzo", key: "laptop", cancelCtx: true, wantStatus: 500},
+		{name: "name required", owner: "acme", wantStatus: 400},
+		{name: "registered", owner: "acme", key: "laptop"},
+		{name: "store gone is internal", owner: "acme", key: "laptop", cancelCtx: true, wantStatus: 500},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -141,7 +141,7 @@ func TestAddWebauthnCredential(t *testing.T) {
 			if tt.cancelCtx {
 				ctx = actingForAlice(cancelled())
 			}
-			out, err := addWebauthnCredential(db)(ctx, &schema.WebauthnCredential{Owner: tt.owner, Name: tt.key, User: "hanzo/alice"})
+			out, err := addWebauthnCredential(db)(ctx, &schema.WebauthnCredential{Owner: tt.owner, Name: tt.key, User: "acme/alice"})
 			if tt.wantStatus == 0 {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
@@ -156,8 +156,8 @@ func TestAddWebauthnCredential(t *testing.T) {
 				if gerr != nil {
 					t.Fatalf("credential not persisted under owner/name: %v", gerr)
 				}
-				if got.User != "hanzo/alice" {
-					t.Fatalf("user=%q, want hanzo/alice", got.User)
+				if got.User != "acme/alice" {
+					t.Fatalf("user=%q, want acme/alice", got.User)
 				}
 				return
 			}
@@ -182,11 +182,11 @@ func TestUpdateWebauthnCredential(t *testing.T) {
 		wantAffected bool // only read when wantStatus == 0
 	}{
 		{name: "owner required", key: "laptop", wantStatus: 400},
-		{name: "name required", owner: "hanzo", wantStatus: 400},
-		{name: "absent changes nothing", owner: "hanzo", key: "ghost", wantAffected: false},
-		{name: "renamed", seed: true, owner: "hanzo", key: "laptop", wantAffected: true},
-		{name: "store gone on read is internal", seed: true, closeDB: true, owner: "hanzo", key: "laptop", wantStatus: 500},
-		{name: "store gone on write is internal", seed: true, cancelCtx: true, owner: "hanzo", key: "laptop", wantStatus: 500},
+		{name: "name required", owner: "acme", wantStatus: 400},
+		{name: "absent changes nothing", owner: "acme", key: "ghost", wantAffected: false},
+		{name: "renamed", seed: true, owner: "acme", key: "laptop", wantAffected: true},
+		{name: "store gone on read is internal", seed: true, closeDB: true, owner: "acme", key: "laptop", wantStatus: 500},
+		{name: "store gone on write is internal", seed: true, cancelCtx: true, owner: "acme", key: "laptop", wantStatus: 500},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -201,7 +201,7 @@ func TestUpdateWebauthnCredential(t *testing.T) {
 			if tt.cancelCtx {
 				ctx = actingForAlice(cancelled())
 			}
-			in := &schema.WebauthnCredential{Owner: tt.owner, Name: tt.key, User: "hanzo/alice", AttestationType: "renamed"}
+			in := &schema.WebauthnCredential{Owner: tt.owner, Name: tt.key, User: "acme/alice", AttestationType: "renamed"}
 			out, err := updateWebauthnCredential(db)(ctx, in)
 			if tt.wantStatus == 0 {
 				if err != nil {
@@ -244,7 +244,7 @@ type failDelete struct{ orm.DB }
 func (failDelete) Delete(context.Context, orm.Key) error { return errors.New("store gone") }
 
 // Removing a passkey is a write to the account the stored row names, so it runs
-// as hanzo's admin, over hanzo/alice's device.
+// as acme's admin, over acme/alice's device.
 func TestDeleteWebauthnCredential(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -256,11 +256,11 @@ func TestDeleteWebauthnCredential(t *testing.T) {
 		wantStatus   int  // 0 => reached the store (success or safe no-op)
 		wantAffected bool // only read when wantStatus == 0
 	}{
-		{name: "absent changes nothing", owner: "hanzo", key: "ghost", wantAffected: false},
-		{name: "revoked", seed: true, user: "hanzo/alice", owner: "hanzo", key: "laptop", wantAffected: true},
-		{name: "another org's device is refused", seed: true, user: "orgb/bob", owner: "hanzo", key: "laptop", wantStatus: 403},
-		{name: "store gone on read is internal", seed: true, user: "hanzo/alice", closeDB: true, owner: "hanzo", key: "laptop", wantStatus: 500},
-		{name: "store gone on write is internal", seed: true, user: "hanzo/alice", failWrite: true, owner: "hanzo", key: "laptop", wantStatus: 500},
+		{name: "absent changes nothing", owner: "acme", key: "ghost", wantAffected: false},
+		{name: "revoked", seed: true, user: "acme/alice", owner: "acme", key: "laptop", wantAffected: true},
+		{name: "another org's device is refused", seed: true, user: "orgb/bob", owner: "acme", key: "laptop", wantStatus: 403},
+		{name: "store gone on read is internal", seed: true, user: "acme/alice", closeDB: true, owner: "acme", key: "laptop", wantStatus: 500},
+		{name: "store gone on write is internal", seed: true, user: "acme/alice", failWrite: true, owner: "acme", key: "laptop", wantStatus: 500},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
