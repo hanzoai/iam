@@ -43,15 +43,15 @@ func seedMember(t *testing.T, db orm.DB, user, org, role string) {
 // The roster of the organization you are in is the team you are on.
 func TestRoster_aMemberMayReadTheirOwnOrg(t *testing.T) {
 	h := newHarness(t)
-	seedUser(t, h.db, "hanzo", "alice", false)
-	seedMember(t, h.db, "hanzo/alice", "hanzo", store.RoleMember)
-	seedMember(t, h.db, "hanzo/boss", "hanzo", store.RoleAdmin)
+	seedUser(t, h.db, "acme", "alice", false)
+	seedMember(t, h.db, "acme/alice", "acme", store.RoleMember)
+	seedMember(t, h.db, "acme/boss", "acme", store.RoleAdmin)
 
-	status, body := h.read(t, "/v1/iam/memberships?org=hanzo", h.token(t, "hanzo/alice"))
+	status, body := h.read(t, "/v1/iam/memberships?org=acme", h.token(t, "acme/alice"))
 	if status != 200 {
 		t.Fatalf("status=%d body=%s, want 200", status, body)
 	}
-	if !strings.Contains(body, "hanzo/alice") || !strings.Contains(body, "hanzo/boss") {
+	if !strings.Contains(body, "acme/alice") || !strings.Contains(body, "acme/boss") {
 		t.Fatalf("the roster is missing somebody: %s", body)
 	}
 }
@@ -145,5 +145,22 @@ func TestPersonOrgs_anAppKeepsItsServedTenant(t *testing.T) {
 	_, foreign := h.readBasic(t, "/v1/iam/memberships?user=orgb/erin", "hanzo-console", "console-secret")
 	if strings.Contains(foreign, "orgb/erin") {
 		t.Fatalf("the app reached another tenant: %s", foreign)
+	}
+}
+
+// A plain member of an org the platform runs reads none of its roster: a customer
+// who landed in a brand org is not on its staff's team. The brand's admins still
+// read it.
+func TestRoster_aBrandOrgsPlainMemberReadsNoRoster(t *testing.T) {
+	h := newHarness(t)
+	seedUser(t, h.db, "hanzo", "alice", false)
+	seedUser(t, h.db, "hanzo", "boss", true)
+	seedMember(t, h.db, "hanzo/boss", "hanzo", store.RoleAdmin)
+
+	if status, body := h.read(t, "/v1/iam/memberships?org=hanzo", h.token(t, "hanzo/alice")); status == 200 || strings.Contains(body, "hanzo/boss") {
+		t.Fatalf("a plain member of hanzo read its roster: %d %s", status, body)
+	}
+	if status, body := h.read(t, "/v1/iam/memberships?org=hanzo", h.token(t, "hanzo/boss")); status != 200 || !strings.Contains(body, "hanzo/boss") {
+		t.Fatalf("hanzo's admin cannot read its roster: %d %s", status, body)
 	}
 }

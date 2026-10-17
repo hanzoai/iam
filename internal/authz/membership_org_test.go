@@ -22,11 +22,11 @@ import (
 func TestOrgReadFollowsMembershipNotTheAccountOwner(t *testing.T) {
 	// A person whose account lives in `hanzo`, who also belongs to `maxpower`.
 	dave := &principal.Principal{
-		Org: "hanzo", User: "davelorenzini",
+		Org: "beta", User: "davelorenzini",
 		Orgs: map[string]policy.Role{"maxpower": store.RoleAdmin},
 	}
 	// A person in `hanzo` with no other membership.
-	stranger := &principal.Principal{Org: "hanzo", User: "nobody"}
+	stranger := &principal.Principal{Org: "beta", User: "nobody"}
 
 	for _, tc := range []struct {
 		name   string
@@ -36,11 +36,11 @@ func TestOrgReadFollowsMembershipNotTheAccountOwner(t *testing.T) {
 		want   bool
 	}{
 		{"member reads the org they belong to", dave, "GET", "maxpower", true},
-		{"member reads their home org", dave, "GET", "hanzo", true},
+		{"member reads their home org", dave, "GET", "beta", true},
 		{"org admin edits the org they administer", dave, "POST", "maxpower", true},
 		{"a non-member cannot read that org", stranger, "GET", "maxpower", false},
 		{"a non-member cannot edit that org", stranger, "POST", "maxpower", false},
-		{"home-org membership alone does not grant editing", stranger, "POST", "hanzo", false},
+		{"home-org membership alone does not grant editing", stranger, "POST", "beta", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := authorize(tc.p, tc.method, "organizations", "admin", tc.org); got != tc.want {

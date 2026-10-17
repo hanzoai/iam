@@ -108,17 +108,22 @@ func TestList_aPersonSeesTheirOwn(t *testing.T) {
 	}
 }
 
-// A regular member, too: belonging is what the answer is made of, not admin.
+// A regular member, too: belonging is what the answer is made of, not admin. A
+// plain member of an org the platform runs is not its tenant, so the brand org is
+// not among theirs; the customer org they belong to is.
 func TestList_aRegularMemberSeesTheirOwn(t *testing.T) {
 	h := newHarness(t)
 	seedMany(t, h.db, 5)
+	if _, err := store.EnsureMembership(context.Background(), h.db, "hanzo/nobody", "tenant00", store.RoleMember); err != nil {
+		t.Fatal(err)
+	}
 
 	status, p, body := h.list(t, "hanzo/nobody", "")
 	if status != 200 {
 		t.Fatalf("status=%d body=%s, want 200", status, body)
 	}
-	if got := names(p); len(got) != 1 || got[0] != "hanzo" {
-		t.Fatalf("orgs=%v, want just hanzo", got)
+	if got := names(p); len(got) != 1 || got[0] != "tenant00" {
+		t.Fatalf("orgs=%v, want just tenant00", got)
 	}
 }
 

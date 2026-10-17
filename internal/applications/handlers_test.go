@@ -158,8 +158,8 @@ func TestList_ScopedAndMasked(t *testing.T) {
 	ctx := context.Background()
 	create := Create(db)
 	for _, a := range []*schema.Application{
-		{Owner: "hanzo", Name: "a1", ClientId: "cid-a1", ClientSecret: "sekret-a1"},
-		{Owner: "hanzo", Name: "a2", ClientId: "cid-a2", ClientSecret: "sekret-a2"},
+		{Owner: "acme", Name: "a1", ClientId: "cid-a1", ClientSecret: "sekret-a1"},
+		{Owner: "acme", Name: "a2", ClientId: "cid-a2", ClientSecret: "sekret-a2"},
 		{Owner: "other", Name: "b1", ClientId: "cid-b1", ClientSecret: "sekret-b1"},
 	} {
 		if _, err := create(ctx, a); err != nil {
@@ -167,7 +167,7 @@ func TestList_ScopedAndMasked(t *testing.T) {
 		}
 	}
 
-	out, err := listApplications(db)(asTenant("hanzo"), &ApplicationQuery{Owner: "hanzo"})
+	out, err := listApplications(db)(asTenant("acme"), &ApplicationQuery{Owner: "acme"})
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestList_ScopedAndMasked(t *testing.T) {
 		t.Fatalf("owner scope leaked: got %d apps, want 2", len(out.Applications))
 	}
 	for _, a := range out.Applications {
-		if a.Owner != "hanzo" {
+		if a.Owner != "acme" {
 			t.Fatalf("a foreign owner's app appeared: %s/%s", a.Owner, a.Name)
 		}
 		if a.ClientSecret != "" {

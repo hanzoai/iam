@@ -129,7 +129,7 @@ func TestTheMintIssuesNoSuperAdminASecretKey(t *testing.T) {
 	if status, body := post("/v1/iam/users/admin/z/keys?type=publishable"); status != 200 {
 		t.Fatalf("the operator's org could not get a publishable key: %d %s", status, body)
 	}
-	if got := whoHolds(t, h, mint(t, h, userKeys)); got.Data.Owner != "hanzo" || got.Data.Name != "alice" {
+	if got := whoHolds(t, h, mint(t, h, userKeys)); got.Data.Owner != "orgb" || got.Data.Name != "dana" {
 		t.Fatalf("an ordinary member's minted key resolved to %q/%q", got.Data.Owner, got.Data.Name)
 	}
 }

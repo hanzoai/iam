@@ -198,6 +198,13 @@ func mintUserKeysHandler(db orm.DB) zip.Handler {
 		if !ok {
 			return mintErr(c, 400, "unknown key type")
 		}
+		// A key is filed in the holder's own org, so it must be one the key acts in
+		// (store.KeyActs): never a directory, never a platform org its holder only
+		// belongs to. Such a holder mints in an org they act in, through the org's
+		// own key surface.
+		if !store.Acts(user.Owner, user, store.HomeRole(user)) {
+			return mintErr(c, 403, "a key filed in "+user.Owner+" would act for no one")
+		}
 		key, err := keys.MintUserKey(ctx, db, user.Owner, user.Name, scope)
 		if errors.Is(err, keys.ErrSuperAdminKey) {
 			return mintErr(c, 403, err.Error())
@@ -319,6 +326,21 @@ func authorizeMinter(ctx context.Context, db orm.DB, c *zip.Ctx) (*minter, int, 
 		// limited to less may not mint one.
 		if strings.TrimSpace(key.Scope) != "" {
 			return nil, 403, "a limited key cannot act"
+		}
+		// An act key names its holder and acts only while that holder could present
+		// it: the account live, still in the key's org, and running it. The holder
+		// is resolved as every key's is (store.HolderByAccessKey), so a suspended or
+		// removed admin's act key stops minting the moment they do, and a key that
+		// names no one has no one whose standing could end it.
+		if strings.TrimSpace(key.User) == "" {
+			return nil, 403, "an act key names its holder"
+		}
+		h, err := store.HolderByAccessKey(ctx, db, secret)
+		if err != nil && !errors.Is(err, orm.ErrNotFound) {
+			return nil, 500, "server_error"
+		}
+		if err != nil || h.User == nil || !(h.User.Machine() || h.Role == store.RoleOwner || h.Role == store.RoleAdmin) {
+			return nil, 403, "the key's holder may not act"
 		}
 		return &minter{key: key}, 0, ""
 	}

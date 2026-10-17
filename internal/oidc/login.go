@@ -277,6 +277,12 @@ func loginHandler(db orm.DB) zip.Handler {
 // being true of one arm and false of the other.
 func afterFirstFactor(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm, proven string) error {
 	ctx := c.Context()
+	// A machine signs in as an application or presents its key; it holds no
+	// session. Refused after the proof, with the words a wrong password draws, so
+	// the answer tells no one without the credential that the account is a machine.
+	if user.Machine() {
+		return httpx.Err(c, "the username or password is incorrect")
+	}
 	org, err := store.GetOrganizationByName(ctx, db, user.Owner)
 	if err != nil {
 		return httpx.Err(c, err.Error())

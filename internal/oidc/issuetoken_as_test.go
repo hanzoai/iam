@@ -66,8 +66,16 @@ func seedActKey(t *testing.T, db orm.DB, owner, name, secret, application string
 // seedActKeyState is seedActKey with the lifecycle flag and expiry spelled out.
 func seedActKeyState(t *testing.T, db orm.DB, owner, name, secret, application string, act bool, state, expire string) {
 	t.Helper()
+	// An act key names its holder, an admin of the key's org: the mint refuses one
+	// that names no one, and one whose holder no longer runs the org.
+	holder := "keyholder-" + name
+	if !strings.HasPrefix(owner, "admin") {
+		if u, _ := orm.Get[schema.User](db, owner+"/"+holder); u == nil {
+			seedAct(t, db, owner, holder, "ext-"+owner+"-"+holder, "", true)
+		}
+	}
 	k := orm.New[schema.Key](db)
-	k.Owner, k.Name = owner, name
+	k.Owner, k.Name, k.User = owner, name, holder
 	k.Type = "Organization"
 	k.Application = application
 	k.AccessSecretDigest = schema.DigestSecret(secret)

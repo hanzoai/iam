@@ -135,6 +135,9 @@ func provision(ctx context.Context, db orm.DB, cl claim) (provisioned, error) {
 		if user == nil {
 			return &fault{400, "the user does not exist"}
 		}
+		if user.IsForbidden || user.IsDeleted {
+			return &fault{403, "a suspended account founds no organization"}
+		}
 		founder := user.Model.Id() // stable surrogate storage id — survives the Owner re-key
 
 		// A platform operator holds no role in a customer org, and an account of a

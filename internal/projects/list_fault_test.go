@@ -61,9 +61,9 @@ func TestListStoreFaultIsInternal(t *testing.T) {
 	if err := app.Build(); err != nil {
 		t.Fatalf("build: %v", err)
 	}
-	req := httptest.NewRequest("GET", "/v1/iam/projects?owner=hanzo", nil)
+	req := httptest.NewRequest("GET", "/v1/iam/projects?owner=acme", nil)
 	req.Host = "hanzo.id"
-	req.Header.Set("Authorization", "Bearer "+h.token(t, "hanzo/alice"))
+	req.Header.Set("Authorization", "Bearer "+h.token(t, "acme/alice"))
 	resp, err := testhttp.Do(app, req)
 	if err != nil {
 		t.Fatalf("do: %v", err)

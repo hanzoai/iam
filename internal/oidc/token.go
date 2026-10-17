@@ -544,6 +544,11 @@ func passwordGrant(c *zip.Ctx, db orm.DB) error {
 	if user.IsForbidden || user.IsDeleted {
 		return tokenError(c, 400, "invalid_grant", "the user is forbidden")
 	}
+	// A machine holds no password grant: it signs in as an application or
+	// presents its key (afterFirstFactor says the same of the form).
+	if user.Machine() {
+		return tokenError(c, 400, "invalid_grant", "the username or password is incorrect")
+	}
 
 	// Build a fresh grant row (owner/name upfront so newFamilyID has a stable id),
 	// then mint through the ONE shared token path (access + id_token on openid +

@@ -163,12 +163,16 @@ func (h *OrganizationAPI) own(ctx context.Context, p *principal.Principal, q str
 	// into, so listing one here would offer a destination that assume refuses.
 	// A SuperAdmin's home is one, and a membership row can name one, so both
 	// halves of the set are filtered.
+	//
+	// So is an org the principal does not belong to as a tenant
+	// (policy.Principal.MemberOf): a brand's directory, where the account lives, and
+	// a platform org it is a plain member of.
 	names := make([]string, 0, len(p.Orgs)+1)
-	if p.Org != "" && !policy.IsReservedOrg(p.Org) {
+	if p.Org != "" && !policy.IsReservedOrg(p.Org) && p.MemberOf(p.Org) {
 		names = append(names, p.Org)
 	}
 	for org := range p.Orgs {
-		if org != p.Org && !policy.IsReservedOrg(org) {
+		if org != p.Org && !policy.IsReservedOrg(org) && p.MemberOf(org) {
 			names = append(names, org)
 		}
 	}

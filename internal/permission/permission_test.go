@@ -226,18 +226,18 @@ func TestDeleteRemoves(t *testing.T) {
 func TestListScopesToOwnerNewestFirst(t *testing.T) {
 	h, _ := newHandlers(t)
 
-	mustAdd(t, h, &schema.Permission{Owner: "hanzo", Name: "a", CreatedTime: "2026-01-01T00:00:00Z"})
-	mustAdd(t, h, &schema.Permission{Owner: "hanzo", Name: "b", CreatedTime: "2026-03-01T00:00:00Z"})
-	mustAdd(t, h, &schema.Permission{Owner: "hanzo", Name: "c", CreatedTime: "2026-02-01T00:00:00Z"})
+	mustAdd(t, h, &schema.Permission{Owner: "acme", Name: "a", CreatedTime: "2026-01-01T00:00:00Z"})
+	mustAdd(t, h, &schema.Permission{Owner: "acme", Name: "b", CreatedTime: "2026-03-01T00:00:00Z"})
+	mustAdd(t, h, &schema.Permission{Owner: "acme", Name: "c", CreatedTime: "2026-02-01T00:00:00Z"})
 	mustAdd(t, h, &schema.Permission{Owner: "zoo", Name: "z", CreatedTime: "2026-09-01T00:00:00Z"})
 
-	out, err := h.List(asTenant("hanzo"), &ListRequest{Owner: "hanzo"})
+	out, err := h.List(asTenant("acme"), &ListRequest{Owner: "acme"})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
 	var names []string
 	for _, p := range out.Permissions {
-		if p.Owner != "hanzo" {
+		if p.Owner != "acme" {
 			t.Fatalf("List leaked a %q grant across the owner scope", p.Owner)
 		}
 		names = append(names, p.Name)
@@ -271,8 +271,8 @@ func TestStoreFaultIsInternal(t *testing.T) {
 	// A principal, because List scopes by the caller before it reaches the store —
 	// without one the refusal would be the scope's 403 and the store fault this
 	// case exists to observe would never be reached.
-	ctx := asTenant("hanzo")
-	mustAdd(t, h, &schema.Permission{Owner: "hanzo", Name: "editor"})
+	ctx := asTenant("acme")
+	mustAdd(t, h, &schema.Permission{Owner: "acme", Name: "editor"})
 	if err := db.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
@@ -281,11 +281,11 @@ func TestStoreFaultIsInternal(t *testing.T) {
 		name string
 		call func() error
 	}{
-		{"List", func() error { _, err := h.List(ctx, &ListRequest{Owner: "hanzo"}); return err }},
-		{"Get", func() error { _, err := h.Get(ctx, &Ref{Owner: "hanzo", Name: "editor"}); return err }},
-		{"Add", func() error { _, err := h.Add(ctx, &schema.Permission{Owner: "hanzo", Name: "new"}); return err }},
-		{"Update", func() error { _, err := h.Update(ctx, &schema.Permission{Owner: "hanzo", Name: "editor"}); return err }},
-		{"Delete", func() error { _, err := h.Delete(ctx, &Ref{Owner: "hanzo", Name: "editor"}); return err }},
+		{"List", func() error { _, err := h.List(ctx, &ListRequest{Owner: "acme"}); return err }},
+		{"Get", func() error { _, err := h.Get(ctx, &Ref{Owner: "acme", Name: "editor"}); return err }},
+		{"Add", func() error { _, err := h.Add(ctx, &schema.Permission{Owner: "acme", Name: "new"}); return err }},
+		{"Update", func() error { _, err := h.Update(ctx, &schema.Permission{Owner: "acme", Name: "editor"}); return err }},
+		{"Delete", func() error { _, err := h.Delete(ctx, &Ref{Owner: "acme", Name: "editor"}); return err }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			wantStatus(t, tc.call(), 500)

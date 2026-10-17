@@ -177,7 +177,9 @@ func (h *OrganizationAPI) Create(ctx context.Context, in *CreateOrganizationInpu
 	case err != nil:
 		return nil, zip.ErrInternal(err.Error())
 	case held:
-		return nil, zip.ErrConflict("organization name is still held by rows of a removed organization")
+		// The same answer a standing org draws: whether a name was ever used is not
+		// the caller's to learn.
+		return nil, zip.ErrConflict("organization already exists")
 	}
 
 	entity := orm.New[schema.Organization](h.DB)

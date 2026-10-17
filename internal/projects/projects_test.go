@@ -63,9 +63,9 @@ func newHarness(t *testing.T) *harness {
 	t.Cleanup(func() { _ = db.Close() })
 
 	seedCert(t, db, "admin", signingKid, pemOf(t, key))
-	seedUser(t, db, "admin", "root", true)   // SuperAdmin
-	seedUser(t, db, "hanzo", "boss", true)   // org-admin of hanzo
-	seedUser(t, db, "hanzo", "alice", false) // regular user in hanzo
+	seedUser(t, db, "admin", "root", true)  // SuperAdmin
+	seedUser(t, db, "acme", "boss", true)   // org-admin of acme
+	seedUser(t, db, "acme", "alice", false) // regular user in acme
 
 	app := zip.New(zip.Config{AppName: "projects-test", DisableStartupMessage: true})
 	routes.Route(app, db)
@@ -141,17 +141,17 @@ func has(ss []string, want string) bool {
 // admin deletes it.
 func TestProjects_lifecycle(t *testing.T) {
 	h := newHarness(t)
-	boss := h.token(t, "hanzo/boss")
-	alice := h.token(t, "hanzo/alice")
+	boss := h.token(t, "acme/boss")
+	alice := h.token(t, "acme/alice")
 
 	// add-project (org-admin).
-	body := `{"owner":"hanzo","name":"alpha","displayName":"Alpha","organization":"hanzo","description":"first"}`
+	body := `{"owner":"acme","name":"alpha","displayName":"Alpha","organization":"acme","description":"first"}`
 	if st, m := h.do(t, "POST", "/v1/iam/projects", boss, body); st != 200 {
 		t.Fatalf("add-project: status=%d body=%v", st, m)
 	}
 
 	// get-organization-projects — a REGULAR member sees it (the switcher is for all).
-	st, m := h.do(t, "GET", "/v1/iam/projects?owner=hanzo", alice, "")
+	st, m := h.do(t, "GET", "/v1/iam/projects?owner=acme", alice, "")
 	if st != 200 {
 		t.Fatalf("list: status=%d body=%v", st, m)
 	}
@@ -160,10 +160,10 @@ func TestProjects_lifecycle(t *testing.T) {
 	}
 
 	// delete-project (org-admin), keyed by owner/name.
-	if st, m := h.do(t, "DELETE", "/v1/iam/projects/hanzo/alpha", boss, ""); st != 200 {
+	if st, m := h.do(t, "DELETE", "/v1/iam/projects/acme/alpha", boss, ""); st != 200 {
 		t.Fatalf("delete-project: status=%d body=%v", st, m)
 	}
-	_, m = h.do(t, "GET", "/v1/iam/projects?owner=hanzo", alice, "")
+	_, m = h.do(t, "GET", "/v1/iam/projects?owner=acme", alice, "")
 	if has(names(m), "alpha") {
 		t.Fatalf("'alpha' still listed after delete: %v", names(m))
 	}
@@ -174,35 +174,35 @@ func TestProjects_lifecycle(t *testing.T) {
 // which one.
 func TestProjects_pathAddressed(t *testing.T) {
 	h := newHarness(t)
-	boss := h.token(t, "hanzo/boss")
+	boss := h.token(t, "acme/boss")
 
 	if st, m := h.do(t, "POST", "/v1/iam/projects", boss,
-		`{"owner":"hanzo","name":"gamma","organization":"hanzo","displayName":"Gamma"}`); st != 200 {
+		`{"owner":"acme","name":"gamma","organization":"acme","displayName":"Gamma"}`); st != 200 {
 		t.Fatalf("POST /v1/iam/projects: status=%d body=%v", st, m)
 	}
 
-	st, m := h.do(t, "GET", "/v1/iam/projects/hanzo/gamma", boss, "")
+	st, m := h.do(t, "GET", "/v1/iam/projects/acme/gamma", boss, "")
 	if st != 200 {
-		t.Fatalf("GET /v1/iam/projects/hanzo/gamma: status=%d body=%v", st, m)
+		t.Fatalf("GET /v1/iam/projects/acme/gamma: status=%d body=%v", st, m)
 	}
 	if got, _ := m["displayName"].(string); got != "Gamma" {
 		t.Fatalf("read the wrong project: %v", m)
 	}
 
 	// The body carries no owner and no name: the path alone says which project.
-	if st, m := h.do(t, "PUT", "/v1/iam/projects/hanzo/gamma", boss,
-		`{"organization":"hanzo","displayName":"Gamma II"}`); st != 200 {
-		t.Fatalf("PUT /v1/iam/projects/hanzo/gamma: status=%d body=%v", st, m)
+	if st, m := h.do(t, "PUT", "/v1/iam/projects/acme/gamma", boss,
+		`{"organization":"acme","displayName":"Gamma II"}`); st != 200 {
+		t.Fatalf("PUT /v1/iam/projects/acme/gamma: status=%d body=%v", st, m)
 	}
-	_, m = h.do(t, "GET", "/v1/iam/projects/hanzo/gamma", boss, "")
+	_, m = h.do(t, "GET", "/v1/iam/projects/acme/gamma", boss, "")
 	if got, _ := m["displayName"].(string); got != "Gamma II" {
 		t.Fatalf("update did not bind the path target: %v", m)
 	}
 
-	if st, m := h.do(t, "DELETE", "/v1/iam/projects/hanzo/gamma", boss, ""); st != 200 {
-		t.Fatalf("DELETE /v1/iam/projects/hanzo/gamma: status=%d body=%v", st, m)
+	if st, m := h.do(t, "DELETE", "/v1/iam/projects/acme/gamma", boss, ""); st != 200 {
+		t.Fatalf("DELETE /v1/iam/projects/acme/gamma: status=%d body=%v", st, m)
 	}
-	if st, _ := h.do(t, "GET", "/v1/iam/projects/hanzo/gamma", boss, ""); st != 404 {
+	if st, _ := h.do(t, "GET", "/v1/iam/projects/acme/gamma", boss, ""); st != 404 {
 		t.Fatalf("read after delete: status=%d, want 404", st)
 	}
 }
@@ -210,17 +210,17 @@ func TestProjects_pathAddressed(t *testing.T) {
 // TestProjects_writeNeedsAdmin: a regular member can LIST but not create/delete.
 func TestProjects_writeNeedsAdmin(t *testing.T) {
 	h := newHarness(t)
-	alice := h.token(t, "hanzo/alice") // regular
+	alice := h.token(t, "acme/alice") // regular
 
-	body := `{"owner":"hanzo","name":"beta","organization":"hanzo"}`
+	body := `{"owner":"acme","name":"beta","organization":"acme"}`
 	if st, _ := h.do(t, "POST", "/v1/iam/projects", alice, body); st != 403 {
 		t.Fatalf("regular user add-project: status=%d, want 403", st)
 	}
-	if st, _ := h.do(t, "DELETE", "/v1/iam/projects/hanzo/beta", alice, ""); st != 403 {
+	if st, _ := h.do(t, "DELETE", "/v1/iam/projects/acme/beta", alice, ""); st != 403 {
 		t.Fatalf("regular user delete-project: status=%d, want 403", st)
 	}
 	// But listing is allowed (200) — the switcher is shown to every user.
-	if st, m := h.do(t, "GET", "/v1/iam/projects?owner=hanzo", alice, ""); st != 200 {
+	if st, m := h.do(t, "GET", "/v1/iam/projects?owner=acme", alice, ""); st != 200 {
 		t.Fatalf("regular user list: status=%d body=%v", st, m)
 	}
 }
@@ -231,7 +231,7 @@ func TestProjects_writeNeedsAdmin(t *testing.T) {
 func TestProjects_crossTenantScoping(t *testing.T) {
 	h := newHarness(t)
 	super := h.token(t, "admin/root")
-	alice := h.token(t, "hanzo/alice")
+	alice := h.token(t, "acme/alice")
 
 	// super seeds a project under a DIFFERENT tenant, orgb.
 	if st, m := h.do(t, "POST", "/v1/iam/projects", super,
@@ -239,10 +239,10 @@ func TestProjects_crossTenantScoping(t *testing.T) {
 		t.Fatalf("super add orgb project: status=%d body=%v", st, m)
 	}
 
-	// alice (hanzo) asks for orgb's projects → gets HER org's scope, never orgb's.
+	// alice (acme) asks for orgb's projects → gets HER org's scope, never orgb's.
 	_, m := h.do(t, "GET", "/v1/iam/projects?owner=orgb", alice, "")
 	if has(names(m), "secret") {
-		t.Fatalf("VULN: hanzo user listed orgb's project 'secret': %v", names(m))
+		t.Fatalf("VULN: acme user listed orgb's project 'secret': %v", names(m))
 	}
 }
 

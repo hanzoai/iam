@@ -107,9 +107,9 @@ func TestMintUserKeys_generatesReadableSkKey(t *testing.T) {
 	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
-	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
+	seedUserInOrg(t, db, "acme", "alice", "alice@hanzo.ai", "pw")
 
-	resp, body := do(t, app, keyReq("POST", userKeys("hanzo/alice"), "hanzo-console", "top-secret", ""))
+	resp, body := do(t, app, keyReq("POST", userKeys("acme/alice"), "hanzo-console", "top-secret", ""))
 	if resp.StatusCode != 200 {
 		t.Fatalf("status = %d; body=%s", resp.StatusCode, body)
 	}
@@ -125,7 +125,7 @@ func TestMintUserKeys_generatesReadableSkKey(t *testing.T) {
 	if err != nil || got == nil {
 		t.Fatalf("minted key does not resolve to a user: %v", err)
 	}
-	if got.Owner != "hanzo" || got.Name != "alice" {
+	if got.Owner != "acme" || got.Name != "alice" {
 		t.Fatalf("key resolved to %s/%s, want hanzo/alice", got.Owner, got.Name)
 	}
 }
@@ -188,14 +188,14 @@ func TestMintRevokeUserKeys_createPathUser_persists(t *testing.T) {
 
 	// Canonical create — surrogate storage key, UUID sub, NO SetId anywhere.
 	if _, err := users.New(db).Create(tctx(), &users.CreateInput{
-		User:     schema.User{Owner: "hanzo", Name: "mallory", Email: "mallory@hanzo.ai"},
+		User:     schema.User{Owner: "acme", Name: "mallory", Email: "mallory@hanzo.ai"},
 		Password: "pw",
 	}); err != nil {
 		t.Fatalf("create via canonical path: %v", err)
 	}
 
 	// MINT must persist the sk- key on the real (surrogate-keyed) row.
-	resp, body := do(t, app, keyReq("POST", userKeys("hanzo/mallory"), "hanzo-console", "top-secret", ""))
+	resp, body := do(t, app, keyReq("POST", userKeys("acme/mallory"), "hanzo-console", "top-secret", ""))
 	if resp.StatusCode != 200 {
 		t.Fatalf("mint status=%d body=%s — saveUser missed the surrogate-key row (ITEM 1)", resp.StatusCode, body)
 	}
@@ -207,16 +207,16 @@ func TestMintRevokeUserKeys_createPathUser_persists(t *testing.T) {
 	if err != nil || got == nil {
 		t.Fatalf("minted key does not resolve to its user — the write missed the row the resolver reads: %v", err)
 	}
-	if got.Owner != "hanzo" || got.Name != "mallory" {
+	if got.Owner != "acme" || got.Name != "mallory" {
 		t.Fatalf("key resolved to %s/%s, want hanzo/mallory", got.Owner, got.Name)
 	}
 
 	// REVOKE must clear it on the same real row.
-	resp, body = do(t, app, keyReq("DELETE", userKeys("hanzo/mallory"), "hanzo-console", "top-secret", ""))
+	resp, body = do(t, app, keyReq("DELETE", userKeys("acme/mallory"), "hanzo-console", "top-secret", ""))
 	if resp.StatusCode != 200 {
 		t.Fatalf("revoke status=%d body=%s", resp.StatusCode, body)
 	}
-	if u, _ := store.GetUserByName(tctx(), db, "hanzo", "mallory"); u.AccessKey != "" {
+	if u, _ := store.GetUserByName(tctx(), db, "acme", "mallory"); u.AccessKey != "" {
 		t.Fatalf("AccessKey after revoke=%q, want empty", u.AccessKey)
 	}
 }
@@ -233,9 +233,9 @@ func TestMintUserKeys_publishableType_mintsAPkAndNeverAPrincipal(t *testing.T) {
 	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
-	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
+	seedUserInOrg(t, db, "acme", "alice", "alice@hanzo.ai", "pw")
 
-	resp, body := do(t, app, keyReq("POST", userKeys("hanzo/alice"), "hanzo-console", "top-secret", "?type=publishable"))
+	resp, body := do(t, app, keyReq("POST", userKeys("acme/alice"), "hanzo-console", "top-secret", "?type=publishable"))
 	if resp.StatusCode != 200 {
 		t.Fatalf("status = %d; body=%s", resp.StatusCode, body)
 	}
@@ -249,8 +249,8 @@ func TestMintUserKeys_publishableType_mintsAPkAndNeverAPrincipal(t *testing.T) {
 	if err != nil || k == nil {
 		t.Fatalf("the minted publishable key does not resolve at the ingest endpoint: %v", err)
 	}
-	if k.Owner != "hanzo" {
-		t.Fatalf("publishable key resolved to org %q, want hanzo", k.Owner)
+	if k.Owner != "acme" {
+		t.Fatalf("publishable key resolved to org %q, want acme", k.Owner)
 	}
 	// …and to NOBODY as a principal. This is the property that makes it safe to ship
 	// in a browser bundle, and it must hold for a key we minted ourselves.
@@ -266,11 +266,11 @@ func TestMintUserKeys_publishableAndSecretCoexist(t *testing.T) {
 	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
-	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
+	seedUserInOrg(t, db, "acme", "alice", "alice@hanzo.ai", "pw")
 
-	_, secretBody := do(t, app, keyReq("POST", userKeys("hanzo/alice"), "hanzo-console", "top-secret", ""))
+	_, secretBody := do(t, app, keyReq("POST", userKeys("acme/alice"), "hanzo-console", "top-secret", ""))
 	secret, _ := dataMap(t, secretBody)["accessKey"].(string)
-	_, pubBody := do(t, app, keyReq("POST", userKeys("hanzo/alice"), "hanzo-console", "top-secret", "?type=publishable"))
+	_, pubBody := do(t, app, keyReq("POST", userKeys("acme/alice"), "hanzo-console", "top-secret", "?type=publishable"))
 	pub, _ := dataMap(t, pubBody)["accessKey"].(string)
 	if !strings.HasPrefix(secret, "sk-") || !strings.HasPrefix(pub, "pk-") {
 		t.Fatalf("halves = %q / %q, want sk- and pk-", secret, pub)
@@ -280,7 +280,7 @@ func TestMintUserKeys_publishableAndSecretCoexist(t *testing.T) {
 	}
 
 	// Revoking the PUBLISHABLE key is scoped: the secret key still authenticates.
-	resp, body := do(t, app, keyReq("DELETE", userKeys("hanzo/alice"), "hanzo-console", "top-secret", "?type=publishable"))
+	resp, body := do(t, app, keyReq("DELETE", userKeys("acme/alice"), "hanzo-console", "top-secret", "?type=publishable"))
 	if resp.StatusCode != 200 {
 		t.Fatalf("scoped revoke status = %d; body=%s", resp.StatusCode, body)
 	}
@@ -299,19 +299,33 @@ func TestMintUserKeys_unknownType_400(t *testing.T) {
 	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
-	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
+	seedUserInOrg(t, db, "acme", "alice", "alice@hanzo.ai", "pw")
 
 	for _, typ := range []string{"public", "publishible", "sk", "SECRET"} {
-		resp, body := do(t, app, keyReq("POST", userKeys("hanzo/alice"), "hanzo-console", "top-secret", "?type="+typ))
+		resp, body := do(t, app, keyReq("POST", userKeys("acme/alice"), "hanzo-console", "top-secret", "?type="+typ))
 		if resp.StatusCode != 400 {
 			t.Fatalf("type=%q status = %d, want 400; body=%s", typ, resp.StatusCode, body)
 		}
 	}
 	// And the two spellings that ARE the contract still work.
 	for _, typ := range []string{"", "secret", "publishable"} {
-		resp, body := do(t, app, keyReq("POST", userKeys("hanzo/alice"), "hanzo-console", "top-secret", "?type="+typ))
+		resp, body := do(t, app, keyReq("POST", userKeys("acme/alice"), "hanzo-console", "top-secret", "?type="+typ))
 		if resp.StatusCode != 200 {
 			t.Fatalf("type=%q status = %d, want 200; body=%s", typ, resp.StatusCode, body)
+		}
+	}
+}
+
+// A key is filed in its holder's own org, and a plain member of a brand org acts
+// in none of it, so the mint refuses rather than issue a key that acts for no one.
+func TestMintUserKeys_aPlainMemberOfABrandOrgIsMintedNoKey(t *testing.T) {
+	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
+	for _, q := range []string{"", "?type=publishable"} {
+		if resp, body := do(t, app, keyReq("POST", userKeys("hanzo/alice"), "hanzo-console", "top-secret", q)); resp.StatusCode != 403 {
+			t.Fatalf("mint%s for a plain hanzo member: %d %s, want 403", q, resp.StatusCode, body)
 		}
 	}
 }

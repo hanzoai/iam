@@ -172,6 +172,20 @@ func seedKeyRow(t *testing.T, db orm.DB, org, name string, isAdmin bool, pk, sk 
 	}
 }
 
+// asMachine makes org/name a service account: the platform org's own machine, a
+// tenant of it as no plain member of it is.
+func asMachine(t *testing.T, db orm.DB, org, name string) {
+	t.Helper()
+	u, err := store.GetUserByName(context.Background(), db, org, name)
+	if err != nil || u == nil {
+		t.Fatalf("read %s/%s: %v", org, name, err)
+	}
+	u.Type = schema.ServiceAccount
+	if err := u.UpdateCtx(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // seedApp seeds a confidential app owned by the admin org — a legitimate platform
 // service account (the CI/push identity shape).
 func seedApp(t *testing.T, db orm.DB, clientID, secret string) {
@@ -385,11 +399,19 @@ func TestToken_ServiceAccount_PullPush(t *testing.T) {
 	}
 }
 
-// TestToken_User_PullOnly proves a non-privileged authenticated user is restricted
-// to pull: push is dropped, never silently granted.
+// TestToken_User_PullOnly proves a non-privileged authenticated identity — the
+// platform org's own machine — is restricted to pull: push is dropped, never
+// silently granted. A plain person member of the platform org is no tenant of it and
+// gets no token at all.
 func TestToken_User_PullOnly(t *testing.T) {
 	app, db, _ := newServer(t)
 	seedUser(t, db, "hanzo", "alice", "correct horse", false)
+	seedUser(t, db, "hanzo", "eve", "eve's horse", false)
+	asMachine(t, db, "hanzo", "alice")
+
+	if status, body, _ := tokenGET(t, app, "eve", "eve's horse", testService, "repository:hanzo/app:pull"); status != 401 || body["token"] != nil {
+		t.Fatalf("a plain member of hanzo got a registry token: status=%d body=%v", status, body)
+	}
 
 	status, body, _ := tokenGET(t, app, "alice", "correct horse",
 		testService, "repository:hanzo/app:pull,push")
@@ -412,6 +434,7 @@ func TestToken_User_PullOnly(t *testing.T) {
 func TestToken_User_PushOnly_Denied(t *testing.T) {
 	app, db, _ := newServer(t)
 	seedUser(t, db, "hanzo", "bob", "hunter2 hunter2", false)
+	asMachine(t, db, "hanzo", "bob")
 
 	status, body, _ := tokenGET(t, app, "bob", "hunter2 hunter2",
 		testService, "repository:hanzo/secret:push")
@@ -466,9 +489,17 @@ func TestToken_SuperAdminKey_Denied(t *testing.T) {
 		t.Fatalf("a SuperAdmin's key was a registry credential: status=%d body=%v", status, body)
 	}
 
+	// A plain member of hanzo holding an admin-org membership is neither a SuperAdmin
+	// nor hanzo's tenant: their key authenticates nothing here.
+	status, body, _ = tokenGET(t, app, "op", "sk-OPERATORkey00001", testService, "repository:hanzo/app:pull,push")
+	if status != 401 || body["token"] != nil {
+		t.Fatalf("hanzo/op's key: status=%d body=%v, want no token", status, body)
+	}
+	// The same key held by hanzo's machine pulls, and an admin-org membership adds no push.
+	asMachine(t, db, "hanzo", "op")
 	status, body, _ = tokenGET(t, app, "op", "sk-OPERATORkey00001", testService, "repository:hanzo/app:pull,push")
 	if status != 200 {
-		t.Fatalf("hanzo/op's key: status=%d body=%v, want an ordinary hanzo credential", status, body)
+		t.Fatalf("hanzo's machine key: status=%d body=%v, want a pull credential", status, body)
 	}
 	acc := accessOf(t, verifyClaims(t, app, body["token"].(string)))
 	if want := []access{{Type: "repository", Name: "hanzo/app", Actions: []string{"pull"}}}; !eqAccess(acc, want) {
@@ -508,6 +539,7 @@ func TestToken_SuperAdminPassword_Denied(t *testing.T) {
 func TestToken_ApiKey_Password(t *testing.T) {
 	app, db, _ := newServer(t)
 	seedKeyRow(t, db, "hanzo", "dave", false, "pk-DEADBEEFdeadbeef00", "sk-DEADBEEFdeadbeef00")
+	asMachine(t, db, "hanzo", "dave")
 
 	status, body, _ := tokenGET(t, app, "dave", "sk-DEADBEEFdeadbeef00",
 		testService, "repository:hanzo/app:pull")
@@ -530,6 +562,7 @@ func TestToken_ApiKey_Password(t *testing.T) {
 func TestToken_ApiKey_Username(t *testing.T) {
 	app, db, _ := newServer(t)
 	seedKeyRow(t, db, "hanzo", "erin", false, "pk-CAFEBABEcafebabe11", "sk-CAFEBABEcafebabe11")
+	asMachine(t, db, "hanzo", "erin")
 
 	status, body, _ := tokenGET(t, app, "sk-CAFEBABEcafebabe11", "x",
 		testService, "repository:hanzo/app:pull")
@@ -547,6 +580,7 @@ func TestToken_ApiKey_Username(t *testing.T) {
 func TestToken_LimitedKey_Denied(t *testing.T) {
 	app, db, _ := newServer(t)
 	seedKeyRow(t, db, "hanzo", "dave", false, "pk-DEADBEEFdeadbeef00", "sk-DEADBEEFdeadbeef00")
+	asMachine(t, db, "hanzo", "dave")
 	k, err := orm.Get[schema.Key](db, "hanzo/dave-key")
 	if err != nil {
 		t.Fatalf("read key: %v", err)
@@ -634,6 +668,7 @@ func TestToken_ForeignTenantApp_Denied(t *testing.T) {
 func TestToken_HanzoKey_PullToken(t *testing.T) {
 	app, db, _ := newServer(t)
 	seedKeyRow(t, db, "hanzo", "grace", false, "pk-live-HANZO", "sk-live-HANZO")
+	asMachine(t, db, "hanzo", "grace")
 
 	// The SECRET sk- half authenticates and gets a pull token.
 	status, body, _ := tokenGET(t, app, "x", "sk-live-HANZO", testService, "repository:hanzo/app:pull")
@@ -738,6 +773,7 @@ func TestToken_RegistryPassword_NoCrossOrgCoupling(t *testing.T) {
 	if _, err := users.New(db).Create(ctx, &users.CreateInput{
 		User:     schema.User{Owner: "hanzo", Name: "z", Email: "z@hanzo.ai"},
 		Password: "hanzo-only-secret",
+		Admin:    true, // hanzo's admin: a plain member of it holds no registry credential
 	}); err != nil {
 		t.Fatalf("create hanzo/z: %v", err)
 	}

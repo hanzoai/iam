@@ -230,6 +230,11 @@ func acceptCaller(ctx context.Context, db orm.DB, in *acceptBody) (*schema.User,
 	if user == nil || user.IsForbidden || user.IsDeleted {
 		return nil, "", signIn, nil
 	}
+	// An invitation seats a person. A machine belongs to the org that made it and
+	// joins no other by accepting a code.
+	if user.Machine() {
+		return nil, "", httpx.Bad(403, "an invitation is accepted by a person", ""), nil
+	}
 	return user, sender, nil, nil
 }
 

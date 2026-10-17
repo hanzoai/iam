@@ -81,15 +81,17 @@ func want(t *testing.T, who, path string, got []string, keys ...string) {
 	}
 }
 
-// A plain member lists their own keys in their own org, and in an org they joined,
-// and never a colleague's.
+// A plain member lists the keys they hold in an org they belong to, and never a
+// colleague's. An org the platform runs is no tenant of its plain members, so
+// they list none of its keys, their own included.
 func TestKeyList_aMemberListsTheKeysTheyHold(t *testing.T) {
 	h := newHarness(t)
 	memberKeyFixtures(t, h)
 	alice := h.token(t, "hanzo/alice")
 	for _, path := range []string{"/v1/iam/keys?owner=hanzo", "/v1/iam/keys"} {
-		s, b := h.get(t, path, alice)
-		want(t, "hanzo/alice", path, listed(t, s, b), "hanzo/alice-key")
+		if s, b := h.get(t, path, alice); s != 403 || strings.Contains(string(b), "alice-key") {
+			t.Fatalf("a plain member of hanzo listed %s: %d %s", path, s, b)
+		}
 	}
 	s, b := h.get(t, "/v1/iam/keys?owner=orgb", alice)
 	want(t, "hanzo/alice", "?owner=orgb", listed(t, s, b), "orgb/alice-key")

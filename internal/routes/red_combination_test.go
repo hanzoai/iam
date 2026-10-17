@@ -78,25 +78,25 @@ func TestRedFinal_AdminByMembershipReachesNoneOfZ(t *testing.T) {
 	}
 }
 
-// An admin-org membership is not a promotion. A key written for a hanzo account
+// An admin-org membership is not a promotion. A key written for a customer account
 // keeps speaking for it after that account is added to the admin org: the account
 // is no more a SuperAdmin than before, and the resolver asks on every resolution.
 func TestRedFinal_AnAdminMembershipIsNoPromotion(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
-	seedUser(t, h.db, "hanzo", "rising", false)
+	seedUser(t, h.db, "acme", "rising", false)
 	k := orm.New[schema.Key](h.db)
-	k.Owner, k.Name, k.User = "hanzo", "rising-key", "rising"
+	k.Owner, k.Name, k.User = "acme", "rising-key", "rising"
 	k.AccessKey, k.AccessSecretDigest = "pk-live-RISING", schema.DigestSecret("sk-live-RISING")
-	k.SetId("hanzo/rising-key")
+	k.SetId("acme/rising-key")
 	if err := k.CreateCtx(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.EnsureMembership(ctx, h.db, "hanzo/rising", "admin", store.RoleAdmin); err != nil {
+	if _, err := store.EnsureMembership(ctx, h.db, "acme/rising", "admin", store.RoleAdmin); err != nil {
 		t.Fatal(err)
 	}
 	u, err := store.UserByAccessKey(ctx, h.db, "sk-live-RISING")
-	if err != nil || u == nil || u.Owner != "hanzo" || u.Name != "rising" || u.SuperAdmin() {
-		t.Fatalf("the key resolved to %+v (%v), want hanzo/rising, not a SuperAdmin", u, err)
+	if err != nil || u == nil || u.Owner != "acme" || u.Name != "rising" || u.SuperAdmin() {
+		t.Fatalf("the key resolved to %+v (%v), want acme/rising, not a SuperAdmin", u, err)
 	}
 }

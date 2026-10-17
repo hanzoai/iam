@@ -827,7 +827,7 @@ func resolve(c *zip.Ctx, db orm.DB) (*principal.Principal, string, error) {
 		// reserved one. A membership of the admin org does not make one, and an
 		// impersonation never carries it.
 		p := &principal.Principal{
-			Org: u.Owner, User: u.Name, Admin: u.IsAdmin, Sudo: u.SuperAdmin() && actor == "",
+			Org: u.Owner, User: u.Name, Admin: u.IsAdmin, Sudo: u.SuperAdmin() && actor == "", Machine: u.Machine(),
 			Orgs: membershipRoles(ctx, db, u.Owner+"/"+u.Name),
 		}
 		if actor != "" && policy.VerbOf(c.Method()) != policy.Read {

@@ -97,6 +97,11 @@ func From(ctx context.Context) (*Principal, bool) {
 // returning "" would resolve to "no filter" — every tenant's rows, which is the
 // exact branch TestListRoutesNeverLeakAnotherTenant exists to keep shut. Fail
 // closed.
+//
+// So is a home that is no tenant of the principal's (policy.Principal.MemberOf):
+// a brand's directory, where every customer lives, and an org the platform runs,
+// for a plain member of it. Each is where the account lives and none of its rows
+// are theirs, so "my own org" names nothing they may read or write.
 func Scope(ctx context.Context, owner string) (string, error) {
 	p, ok := From(ctx)
 	if !ok {
@@ -108,7 +113,7 @@ func Scope(ctx context.Context, owner string) (string, error) {
 	if owner != "" && owner != p.Org && p.AdminOf(owner) {
 		return owner, nil
 	}
-	if p.Org == "" || (owner != "" && owner != p.Org) {
+	if p.Org == "" || (owner != "" && owner != p.Org) || !p.MemberOf(p.Org) {
 		return "", errForeignOrg(p)
 	}
 	return p.Org, nil
@@ -140,7 +145,7 @@ func ScopeRead(ctx context.Context, owner string) (string, error) {
 	// No org named: the caller's own, exactly as Scope resolves it. An empty p.Org
 	// has no scope to fall back to and returning "" would mean "no filter".
 	if owner == "" {
-		if p.Org == "" {
+		if p.Org == "" || !p.MemberOf(p.Org) {
 			return "", errForeignOrg(p)
 		}
 		return p.Org, nil

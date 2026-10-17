@@ -159,6 +159,9 @@ func delegate(c *zip.Ctx, db orm.DB, client *schema.Application) error {
 	if !ok {
 		return refuse(403, "access_denied", "the subject is not a member of "+d.org)
 	}
+	if !store.Acts(d.org, user, ref.Role) {
+		return refuse(403, "access_denied", "the subject does not act in "+d.org)
+	}
 
 	// A caller may ask for less life than the cap and never more. The client's own
 	// token lifetime is NOT a bound: it says how long the orchestrator's identity

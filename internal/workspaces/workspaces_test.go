@@ -66,9 +66,9 @@ func newHarness(t *testing.T) *harness {
 	t.Cleanup(func() { _ = db.Close() })
 
 	seedCert(t, db, "admin", signingKid, pemOf(t, key))
-	seedUser(t, db, "admin", "root", true)   // SuperAdmin
-	seedUser(t, db, "hanzo", "boss", true)   // org-admin of hanzo
-	seedUser(t, db, "hanzo", "alice", false) // regular user in hanzo
+	seedUser(t, db, "admin", "root", true)  // SuperAdmin
+	seedUser(t, db, "acme", "boss", true)   // org-admin of acme
+	seedUser(t, db, "acme", "alice", false) // regular user in acme
 
 	app := zip.New(zip.Config{AppName: "workspaces-test", DisableStartupMessage: true})
 	routes.Route(app, db)
@@ -169,17 +169,17 @@ func has(ss []string, want string) bool {
 // the admin deletes it. Add → GetOrganizationWorkspaces → Delete.
 func TestWorkspaces_lifecycle(t *testing.T) {
 	h := newHarness(t)
-	boss := h.token(t, "hanzo/boss")
-	alice := h.token(t, "hanzo/alice")
+	boss := h.token(t, "acme/boss")
+	alice := h.token(t, "acme/alice")
 
 	// add-workspace (org-admin).
-	body := `{"owner":"hanzo","name":"alpha","displayName":"Alpha","organization":"hanzo","description":"first","bucket":"hanzo-alpha"}`
+	body := `{"owner":"acme","name":"alpha","displayName":"Alpha","organization":"acme","description":"first","bucket":"hanzo-alpha"}`
 	if st, m := h.do(t, "POST", "/v1/iam/workspaces", boss, body); st != 200 {
 		t.Fatalf("add-workspace: status=%d body=%v", st, m)
 	}
 
 	// get-organization-workspaces — a REGULAR member sees it (the switcher is for all).
-	st, m := h.do(t, "GET", "/v1/iam/workspaces?owner=hanzo", alice, "")
+	st, m := h.do(t, "GET", "/v1/iam/workspaces?owner=acme", alice, "")
 	if st != 200 {
 		t.Fatalf("list: status=%d body=%v", st, m)
 	}
@@ -188,10 +188,10 @@ func TestWorkspaces_lifecycle(t *testing.T) {
 	}
 
 	// delete-workspace (org-admin), keyed by owner/name.
-	if st, m := h.do(t, "DELETE", "/v1/iam/workspaces/hanzo/alpha", boss, ""); st != 200 {
+	if st, m := h.do(t, "DELETE", "/v1/iam/workspaces/acme/alpha", boss, ""); st != 200 {
 		t.Fatalf("delete-workspace: status=%d body=%v", st, m)
 	}
-	_, m = h.do(t, "GET", "/v1/iam/workspaces?owner=hanzo", alice, "")
+	_, m = h.do(t, "GET", "/v1/iam/workspaces?owner=acme", alice, "")
 	if has(names(m), "alpha") {
 		t.Fatalf("'alpha' still listed after delete: %v", names(m))
 	}
@@ -203,15 +203,15 @@ func TestWorkspaces_lifecycle(t *testing.T) {
 // off the same list the ScopeSwitcher renders.
 func TestWorkspaces_bucketAndDefaultRoundTrip(t *testing.T) {
 	h := newHarness(t)
-	boss := h.token(t, "hanzo/boss")
+	boss := h.token(t, "acme/boss")
 
 	// create a default workspace bound to a bucket.
 	if st, m := h.do(t, "POST", "/v1/iam/workspaces", boss,
-		`{"owner":"hanzo","name":"prod","organization":"hanzo","bucket":"hanzo-prod","isDefault":true}`); st != 200 {
+		`{"owner":"acme","name":"prod","organization":"acme","bucket":"hanzo-prod","isDefault":true}`); st != 200 {
 		t.Fatalf("add-workspace: status=%d body=%v", st, m)
 	}
 
-	_, m := h.do(t, "GET", "/v1/iam/workspaces?owner=hanzo", boss, "")
+	_, m := h.do(t, "GET", "/v1/iam/workspaces?owner=acme", boss, "")
 	w := find(m, "prod")
 	if w == nil {
 		t.Fatalf("workspace 'prod' not listed: %v", names(m))
@@ -224,12 +224,12 @@ func TestWorkspaces_bucketAndDefaultRoundTrip(t *testing.T) {
 	}
 
 	// update the workspace: re-bind the bucket (native typed CRUD, admin-authorized).
-	// The URL addresses hanzo/prod; the body carries only what changes.
-	if st, m := h.do(t, "PUT", "/v1/iam/workspaces/hanzo/prod", boss,
-		`{"organization":"hanzo","bucket":"hanzo-prod-v2","isDefault":true}`); st != 200 {
-		t.Fatalf("PUT /v1/iam/workspaces/hanzo/prod: status=%d body=%v", st, m)
+	// The URL addresses acme/prod; the body carries only what changes.
+	if st, m := h.do(t, "PUT", "/v1/iam/workspaces/acme/prod", boss,
+		`{"organization":"acme","bucket":"hanzo-prod-v2","isDefault":true}`); st != 200 {
+		t.Fatalf("PUT /v1/iam/workspaces/acme/prod: status=%d body=%v", st, m)
 	}
-	_, m = h.do(t, "GET", "/v1/iam/workspaces?owner=hanzo", boss, "")
+	_, m = h.do(t, "GET", "/v1/iam/workspaces?owner=acme", boss, "")
 	w = find(m, "prod")
 	if got, _ := w["bucket"].(string); got != "hanzo-prod-v2" {
 		t.Fatalf("bucket did not round-trip on update: got %q, want %q", got, "hanzo-prod-v2")
@@ -241,24 +241,24 @@ func TestWorkspaces_bucketAndDefaultRoundTrip(t *testing.T) {
 // Workspace stays org-level (empty FK) — backward compatible.
 func TestWorkspaces_projectFKRoundTrip(t *testing.T) {
 	h := newHarness(t)
-	boss := h.token(t, "hanzo/boss")
+	boss := h.token(t, "acme/boss")
 
 	// parent workspace + a project attached to it.
 	if st, m := h.do(t, "POST", "/v1/iam/workspaces", boss,
-		`{"owner":"hanzo","name":"alpha","organization":"hanzo"}`); st != 200 {
+		`{"owner":"acme","name":"alpha","organization":"acme"}`); st != 200 {
 		t.Fatalf("add-workspace: status=%d body=%v", st, m)
 	}
 	if st, m := h.do(t, "POST", "/v1/iam/projects", boss,
-		`{"owner":"hanzo","name":"scoped","organization":"hanzo","workspace":"alpha"}`); st != 200 {
+		`{"owner":"acme","name":"scoped","organization":"acme","workspace":"alpha"}`); st != 200 {
 		t.Fatalf("add-project(scoped): status=%d body=%v", st, m)
 	}
 	// a legacy/org-level project with no workspace.
 	if st, m := h.do(t, "POST", "/v1/iam/projects", boss,
-		`{"owner":"hanzo","name":"orglevel","organization":"hanzo"}`); st != 200 {
+		`{"owner":"acme","name":"orglevel","organization":"acme"}`); st != 200 {
 		t.Fatalf("add-project(orglevel): status=%d body=%v", st, m)
 	}
 
-	_, m := h.do(t, "GET", "/v1/iam/projects?owner=hanzo", boss, "")
+	_, m := h.do(t, "GET", "/v1/iam/projects?owner=acme", boss, "")
 	scoped := find(m, "scoped")
 	if scoped == nil {
 		t.Fatalf("project 'scoped' not listed: %v", names(m))
@@ -280,25 +280,25 @@ func TestWorkspaces_projectFKRoundTrip(t *testing.T) {
 // which one.
 func TestWorkspaces_pathAddressed(t *testing.T) {
 	h := newHarness(t)
-	boss := h.token(t, "hanzo/boss")
+	boss := h.token(t, "acme/boss")
 
 	if st, m := h.do(t, "POST", "/v1/iam/workspaces", boss,
-		`{"owner":"hanzo","name":"gamma","organization":"hanzo","displayName":"Gamma"}`); st != 200 {
+		`{"owner":"acme","name":"gamma","organization":"acme","displayName":"Gamma"}`); st != 200 {
 		t.Fatalf("POST /v1/iam/workspaces: status=%d body=%v", st, m)
 	}
 
-	st, m := h.do(t, "GET", "/v1/iam/workspaces/hanzo/gamma", boss, "")
+	st, m := h.do(t, "GET", "/v1/iam/workspaces/acme/gamma", boss, "")
 	if st != 200 {
-		t.Fatalf("GET /v1/iam/workspaces/hanzo/gamma: status=%d body=%v", st, m)
+		t.Fatalf("GET /v1/iam/workspaces/acme/gamma: status=%d body=%v", st, m)
 	}
 	if got, _ := m["displayName"].(string); got != "Gamma" {
 		t.Fatalf("read the wrong workspace: %v", m)
 	}
 
-	if st, m := h.do(t, "DELETE", "/v1/iam/workspaces/hanzo/gamma", boss, ""); st != 200 {
-		t.Fatalf("DELETE /v1/iam/workspaces/hanzo/gamma: status=%d body=%v", st, m)
+	if st, m := h.do(t, "DELETE", "/v1/iam/workspaces/acme/gamma", boss, ""); st != 200 {
+		t.Fatalf("DELETE /v1/iam/workspaces/acme/gamma: status=%d body=%v", st, m)
 	}
-	if st, _ := h.do(t, "GET", "/v1/iam/workspaces/hanzo/gamma", boss, ""); st != 404 {
+	if st, _ := h.do(t, "GET", "/v1/iam/workspaces/acme/gamma", boss, ""); st != 404 {
 		t.Fatalf("read after delete: status=%d, want 404", st)
 	}
 }
@@ -306,17 +306,17 @@ func TestWorkspaces_pathAddressed(t *testing.T) {
 // TestWorkspaces_writeNeedsAdmin: a regular member can LIST but not create/delete.
 func TestWorkspaces_writeNeedsAdmin(t *testing.T) {
 	h := newHarness(t)
-	alice := h.token(t, "hanzo/alice") // regular
+	alice := h.token(t, "acme/alice") // regular
 
-	body := `{"owner":"hanzo","name":"beta","organization":"hanzo"}`
+	body := `{"owner":"acme","name":"beta","organization":"acme"}`
 	if st, _ := h.do(t, "POST", "/v1/iam/workspaces", alice, body); st != 403 {
 		t.Fatalf("regular user add-workspace: status=%d, want 403", st)
 	}
-	if st, _ := h.do(t, "DELETE", "/v1/iam/workspaces/hanzo/beta", alice, ""); st != 403 {
+	if st, _ := h.do(t, "DELETE", "/v1/iam/workspaces/acme/beta", alice, ""); st != 403 {
 		t.Fatalf("regular user delete-workspace: status=%d, want 403", st)
 	}
 	// But listing is allowed (200) — the switcher is shown to every user.
-	if st, m := h.do(t, "GET", "/v1/iam/workspaces?owner=hanzo", alice, ""); st != 200 {
+	if st, m := h.do(t, "GET", "/v1/iam/workspaces?owner=acme", alice, ""); st != 200 {
 		t.Fatalf("regular user list: status=%d body=%v", st, m)
 	}
 }
@@ -327,7 +327,7 @@ func TestWorkspaces_writeNeedsAdmin(t *testing.T) {
 func TestWorkspaces_crossTenantScoping(t *testing.T) {
 	h := newHarness(t)
 	super := h.token(t, "admin/root")
-	alice := h.token(t, "hanzo/alice")
+	alice := h.token(t, "acme/alice")
 
 	// super seeds a workspace under a DIFFERENT tenant, orgb.
 	if st, m := h.do(t, "POST", "/v1/iam/workspaces", super,
@@ -335,10 +335,10 @@ func TestWorkspaces_crossTenantScoping(t *testing.T) {
 		t.Fatalf("super add orgb workspace: status=%d body=%v", st, m)
 	}
 
-	// alice (hanzo) asks for orgb's workspaces → gets HER org's scope, never orgb's.
+	// alice (acme) asks for orgb's workspaces → gets HER org's scope, never orgb's.
 	_, m := h.do(t, "GET", "/v1/iam/workspaces?owner=orgb", alice, "")
 	if has(names(m), "secret") {
-		t.Fatalf("VULN: hanzo user listed orgb's workspace 'secret': %v", names(m))
+		t.Fatalf("VULN: acme user listed orgb's workspace 'secret': %v", names(m))
 	}
 }
 

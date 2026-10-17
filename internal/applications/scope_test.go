@@ -61,15 +61,15 @@ func TestList_refusesWithoutPrincipal(t *testing.T) {
 // Scope returned.
 func TestList_filtersOnTheScopedOwner(t *testing.T) {
 	db := memDB(t)
-	seed(t, db, "hanzo", "hanzo-console")
+	seed(t, db, "acme", "hanzo-console")
 	seed(t, db, "victim", "victim-console")
 
-	out, err := listApplications(db)(asTenant("hanzo"), &ApplicationQuery{Owner: "hanzo"})
+	out, err := listApplications(db)(asTenant("acme"), &ApplicationQuery{Owner: "acme"})
 	if err != nil {
 		t.Fatalf("list own org: %v", err)
 	}
 	for _, a := range out.Applications {
-		if a.Owner != "hanzo" {
+		if a.Owner != "acme" {
 			t.Errorf("listing leaked %s/%s", a.Owner, a.Name)
 		}
 	}

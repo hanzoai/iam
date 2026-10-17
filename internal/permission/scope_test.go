@@ -49,15 +49,15 @@ func TestList_refusesWithoutPrincipal(t *testing.T) {
 // Scope returned, so a tenant reads its own permissions and sees no other's.
 func TestList_filtersOnTheScopedOwner(t *testing.T) {
 	h, _ := newHandlers(t)
-	mustAdd(t, h, &schema.Permission{Owner: "hanzo", Name: "mine"})
+	mustAdd(t, h, &schema.Permission{Owner: "acme", Name: "mine"})
 	mustAdd(t, h, &schema.Permission{Owner: "victim", Name: "theirs"})
 
-	out, err := h.List(asTenant("hanzo"), &ListRequest{Owner: "hanzo"})
+	out, err := h.List(asTenant("acme"), &ListRequest{Owner: "acme"})
 	if err != nil {
 		t.Fatalf("list own org: %v", err)
 	}
 	for _, p := range out.Permissions {
-		if p.Owner != "hanzo" {
+		if p.Owner != "acme" {
 			t.Errorf("listing leaked %s/%s", p.Owner, p.Name)
 		}
 	}

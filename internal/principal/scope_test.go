@@ -18,7 +18,7 @@ import (
 // writes.
 func TestScopeNamesOnlyAnOrgTheCallerAdministers(t *testing.T) {
 	sam := &principal.Principal{Org: "sam", User: "sam", Admin: true,
-		Orgs: map[string]policy.Role{"webby": policy.Owner, "lux": policy.Member}}
+		Orgs: map[string]policy.Role{"webby": policy.Owner, "beta": policy.Member}}
 	ctx := principal.Bind(context.Background(), sam)
 
 	for _, c := range []struct {
@@ -28,7 +28,7 @@ func TestScopeNamesOnlyAnOrgTheCallerAdministers(t *testing.T) {
 		{"", "sam", true},        // naming none is the caller's own
 		{"sam", "sam", true},     // its own, by name
 		{"webby", "webby", true}, // an org it owns by membership
-		{"lux", "", false},       // an org it merely belongs to
+		{"beta", "", false},      // an org it merely belongs to
 		{"acme", "", false},      // an org it has nothing to do with
 		{"admin", "", false},     // the reserved org
 	} {
@@ -38,7 +38,7 @@ func TestScopeNamesOnlyAnOrgTheCallerAdministers(t *testing.T) {
 		}
 	}
 	// ScopeRead still opens what belonging opens.
-	if got, err := principal.ScopeRead(ctx, "lux"); err != nil || got != "lux" {
+	if got, err := principal.ScopeRead(ctx, "beta"); err != nil || got != "beta" {
 		t.Errorf("ScopeRead(lux) = %q, %v; a member reads the org they belong to", got, err)
 	}
 }

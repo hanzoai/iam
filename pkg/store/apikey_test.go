@@ -51,10 +51,10 @@ func TestUserByAccessKey_ResolvesSecretsRefusesPublishable(t *testing.T) {
 	db := memDB(t)
 	ctx := context.Background()
 
-	u := seedKeyUser(t, db, "hanzo", "alice", "alice@hanzo.ai", "")
+	u := seedKeyUser(t, db, "acme", "alice", "alice@hanzo.ai", "")
 	// A schema.Key credential (pk- publishable half + sk- secret half) belonging to
 	// hanzo/alice.
-	seedKey(t, db, "hanzo", "alice-key", "hanzo/alice", "pk-live-PROJ", "sk-live-SECRET")
+	seedKey(t, db, "acme", "alice-key", "acme/alice", "pk-live-PROJ", "sk-live-SECRET")
 
 	// The SECRET shape resolves to the owning user.
 	got, err := UserByAccessKey(ctx, db, "sk-live-SECRET")
@@ -99,11 +99,11 @@ func TestUserByAccessKey_UserRowValueIsNotACredential(t *testing.T) {
 func TestUserByAccessKey_BareUserRefWithinTenant(t *testing.T) {
 	db := memDB(t)
 	ctx := context.Background()
-	seedKeyUser(t, db, "hanzo", "bob", "bob@hanzo.ai", "")
-	seedKey(t, db, "hanzo", "bob-key", "bob", "pk-live-BOB", "sk-live-BOB")
+	seedKeyUser(t, db, "acme", "bob", "bob@hanzo.ai", "")
+	seedKey(t, db, "acme", "bob-key", "bob", "pk-live-BOB", "sk-live-BOB")
 
 	got, err := UserByAccessKey(ctx, db, "sk-live-BOB")
-	if err != nil || got == nil || got.Owner != "hanzo" || got.Name != "bob" {
+	if err != nil || got == nil || got.Owner != "acme" || got.Name != "bob" {
 		t.Fatalf("bare-user sk resolved %+v err=%v, want hanzo/bob", got, err)
 	}
 	// The pk- half of the same key resolves to nobody (write-only).
@@ -341,9 +341,9 @@ func TestUserAndScopeByAccessKey_CarriesTheKeysOwnLimit(t *testing.T) {
 	db := memDB(t)
 	ctx := context.Background()
 
-	seedKeyUser(t, db, "hanzo", "alice", "alice@hanzo.ai", "")
-	seedScopedKey(t, db, "hanzo", "limited", "hanzo/alice", "pk-live-L", "sk-live-L", "model:zen5,project:acme")
-	seedKey(t, db, "hanzo", "unlimited", "hanzo/alice", "pk-live-U", "sk-live-U")
+	seedKeyUser(t, db, "acme", "alice", "alice@hanzo.ai", "")
+	seedScopedKey(t, db, "acme", "limited", "acme/alice", "pk-live-L", "sk-live-L", "model:zen5,project:acme")
+	seedKey(t, db, "acme", "unlimited", "acme/alice", "pk-live-U", "sk-live-U")
 
 	u, scope, err := UserAndScopeByAccessKey(ctx, db, "sk-live-L")
 	if err != nil {
@@ -548,17 +548,17 @@ func TestUserByAccessKey_ExpiredAndDisabledResolveToNobody(t *testing.T) {
 	db := memDB(t)
 	ctx := context.Background()
 
-	seedKeyUser(t, db, "hanzo", "alice", "alice@hanzo.ai", "")
+	seedKeyUser(t, db, "acme", "alice", "alice@hanzo.ai", "")
 	for _, s := range []struct{ name, secret, state, expire string }{
 		{"live", "sk-live-USERLIVE000000000000000", "Active", ""},
 		{"expired", "sk-live-USEREXPIRED0000000000", "Active", "2020-01-01T00:00:00Z"},
 		{"disabled", "sk-live-USERDISABLED000000000", "Disabled", ""},
 	} {
 		k := orm.New[schema.Key](db)
-		k.Owner, k.Name, k.User = "hanzo", s.name, "hanzo/alice"
+		k.Owner, k.Name, k.User = "acme", s.name, "acme/alice"
 		k.AccessSecretDigest = schema.DigestSecret(s.secret)
 		k.State, k.ExpireTime = s.state, s.expire
-		k.SetId("hanzo/" + s.name)
+		k.SetId("acme/" + s.name)
 		if err := k.CreateCtx(ctx); err != nil {
 			t.Fatalf("seed %s: %v", s.name, err)
 		}

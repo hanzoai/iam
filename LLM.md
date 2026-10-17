@@ -1199,39 +1199,41 @@ the `hanzo.id` zone reflects **any** origin. `*.hanzo.ai` is SAME-SITE with
 reachable path. No Go change closes it; the edge rule has to be narrowed, and
 this package must answer correctly FIRST or the narrowing breaks every login.
 
-## OPEN P0 — self-service signup enrolls strangers in the staff tenant
+## A brand org is no tenant of its plain members
 
-`hanzo-console` / `hanzo-cloud` / `hanzo-gitea` / `hanzo-bot` carry
-`enableSignUp: true` with `organization: hanzo` (universe
-`infra/k8s/iam/init_data.json`). `signupHandler` files the new user under
-`f.Organization`, and `store.MemberOrgRefs` emits `user.Owner` as the HOME entry
-of the `orgs` claim — so **anyone on the internet who signs up at hanzo.id is a
-signed `member` of the `hanzo` tenant** until they onboard. Cloud reads that
-claim as tenancy (correctly — it is the signed membership set), so a
-60-second-old anonymous account gets, verified against production 2026-07-28:
+Self-service signup files a new person under the app's `organization` (`hanzo`,
+`lux`, `zoo`, `pars`), and `store.MemberOrgRefs` emits that as the HOME entry of
+the `orgs` claim. Read as tenancy, that made every sign-up a signed `member` of
+the brand: verified 2026-07-28, a minute-old account listed `hanzo`'s private
+repos and wrote its projects and CRM.
 
-- `/v1/projects`, `/v1/sites` — read **and** write **and** DELETE (a probe
-  project was created and deleted inside org `hanzo`);
-- `/v1/git/repos` — **121 private repos** listed (`cloud`, `universe`, `ci`,
-  `console`…), and `/v1/git/repos/<name>/tree` returns their file entries;
-- `/v1/crm/contacts` — read + write (PII).
+The rule that closes it (owner decision 2026-10-16) is one predicate, asked of
+the signed role and the row, never of the org name alone:
 
-Refused: KMS, `/v1/admin/authors` (SuperAdmin), `/v1/iam/keys`; the billing
-ledger is per-account so no money crosses.
+- An org the platform runs (`authz.IsPlatformOrg`: the reserved orgs, the brands,
+  the platform's own names, the directories) is a tenant only of its owners and
+  admins, its machines, and a SuperAdmin. A plain member — a customer who landed
+  there — acts in none of it.
+- A brand's directory (`authz.DirectoryOf`: `hanzo-id`, `lux-id`, `zoo-id`,
+  `pars-id`) is no one's tenant at all. It holds identities.
+- The funded customer orgs (`adnexus`, `bootnode`, `osage`) are held names and
+  ordinary tenants.
 
-The asymmetry is the whole bug, and this repo already states the rule that
-closes it — `provision` (onboard.go) refuses an existing org the caller did not
-found ("an existing one is refused by the create-conflict check"), while
-`signup` happily joins one. Two paths to the same end state, one refused.
+Where it is read: authz `Claims.opens` (so `Default`, `Tenancy`, `EffectiveOrg`
+and `LedgerOrg` agree), authz `Principal.MemberOf`/`AdminOf`/`OwnerOf`, and here
+`store.Acts` — the key resolver (`key_not_tenant`, before which a disabled holder
+is `key_holder_disabled`), the user-key mint (403: a key filed there would act for
+no one), the delegation (403), `principal.Scope`/`ScopeRead`, the org listing and
+the registry's password path. The `groups` claim leaves out what opens nothing. The
+`orgs` claim stays whole, because its first entry is who the person is.
 
-NOT fixed unilaterally: every candidate fix trades off badly without an owner
-decision. Turning `enableSignUp` off on those apps closes it instantly but stops
-customer signup; note also that `server.Seed` is **new-only**, so editing
-`init_data.json` does NOT change a live app row — remediation must go through
-`update-application`, which then needs a GitOps record. The durable fix is to
-stop reading storage `Owner` as membership (`MemberOrgRefs`), with
-`BackfillMemberships` already writing the explicit rows that would replace it.
-Decide, then do it in ONE place.
+What a plain member of a brand org keeps: their account, and founding an org
+(`POST /v1/iam/onboard`), which then is the first org their set opens and so the
+one they act in. What is still open: signup files new people in the brand org
+rather than its directory, so each new account acts in nothing until it founds
+one. Moving signup, federation, code and wallet sign-up into `DirectoryOf(brand)`
+with a personal org by membership is the directory build; the existing residents
+move with it.
 
 ## Onboarding an ORGANISATION — what works, and the three places it stops
 

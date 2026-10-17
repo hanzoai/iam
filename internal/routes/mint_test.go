@@ -15,15 +15,21 @@ package routes_test
 // and every test that stopped at the row was green throughout.
 
 import (
+	"context"
 	"encoding/json"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/hanzoai/orm"
+
+	"github.com/hanzoai/iam/pkg/schema"
 )
 
 const (
 	minterApp    = "hanzo-console" // confidential client on the mint allow-list
 	minterSecret = "console-secret"
-	userKeys     = "/v1/iam/users/hanzo/alice/keys"
+	userKeys     = "/v1/iam/users/orgb/dana/keys"   // an ordinary member of a customer org
+	brandKeys    = "/v1/iam/users/hanzo/alice/keys" // an ordinary member of a platform org
 )
 
 // mintEnv decodes the mint envelope. AccessKey carries whichever half the
@@ -43,6 +49,7 @@ func mintFixtures(t *testing.T, h *harness) {
 	t.Helper()
 	seedClientApp(t, h.db, minterApp, minterSecret)
 	seedClientApp(t, h.db, resolverApp, svcSecret)
+	seedUser(t, h.db, "orgb", "dana", false)
 	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", minterApp)
 	t.Setenv("IAM_KEY_RESOLVE_APPS", resolverApp)
 }
@@ -93,9 +100,37 @@ func TestMintedUserKeyAuthenticates(t *testing.T) {
 	mintFixtures(t, h)
 
 	got := whoHolds(t, h, mint(t, h, userKeys))
-	if got.Data.Owner != "hanzo" || got.Data.Name != "alice" {
-		t.Fatalf("the minted key resolved to %q/%q (code %q, msg %q), want hanzo/alice",
+	if got.Data.Owner != "orgb" || got.Data.Name != "dana" {
+		t.Fatalf("the minted key resolved to %q/%q (code %q, msg %q), want orgb/dana",
 			got.Data.Owner, got.Data.Name, got.Code, got.Msg)
+	}
+}
+
+// A platform org is not a tenant its plain members act for: a key filed there
+// answers only for those who run the org (owner, admin) and its machines. The mint
+// issues a plain member no key there, and one planted there resolves to nobody.
+func TestAPlainMembersKeyInABrandOrgResolvesToNobody(t *testing.T) {
+	h := newHarness(t)
+	mintFixtures(t, h)
+
+	req := httptest.NewRequest("POST", brandKeys, nil)
+	req.Host = "hanzo.id"
+	req.SetBasicAuth(minterApp, minterSecret)
+	if status, body := h.do(t, req); status != 403 {
+		t.Fatalf("the mint issued a plain hanzo member a key: %d %s", status, body)
+	}
+
+	k := orm.New[schema.Key](h.db)
+	k.Owner, k.Name, k.User = "hanzo", "alice-planted", "alice"
+	k.AccessKey, k.AccessSecretDigest = "pk-live-PLANTED", schema.DigestSecret("sk-live-PLANTED")
+	k.SetId("hanzo/alice-planted")
+	if err := k.CreateCtx(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got := whoHolds(t, h, "sk-live-PLANTED")
+	if got.Data.Name != "" || got.Code != "key_not_tenant" {
+		t.Fatalf("a plain hanzo member's key resolved to %q/%q (code %q), want nobody (key_not_tenant)",
+			got.Data.Owner, got.Data.Name, got.Code)
 	}
 }
 
@@ -117,8 +152,8 @@ func TestMintedUserKeyAuthenticatesAfterARevoke(t *testing.T) {
 	}
 
 	got := whoHolds(t, h, mint(t, h, userKeys))
-	if got.Data.Owner != "hanzo" || got.Data.Name != "alice" {
-		t.Fatalf("the key minted after a revoke resolved to %q/%q (code %q), want hanzo/alice",
+	if got.Data.Owner != "orgb" || got.Data.Name != "dana" {
+		t.Fatalf("the key minted after a revoke resolved to %q/%q (code %q), want orgb/dana",
 			got.Data.Owner, got.Data.Name, got.Code)
 	}
 }
@@ -139,7 +174,7 @@ func TestMintedPublishableKeyResolvesItsOrgAfterARevoke(t *testing.T) {
 	if err := json.Unmarshal([]byte(body), &got); err != nil {
 		t.Fatalf("resolve: %s", body)
 	}
-	if got.Data.Org != "hanzo" {
+	if got.Data.Org != "orgb" {
 		t.Fatalf("the publishable key minted after a revoke resolved to org %q: %s", got.Data.Org, body)
 	}
 	if got.Data.Name != "" || got.Data.Email != "" {

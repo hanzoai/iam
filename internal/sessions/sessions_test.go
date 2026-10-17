@@ -380,10 +380,10 @@ func itoa(n int) string {
 func TestList_NeverAnswersWithAnotherOrgs(t *testing.T) {
 	db := newDB(t)
 	h := &Sessions{db: db}
-	putSession(t, db, "hanzo", "alice", "cloud", "2026-01-01T00:00:01Z", "a")
+	putSession(t, db, "beta", "alice", "cloud", "2026-01-01T00:00:01Z", "a")
 	putSession(t, db, "acme", "zoe", "cloud", "2026-01-01T00:00:02Z", "b")
 
-	member := principal.Bind(context.Background(), &principal.Principal{Org: "hanzo"})
+	member := principal.Bind(context.Background(), &principal.Principal{Org: "beta"})
 
 	if _, err := h.List(member, &ListSessionsIn{Owner: "acme"}); err == nil {
 		t.Fatal("a member of hanzo named acme and was not refused")
@@ -397,7 +397,7 @@ func TestList_NeverAnswersWithAnotherOrgs(t *testing.T) {
 		t.Fatalf("hanzo listing its own sessions: %v", err)
 	}
 	for _, s := range out.Sessions {
-		if s.Owner != "hanzo" {
+		if s.Owner != "beta" {
 			t.Fatalf("LEAK: hanzo named no owner and received %q's session for %q", s.Owner, s.Name)
 		}
 	}

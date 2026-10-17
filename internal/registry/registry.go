@@ -51,6 +51,13 @@
 // pull cross-org base images through this realm, so narrowing pull scope here can
 // break the image supply chain. If made, do it as an explicit, tested policy
 // decision — never as an incidental edit to scopeAccess/authorizeActions.
+//
+// OWNER DECISION 2026-10-16: an org the platform runs is no tenant of its plain
+// members (authz.IsPlatformOrg). A PERSON authenticates here only as an admin of a
+// candidate org or a SuperAdmin; a plain member of hanzo — a customer who landed
+// there — gets no token, by password or by key (store.KeyNotTenant). The candidate
+// orgs' machines and the platform's applications pull exactly as before, so the
+// image supply chain is untouched.
 package registry
 
 import (
@@ -292,7 +299,10 @@ func (h *handler) resolve(ctx context.Context, id, secret string) *principal {
 			return userPrincipal(u)
 		}
 	}
-	if u := h.userByPassword(ctx, id, secret); u != nil {
+	// A plain member of a platform org is not its tenant (authz.IsPlatformOrg): a
+	// customer who landed in hanzo pulls none of its images. Its admins and its
+	// machines do; a key of a plain member resolves nowhere (store.KeyNotTenant).
+	if u := h.userByPassword(ctx, id, secret); u != nil && (u.Machine() || userPrivileged(u)) {
 		return userPrincipal(u)
 	}
 	if p := h.serviceAccount(ctx, id, secret); p != nil {

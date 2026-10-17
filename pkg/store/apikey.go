@@ -92,6 +92,16 @@ const (
 	// SuperAdmin lives. No durable key speaks for one (SuperAdminKey); the holder
 	// signs in for a short-lived token instead.
 	KeySuperAdmin KeyFailure = "key_superadmin"
+	// KeyHolderDisabled: the key is live but the account it speaks for is
+	// suspended (IsForbidden) or deleted. A key is its holder's credential, so it
+	// works exactly as long as its holder may sign in: suspending a person — by hand
+	// or by SCIM — ends every key they hold at once.
+	KeyHolderDisabled KeyFailure = "key_holder_disabled"
+	// KeyNotTenant: the key acts in an org the platform runs (a brand, a
+	// directory), and its holder is a plain member there. Such an org is no tenant
+	// of its plain members — a customer who landed in a brand org shares none of its
+	// data — so no key of theirs acts in it. Its admins' keys and its machines' do.
+	KeyNotTenant KeyFailure = "key_not_tenant"
 )
 
 // KeyError is an orm.ErrNotFound that ALSO says why. It Unwraps to orm.ErrNotFound
@@ -265,10 +275,34 @@ func holderOwningKey(ctx context.Context, db orm.DB, secret string) (Holder, err
 	if u == nil {
 		return Holder{}, notFound(KeyDanglingUser)
 	}
+	if u.IsForbidden || u.IsDeleted {
+		return Holder{}, notFound(KeyHolderDisabled)
+	}
 	if role == "" {
 		role = HomeRole(u)
 	}
+	if !Acts(k.Owner, u, role) {
+		return Holder{}, notFound(KeyNotTenant)
+	}
 	return Holder{User: u, Org: k.Owner, Scope: k.Scope, Role: role, Key: k.Name}, nil
+}
+
+// Acts reports whether u, whose standing in org is role, acts in it: what a key
+// filed there or a token delegated there may do for u. A brand's directory is no
+// one's tenant, so nothing acts in it. An org the platform runs is a tenant only
+// of those who run it (owner, admin) and of its own machines, so a plain member —
+// a person, or a machine of another org — acts in none of it; a SuperAdmin acts in every one, as authz's Sudo does (no secret
+// key names one: SuperAdminKey). Every other org is its members' tenant. It is authz's
+// Claims.Tenancy rule asked of one row, and the one rule the key resolver, the
+// key mint and the delegation read, so a credential IAM issues is one that acts.
+func Acts(org string, u *schema.User, role string) bool {
+	switch {
+	case u == nil || policy.IsDirectory(org):
+		return false
+	case policy.IsPlatformOrg(org):
+		return (u.Machine() && u.Owner == org) || u.SuperAdmin() || role == RoleOwner || role == RoleAdmin
+	}
+	return true
 }
 
 // SuperAdminKey reports whether a secret key filed as k would speak for an account

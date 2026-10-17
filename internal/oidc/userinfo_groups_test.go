@@ -28,24 +28,25 @@ func groupsIn(info map[string]any) map[string]bool {
 	return out
 }
 
-// The claim is the membership set and nothing besides: the home organization, plus
-// every organization a membership grants. "Exactly" is the load-bearing word —
-// there is no other input for anything to reach.
+// The claim is the part of the membership set the person is a tenant of and
+// nothing besides: every organization a membership grants that opens to them. A
+// brand org held as a plain member — alice's home here, and lux — opens nothing
+// and is no group. "Exactly" is the load-bearing word — there is no other input
+// for anything to reach.
 func TestUserinfo_GroupsAreExactlyTheMembershipSet(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
 	seedRichUser(t, db)
-	if _, err := store.EnsureMembership(context.Background(), db, "hanzo/alice", "lux", store.RoleMember); err != nil {
-		t.Fatalf("grant membership: %v", err)
+	for _, org := range []string{"lux", "acme"} {
+		if _, err := store.EnsureMembership(context.Background(), db, "hanzo/alice", org, store.RoleMember); err != nil {
+			t.Fatalf("grant membership: %v", err)
+		}
 	}
 
 	_, info := userinfo(t, app, accessTokenFor(t, app, "openid profile"))
 	got := groupsIn(info)
-	if !got["hanzo"] || !got["lux"] {
-		t.Fatalf("groups = %v, want the home organization and the granted one", info["groups"])
-	}
-	if len(got) != 2 {
-		t.Fatalf("groups = %v, want exactly the membership set", info["groups"])
+	if !got["acme"] || len(got) != 1 {
+		t.Fatalf("groups = %v, want exactly acme, the one org that opens to her", info["groups"])
 	}
 }
 
@@ -59,11 +60,13 @@ func TestUserinfo_GroupsFollowTheGrant(t *testing.T) {
 	seedRichUser(t, db)
 
 	_, info := userinfo(t, app, accessTokenFor(t, app, "openid profile"))
-	if got := groupsIn(info); got["admin"] || len(got) != 1 {
-		t.Fatalf("groups = %v before any grant, want the home organization alone", info["groups"])
+	if got := groupsIn(info); got["admin"] || len(got) != 0 {
+		t.Fatalf("groups = %v before any grant, want none: a plain member of hanzo is no tenant of it", info["groups"])
 	}
 
-	if _, err := store.EnsureMembership(context.Background(), db, "hanzo/alice", "admin", store.RoleMember); err != nil {
+	// An org the platform runs is a group of those who run it, so the grant that
+	// reaches the claim is an admin one.
+	if _, err := store.EnsureMembership(context.Background(), db, "hanzo/alice", "admin", store.RoleAdmin); err != nil {
 		t.Fatalf("grant membership: %v", err)
 	}
 	_, info = userinfo(t, app, accessTokenFor(t, app, "openid profile"))

@@ -127,8 +127,11 @@ func accountEnvelopeFor(ctx context.Context, db orm.DB, owner, name string) (acc
 // credentials, one identity. ok=false means no valid session or token.
 //
 // It answers the account's HOLDER, which is who every self-service write acts
-// as: an impersonated bearer resolves nobody here, because the person holding it
-// is an operator and not the person it names. Reads use readerOf.
+// as: a bearer someone else acts through resolves nobody here — an impersonation,
+// whose holder is an operator, and a delegation (as(), `act`), whose holder is the
+// org key that minted it — because neither is the person it names. A delegated
+// token founded orgs and took their keys for the person it named. Reads use
+// readerOf.
 func callerOf(ctx context.Context, c *zip.Ctx, db orm.DB) (owner, name string, ok bool) {
 	return callerFrom(ctx, db, c.Fiber().Cookies(sessions.CookieName), httpx.Bearer(c))
 }
@@ -138,24 +141,33 @@ func callerOf(ctx context.Context, c *zip.Ctx, db orm.DB) (owner, name string, o
 // same checks: session cookie first (the portal), then bearer (the API). callerOf
 // delegates here so one of the two cannot quietly become the lenient one.
 func callerFrom(ctx context.Context, db orm.DB, sessionCookie, bearer string) (owner, name string, ok bool) {
-	owner, name, imp, ok := accountOf(ctx, db, sessionCookie, bearer)
-	return owner, name, ok && !imp
+	owner, name, acted, ok := accountOf(ctx, db, sessionCookie, bearer)
+	return owner, name, ok && !acted
 }
 
-// readerOf is callerOf for a READ: an impersonated bearer resolves to the person
-// it names, so an operator sees that person's account as they would. Never for a
-// write — a password, a passkey, a linked sign-in, a profile — which is how an
-// impersonation would outlive its fifteen minutes.
+// readerOf is callerOf for a READ: a bearer someone else acts through resolves to
+// the person it names, so an operator sees that person's account as they would.
+// Never for a write — a password, a passkey, a linked sign-in, a profile, an org —
+// which is how an impersonation would outlive its fifteen minutes.
 func readerOf(ctx context.Context, c *zip.Ctx, db orm.DB) (owner, name string, ok bool) {
 	owner, name, _, ok = accountOf(ctx, db, c.Fiber().Cookies(sessions.CookieName), httpx.Bearer(c))
 	return owner, name, ok
 }
 
 // accountOf is the one resolution behind callerOf and readerOf: the account a
-// session cookie or a bearer speaks for, and whether that bearer is impersonated.
-func accountOf(ctx context.Context, db orm.DB, sessionCookie, bearer string) (owner, name string, imp, ok bool) {
+// session cookie or a bearer speaks for, and whether someone else acts through that
+// bearer (an impersonation, or a delegation naming its actor in `act`).
+//
+// A suspended or deleted account resolves nobody on either credential: a session
+// outlives the suspension that ends its account, so the account is read on every
+// call, not trusted from the session.
+func accountOf(ctx context.Context, db orm.DB, sessionCookie, bearer string) (owner, name string, acted, ok bool) {
 	if sc, ok := sessions.CurrentValue(ctx, sessionCookie, db); ok {
-		return sc.Owner, sc.Name, false, true
+		u, err := store.GetUserByName(ctx, db, sc.Owner, sc.Name)
+		if err != nil || u == nil || u.IsForbidden || u.IsDeleted {
+			return "", "", false, false
+		}
+		return u.Owner, u.Name, false, true
 	}
 	if bearer == "" {
 		return "", "", false, false
@@ -168,7 +180,7 @@ func accountOf(ctx context.Context, db orm.DB, sessionCookie, bearer string) (ow
 	// so the account/whoami envelope reports the identity, not the opaque subject. A
 	// subject with no user row (a machine token) is not an account caller.
 	u, err := store.GetUserBySubject(ctx, db, claims.Subject)
-	if err != nil || u == nil {
+	if err != nil || u == nil || u.IsForbidden || u.IsDeleted {
 		return "", "", false, false
 	}
 	// An impersonation reads only while its operator may still impersonate.
@@ -177,5 +189,5 @@ func accountOf(ctx context.Context, db orm.DB, sessionCookie, bearer string) (ow
 			return "", "", false, false
 		}
 	}
-	return u.Owner, u.Name, claims.Imp, true
+	return u.Owner, u.Name, claims.Imp || claims.Act != nil, true
 }

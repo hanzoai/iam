@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	policy "github.com/hanzoai/authz"
 
 	"github.com/hanzoai/iam/pkg/schema"
 )
@@ -308,7 +309,7 @@ func (s *Signer) claims(id Identity, owner string, aud jwt.ClaimStrings, azp, sc
 		Azp:               azp,
 		TokenType:         kind,
 		Orgs:              id.Orgs,
-		Groups:            groupsOf(id.Orgs),
+		Groups:            groupsOf(id.Orgs, id.Type),
 		Assumed:           id.Assumed,
 		Wallets:           id.Wallets,
 		DID:               id.DID,
@@ -317,17 +318,27 @@ func (s *Signer) claims(id Identity, owner string, aud jwt.ClaimStrings, azp, sc
 	}, nil
 }
 
-// groupsOf flattens the membership set to the names a groups claim carries.
-// Nil in, nil out, so a machine token omits the claim exactly as it omits orgs.
-func groupsOf(orgs []schema.OrgRef) []string {
+// groupsOf flattens the membership set to the names a groups claim carries. A
+// relying party maps a group onto access, so a membership that makes no one a
+// tenant is no group: a brand's directory, and an org the platform runs held as a
+// plain member (authz Claims.Tenancy says the same of both). A machine's set is
+// its explicit grants and is carried whole. The admin org is carried as it is
+// held, which is how a federated app sees the operator. Nil in, nil out, so a
+// machine token omits the claim exactly as it omits orgs.
+func groupsOf(orgs []schema.OrgRef, typ string) []string {
 	if len(orgs) == 0 {
 		return nil
 	}
 	out := make([]string, 0, len(orgs))
 	for _, o := range orgs {
-		if o.Org != "" {
-			out = append(out, o.Org)
+		if o.Org == "" {
+			continue
 		}
+		if typ != schema.Program && (policy.IsDirectory(o.Org) ||
+			(policy.IsPlatformOrg(o.Org) && !policy.Role(o.Role).Admits(policy.Write))) {
+			continue
+		}
+		out = append(out, o.Org)
 	}
 	return out
 }

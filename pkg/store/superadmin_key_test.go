@@ -22,7 +22,12 @@ func operatorKeys(t *testing.T) orm.DB {
 	t.Helper()
 	ctx := context.Background()
 	db := memDB(t)
-	seedKeyUser(t, db, "hanzo", "z", "z@hanzo.test", "")
+	// z runs the brand org: a plain member of one holds no key that acts in it.
+	z := seedKeyUser(t, db, "hanzo", "z", "z@hanzo.test", "")
+	z.IsAdmin = true
+	if err := z.UpdateCtx(ctx); err != nil {
+		t.Fatal(err)
+	}
 	seedKeyUser(t, db, "hanzo", "alice", "alice@hanzo.test", "")
 	seedKeyUser(t, db, policy.AdminOrg, "root", "root@hanzo.test", "")
 	svc := seedKeyUser(t, db, policy.AdminOrg, "svc", "", "")
