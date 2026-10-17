@@ -66,7 +66,7 @@ func newRig(t *testing.T) *rig {
 	seedUser(t, db, "acme", "boss", true)   // administers acme
 	seedUser(t, db, "acme", "alice", false) // a plain member
 	seedUser(t, db, "acme", "bob", false)   // another plain member
-	seedUser(t, db, "orgb", "carol", true)   // a different tenant
+	seedUser(t, db, "orgb", "carol", true)  // a different tenant
 	seedUser(t, db, policy.AdminOrg, "z", false)
 
 	seedKey(t, db, "acme", "alice-laptop", "acme/alice")
