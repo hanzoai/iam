@@ -309,6 +309,13 @@ func TestLogout_ACrossSiteFormComesBackAsANavigation(t *testing.T) {
 	if !sessionLives(t, app, cookie) {
 		t.Fatal("precondition: nothing is ended before the browser comes back")
 	}
+	framed := formReq("POST", PathLogout, form)
+	framed.Header.Set("Sec-Fetch-Site", "cross-site")
+	framed.Header.Set("Sec-Fetch-Mode", "navigate")
+	framed.Header.Set("Sec-Fetch-Dest", "iframe")
+	if resp, _ := do(t, app, framed); resp.StatusCode == http.StatusSeeOther {
+		t.Fatal("a form posted into a frame was sent back, where no cookie rides either")
+	}
 
 	again := navigate(formReqNoBody("GET", loc))
 	again.Header.Set("Cookie", cookie)

@@ -241,12 +241,14 @@ func appFromIDTokenHint(ctx context.Context, db orm.DB, hint string) *schema.App
 	return app
 }
 
-// crossSiteForm reports whether a sign-out is a form another site posted with no
-// session cookie, and if so the GET of this endpoint carrying its parameters.
+// crossSiteForm reports whether a sign-out is a form another site posted, top
+// level, with no session cookie, and if so the GET of this endpoint carrying its
+// parameters. A form posted into a frame is not one: the GET inside a cross-site
+// frame carries no Lax cookie either.
 func crossSiteForm(c *zip.Ctx) (string, bool) {
 	f := c.Fiber()
 	if f.Method() != http.MethodPost || f.Cookies(sessions.CookieName) != "" ||
-		f.Get("Sec-Fetch-Site") != "cross-site" || f.Get("Sec-Fetch-Mode") != "navigate" {
+		f.Get("Sec-Fetch-Site") != "cross-site" || f.Get("Sec-Fetch-Mode") != "navigate" || f.Get("Sec-Fetch-Dest") != "document" {
 		return "", false
 	}
 	q := url.Values{}
