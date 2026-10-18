@@ -54,6 +54,8 @@ type acceptBody struct {
 	Cookie    string `json:"-" header:"Cookie"`
 	Auth      string `json:"-" header:"Authorization"`
 	Site      string `json:"-" header:"Sec-Fetch-Site"`
+	Origin    string `json:"-" header:"Origin"`
+	Host      string `json:"-" header:"Host"`
 	Type      string `json:"-" header:"Content-Type"`
 }
 
@@ -210,7 +212,7 @@ func acceptCaller(ctx context.Context, db orm.DB, in *acceptBody) (*schema.User,
 		}
 		owner, name, sender = u.Owner, u.Name, app.Organization
 	} else {
-		sc, err := sessions.WriterValue(ctx, sessionCookie(in.Cookie), http.MethodPost, in.Site, in.Type, db)
+		sc, err := sessions.WriterValue(ctx, sessionCookie(in.Cookie), sessions.Request{Method: http.MethodPost, Site: in.Site, Origin: in.Origin, Host: in.Host, Type: in.Type}, db)
 		if err != nil {
 			return nil, "", httpx.Bad(http.StatusForbidden, err.Error(), ""), nil
 		}

@@ -87,17 +87,19 @@ type passwordBody struct {
 	//
 	// Both, because the two arms of this endpoint serve two callers: the portal
 	// holds a session cookie, an API client holds a bearer. Resolving only one of
-	// them would silently take password change away from the other. Site and Type
-	// are what the cookie is judged by (sessions.Forgeable).
+	// them would silently take password change away from the other. Site, Origin,
+	// Host and Type are what the cookie is judged by (sessions.Forgeable).
 	Cookie string `json:"-" header:"Cookie"`
 	Auth   string `json:"-" header:"Authorization"`
 	Site   string `json:"-" header:"Sec-Fetch-Site"`
+	Origin string `json:"-" header:"Origin"`
+	Host   string `json:"-" header:"Host"`
 	Type   string `json:"-" header:"Content-Type"`
 }
 
 // asker is what this PUT presents to say who is asking.
 func (in *passwordBody) asker() asker {
-	return asker{Method: http.MethodPut, Cookie: sessionCookie(in.Cookie), Site: in.Site, Type: in.Type, Bearer: httpx.BearerValue(in.Auth)}
+	return asker{Method: http.MethodPut, Cookie: sessionCookie(in.Cookie), Site: in.Site, Origin: in.Origin, Host: in.Host, Type: in.Type, Bearer: httpx.BearerValue(in.Auth)}
 }
 
 // sessionCookie is the session value carried by a raw `Cookie` header, or "".

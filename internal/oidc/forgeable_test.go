@@ -44,7 +44,10 @@ func TestDevice_ApprovalIsMadeOnlyFromTheIssuersOwnPage(t *testing.T) {
 	}
 	approve := func(req *http.Request, site string) int {
 		req.Header.Set("Cookie", cookie)
-		if site != "" {
+		switch {
+		case strings.HasPrefix(site, "origin "):
+			req.Header.Set("Origin", strings.TrimPrefix(site, "origin "))
+		case site != "":
 			req.Header.Set("Sec-Fetch-Site", site)
 		}
 		resp, _ := do(t, app, req)
@@ -70,7 +73,8 @@ func TestDevice_ApprovalIsMadeOnlyFromTheIssuersOwnPage(t *testing.T) {
 		{"a form posted from a sibling host", form, "same-site", http.StatusForbidden},
 		{"a form on the issuer's own page", form, "same-origin", http.StatusForbidden},
 		{"JSON from a sibling host", json, "same-site", http.StatusForbidden},
-		{"JSON with no fetch metadata", json, "", http.StatusForbidden},
+		{"JSON from a sibling host with no fetch metadata", json, "origin https://chat.hanzo.id", http.StatusForbidden},
+		{"a form from the issuer's own page with no fetch metadata", form, "origin https://hanzo.id", http.StatusForbidden},
 		{"a text/plain form carrying JSON", plain, "same-site", http.StatusBadRequest},
 		{"a text/plain body from the issuer's own page", plain, "same-origin", http.StatusBadRequest},
 	} {
@@ -80,6 +84,26 @@ func TestDevice_ApprovalIsMadeOnlyFromTheIssuersOwnPage(t *testing.T) {
 	}
 	if status := approve(json(), "same-origin"); status != 200 || approver() != "hanzo/alice" {
 		t.Fatalf("the approval page: status=%d approver=%q, want 200 and hanzo/alice", status, approver())
+	}
+}
+
+// A browser that sends no Fetch Metadata (Safari before 16.4, Firefox before 90,
+// a proxy that strips it) is judged by Origin, so the issuer's own page still
+// approves a device.
+func TestDevice_ApprovalWithoutFetchMetadata(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
+	seedRichUser(t, db)
+	seedDeviceApp(t, db, "hanzo-app")
+	_, da := requestDevice(t, app, "hanzo-app", "openid profile")
+	req := jsonReq("POST", PathLogin, map[string]string{"type": "device", "userCode": da["user_code"].(string)})
+	req.Header.Set("Cookie", sessionCookieFor(t, app))
+	req.Header.Set("Origin", "https://hanzo.id")
+	if resp, body := do(t, app, req); resp.StatusCode != 200 {
+		t.Fatalf("the approval page on an old browser: status=%d %s, want 200", resp.StatusCode, body)
+	}
+	if row, _ := store.GetTokenByCode(tctx(), db, da["device_code"].(string)); row == nil || row.User != "hanzo/alice" {
+		t.Fatalf("the device was not approved: %+v", row)
 	}
 }
 
@@ -104,10 +128,11 @@ func TestCookieWrites_AllAskTheSameRule(t *testing.T) {
 		{"POST", PathWebauthnRegisterFinish, `{}`},
 		{"POST", PathInvitationsAccept, `{"owner":"acme","code":"LINKCODE22"}`},
 	} {
-		for _, sent := range []struct{ site, contentType string }{
-			{"same-site", "application/json"},
-			{"same-origin", "application/x-www-form-urlencoded"},
-			{"", "application/json"},
+		for _, sent := range []struct{ site, origin, contentType string }{
+			{"same-site", "", "application/json"},
+			{"same-origin", "", "application/x-www-form-urlencoded"},
+			{"", "https://chat.hanzo.id", "application/json"},
+			{"", "https://hanzo.id", "application/x-www-form-urlencoded"},
 		} {
 			req := httptest.NewRequest(w.method, w.path, strings.NewReader(w.body))
 			req.Host = "hanzo.id"
@@ -116,9 +141,12 @@ func TestCookieWrites_AllAskTheSameRule(t *testing.T) {
 			if sent.site != "" {
 				req.Header.Set("Sec-Fetch-Site", sent.site)
 			}
+			if sent.origin != "" {
+				req.Header.Set("Origin", sent.origin)
+			}
 			resp, body := do(t, app, req)
 			if resp.StatusCode != http.StatusForbidden || !strings.Contains(string(body), sessions.ErrForgeable.Error()) {
-				t.Errorf("%s %s (site %q, %s): status=%d %s, want 403", w.method, w.path, sent.site, sent.contentType, resp.StatusCode, body)
+				t.Errorf("%s %s (site %q, origin %q, %s): status=%d %s, want 403", w.method, w.path, sent.site, sent.origin, sent.contentType, resp.StatusCode, body)
 			}
 		}
 	}
@@ -161,9 +189,9 @@ func TestCookieWrites_ABearerNeedsNoFetchMetadata(t *testing.T) {
 	}
 }
 
-// Signing out ends sessions, so it is a write too. The browser navigating to the
-// end-session endpoint is how a relying party signs a person out and still does;
-// an image, a frame or a form a sibling page plants ends nothing.
+// Signing out ends sessions, so it is a write too, judged by its own rule: only
+// what the browser says another page sent without navigating here — an image, a
+// frame, a script's fetch — ends nothing.
 func TestLogout_OnlyANavigationOrTheIssuersPageSignsOut(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
@@ -176,11 +204,11 @@ func TestLogout_OnlyANavigationOrTheIssuersPageSignsOut(t *testing.T) {
 	image.Header.Set("Sec-Fetch-Dest", "image")
 	frame := navigate(formReqNoBody("GET", PathLogout))
 	frame.Header.Set("Sec-Fetch-Dest", "iframe")
-	form := formReq("POST", PathLogout, url.Values{})
-	form.Header.Set("Sec-Fetch-Site", "same-site")
-	form.Header.Set("Sec-Fetch-Mode", "navigate")
-	form.Header.Set("Sec-Fetch-Dest", "document")
-	for name, req := range map[string]*http.Request{"an image": image, "a frame": frame, "a sibling's form": form} {
+	fetch := formReq("POST", PathLogout, url.Values{})
+	fetch.Header.Set("Sec-Fetch-Site", "same-site")
+	fetch.Header.Set("Sec-Fetch-Mode", "no-cors")
+	fetch.Header.Set("Sec-Fetch-Dest", "empty")
+	for name, req := range map[string]*http.Request{"an image": image, "a frame": frame, "a sibling's fetch": fetch} {
 		req.Header.Set("Cookie", cookie)
 		if resp, _ := do(t, app, req); resp.StatusCode != http.StatusForbidden || !sessionLives(t, app, cookie) {
 			t.Fatalf("%s: status=%d, want 403 and the session alive", name, resp.StatusCode)
@@ -190,5 +218,67 @@ func TestLogout_OnlyANavigationOrTheIssuersPageSignsOut(t *testing.T) {
 	requireSignedOut(t, logout(t, app, cookie, "", ""), "")
 	if sessionLives(t, app, cookie) {
 		t.Fatal("a relying party's sign-out navigation left the session alive")
+	}
+}
+
+// Every way a person actually signs out ends the session: the SDKs' sign-out
+// (@hanzo/iam end(), iam-sdk logout()) posts a form, or nothing, from the issuer's
+// own page; a relying party posts its sign-out form (RP-Initiated Logout 1.0 §2);
+// and a browser with no Fetch Metadata cannot say which it is, so it is believed.
+func TestLogout_EverySignOutEndsTheSession(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
+	seedRichUser(t, db)
+
+	end := func() *http.Request {
+		req := formReq("POST", PathLogout, url.Values{"client_id": {"conf"}})
+		req.Header.Set("Sec-Fetch-Site", "same-origin")
+		req.Header.Set("Sec-Fetch-Mode", "cors")
+		req.Header.Set("Sec-Fetch-Dest", "empty")
+		return req
+	}
+	bodyless := func() *http.Request {
+		req := formReqNoBody("POST", PathLogout)
+		req.Header.Set("Sec-Fetch-Site", "same-origin")
+		req.Header.Set("Sec-Fetch-Mode", "cors")
+		req.Header.Set("Sec-Fetch-Dest", "empty")
+		return req
+	}
+	rpForm := func() *http.Request {
+		req := formReq("POST", PathLogout, url.Values{"client_id": {"conf"}})
+		req.Header.Set("Sec-Fetch-Site", "cross-site")
+		req.Header.Set("Sec-Fetch-Mode", "navigate")
+		req.Header.Set("Sec-Fetch-Dest", "document")
+		return req
+	}
+	oldBrowser := func() *http.Request {
+		req := formReq("POST", PathLogout, url.Values{"client_id": {"conf"}})
+		req.Header.Set("Origin", "https://hanzo.id")
+		return req
+	}
+	oldNavigation := func() *http.Request { return formReqNoBody("GET", PathLogout) }
+
+	for name, req := range map[string]func() *http.Request{
+		"@hanzo/iam end()":                 end,
+		"a bodyless POST from the page":    bodyless,
+		"a relying party's sign-out form":  rpForm,
+		"a browser with no fetch metadata": oldBrowser,
+		"an old browser's sign-out link":   oldNavigation,
+	} {
+		t.Run(name, func(t *testing.T) {
+			cookie := signIn(t, app, "conf")
+			r := req()
+			r.Header.Set("Cookie", cookie)
+			resp, body := do(t, app, r)
+			if resp.StatusCode >= 400 {
+				t.Fatalf("status=%d %s, want the session ended", resp.StatusCode, body)
+			}
+			if sessionLives(t, app, cookie) {
+				t.Fatal("the session still authenticates")
+			}
+			if sc := resp.Header.Get("Set-Cookie"); !strings.Contains(sc, sessions.CookieName+"=;") {
+				t.Errorf("the session cookie was not expired: %q", sc)
+			}
+		})
 	}
 }

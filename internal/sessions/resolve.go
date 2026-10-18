@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"mime"
+	"net/url"
 	"strings"
 	"time"
 
@@ -154,9 +155,56 @@ func fromIssuer(c fiber.Ctx) bool {
 // request another page could have sent (Forgeable).
 var ErrForgeable = errors.New("this change can only be made from this site's own pages")
 
+// Request is what a request says about where it came from: the facts a change
+// made on the session cookie's authority is judged by. The browser sets each of
+// them, and script can set none.
+type Request struct {
+	Method string
+	Site   string // Sec-Fetch-Site
+	Mode   string // Sec-Fetch-Mode
+	Dest   string // Sec-Fetch-Dest
+	Origin string // Origin
+	Host   string // Host: the host the request was sent to
+	Type   string // Content-Type
+}
+
+// RequestOf reads the Request facts off c. Host is the Host header, the one the
+// issuer is resolved by; X-Forwarded-Host is not read.
+func RequestOf(c fiber.Ctx) Request {
+	return Request{
+		Method: c.Method(),
+		Site:   c.Get("Sec-Fetch-Site"),
+		Mode:   c.Get("Sec-Fetch-Mode"),
+		Dest:   c.Get("Sec-Fetch-Dest"),
+		Origin: c.Get(fiber.HeaderOrigin),
+		Host:   c.Get(fiber.HeaderHost),
+		Type:   c.Get(fiber.HeaderContentType),
+	}
+}
+
+// from is where the request came from, in Sec-Fetch-Site's words. A browser too
+// old to send Fetch Metadata (Safari before 16.4, Firefox before 90), or one
+// behind a proxy that strips it, still sends Origin on a POST from another
+// origin, so the answer falls back to Origin against the host the request was
+// sent to: that host over https is "same-origin", and any other origin — a
+// sibling host, "null" — is "cross-site". A request with neither came from no
+// page: a program, or the person's own navigation, which is "none".
+func (r Request) from() string {
+	if r.Site != "" {
+		return r.Site
+	}
+	if r.Origin == "" {
+		return "none"
+	}
+	if u, err := url.Parse(r.Origin); err == nil && u.Scheme == "https" && u.Path == "" && strings.EqualFold(u.Host, r.Host) {
+		return "same-origin"
+	}
+	return "cross-site"
+}
+
 // Forgeable reports whether another page could have sent a request that changes
 // state on the session cookie's authority. Every such write asks it, through
-// Writer or Clear, so there is one rule and no write that skips it.
+// Writer, so there is one rule and no write that skips it.
 //
 // SameSite=Lax keeps the cookie off requests from other SITES, not from other
 // hosts of the same site: a page on any host under the identity host's
@@ -165,40 +213,57 @@ var ErrForgeable = errors.New("this change can only be made from this site's own
 // could approve an attacker's `hanzo login` device code, mint an authorization
 // code, or edit the account. Two facts a page cannot fake close it:
 //
-//   - Sec-Fetch-Site, which the browser sets and script cannot. Only
-//     "same-origin" (the issuer's own pages) and "none" (the person typed or
-//     bookmarked the address) may spend the cookie. "same-site" is a sibling host
-//     and is refused with "cross-site". No value at all is refused too: every
-//     browser that can hold this cookie sends the header, and a client that is
-//     not a browser authenticates with a bearer, which no page can attach.
+//   - Where the request came from (from): only the issuer's own pages
+//     ("same-origin") and no page at all ("none") may spend the cookie. A sibling
+//     host is "same-site" and is refused with "cross-site".
 //   - A JSON body. An HTML form sends urlencoded, multipart or text/plain and
 //     nothing else, and a page that sends JSON to another origin must pass a CORS
-//     preflight first. A GET or HEAD carries no body and is judged by the site.
-func Forgeable(method, site, contentType string) bool {
-	if site != "same-origin" && site != "none" {
+//     preflight first. A GET or HEAD carries no body and is judged by where it
+//     came from.
+func Forgeable(r Request) bool {
+	if s := r.from(); s != "same-origin" && s != "none" {
 		return true
 	}
-	if method == fiber.MethodGet || method == fiber.MethodHead {
+	if r.Method == fiber.MethodGet || r.Method == fiber.MethodHead {
 		return false
 	}
-	t, _, err := mime.ParseMediaType(contentType)
+	t, _, err := mime.ParseMediaType(r.Type)
 	return err != nil || t != fiber.MIMEApplicationJSON
+}
+
+// ends reports whether a request may end the sessions the browser holds (Clear).
+//
+// It is the lenient rule, because the two ways of getting a sign-out wrong are
+// not equal: one another page forces costs the person a sign-in, and one refused
+// leaves a session alive on a browser they believe they left. So it refuses only
+// what the browser itself says came from another page and is not a top-level
+// navigation — an image, a frame, a script's fetch. Everything the issuer's own
+// pages send ends the sessions whatever its body (the SDKs post a form, or
+// nothing), and so does the browser navigating here by GET or POST, which is how
+// a relying party signs a person out (OpenID Connect RP-Initiated Logout 1.0 §2).
+// A browser that sends no Fetch Metadata cannot say which it is, so it is believed.
+func (r Request) ends() bool {
+	switch r.Site {
+	case "same-site", "cross-site":
+		return r.Mode == "navigate" && r.Dest == "document"
+	}
+	return true
 }
 
 // Writer is Current for a request that changes state: the live session it acts
 // as, nil when it carries none, and ErrForgeable when it carries the cookie on a
 // request another page could have sent.
 func Writer(ctx context.Context, c fiber.Ctx, db orm.DB) (*Cookie, error) {
-	return WriterValue(ctx, c.Cookies(CookieName), c.Method(), c.Get("Sec-Fetch-Site"), c.Get(fiber.HeaderContentType), db)
+	return WriterValue(ctx, c.Cookies(CookieName), RequestOf(c), db)
 }
 
 // WriterValue is Writer for a typed handler, which zip hands the header values
 // rather than the request.
-func WriterValue(ctx context.Context, raw, method, site, contentType string, db orm.DB) (*Cookie, error) {
+func WriterValue(ctx context.Context, raw string, r Request, db orm.DB) (*Cookie, error) {
 	if raw == "" {
 		return nil, nil
 	}
-	if Forgeable(method, site, contentType) {
+	if Forgeable(r) {
 		return nil, ErrForgeable
 	}
 	sc, ok := CurrentValue(ctx, raw, db)
@@ -206,13 +271,6 @@ func WriterValue(ctx context.Context, raw, method, site, contentType string, db 
 		return nil, nil
 	}
 	return sc, nil
-}
-
-// navigation reports whether a request is the browser itself going to a page: a
-// top-level GET (Sec-Fetch-Mode navigate, Sec-Fetch-Dest document). An image, a
-// frame or a fetch says otherwise, and script can set none of the three.
-func navigation(c fiber.Ctx) bool {
-	return c.Method() == fiber.MethodGet && c.Get("Sec-Fetch-Mode") == "navigate" && c.Get("Sec-Fetch-Dest") == "document"
 }
 
 // write puts list on the response as the browser's session cookie, in order. When
@@ -342,11 +400,9 @@ func Resolve(ctx context.Context, c fiber.Ctx, db orm.DB) (owner, name string, o
 // of the cookie is dead server-side, and the cookie is expired on the response so
 // the browser stops presenting it.
 //
-// Ending sessions is a change of state on the cookie's authority, so a request
-// another page could have sent (Forgeable) ends nothing and gets ErrForgeable —
-// with one exception, the browser itself navigating here: that is how a relying
-// party signs a person out (OpenID Connect RP-Initiated Logout 1.0 §2), and an
-// image, a frame or a form a sibling page plants is not a navigation.
+// Ending sessions is a change of state on the cookie's authority, judged by its
+// own rule (Request.ends): a request another page sent that is not a navigation
+// ends nothing and gets ErrForgeable.
 //
 // Past that, the cookie is expired FIRST and unconditionally, before any parse: a
 // cookie that no longer verifies (expired signature, rotated key) still must not be
@@ -354,8 +410,7 @@ func Resolve(ctx context.Context, c fiber.Ctx, db orm.DB) (owner, name string, o
 // revoke those principals' tokens too; an empty result means there was nothing to
 // end (already signed out — an idempotent no-op, never an error).
 func Clear(ctx context.Context, c fiber.Ctx, db orm.DB) ([]Cookie, error) {
-	if c.Cookies(CookieName) != "" && !navigation(c) &&
-		Forgeable(c.Method(), c.Get("Sec-Fetch-Site"), c.Get(fiber.HeaderContentType)) {
+	if c.Cookies(CookieName) != "" && !RequestOf(c).ends() {
 		return nil, ErrForgeable
 	}
 	c.Cookie(&fiber.Cookie{

@@ -54,17 +54,19 @@ type accountBody struct {
 	// The two credentials a signed-in caller can present, bound from the request
 	// headers so this stays a typed op — the portal holds a session cookie, an API
 	// client holds a bearer, and resolving only one would take profile editing away
-	// from the other. Site and Type are what the cookie is judged by
+	// from the other. Site, Origin, Host and Type are what the cookie is judged by
 	// (sessions.Forgeable).
 	Cookie string `json:"-" header:"Cookie"`
 	Auth   string `json:"-" header:"Authorization"`
 	Site   string `json:"-" header:"Sec-Fetch-Site"`
+	Origin string `json:"-" header:"Origin"`
+	Host   string `json:"-" header:"Host"`
 	Type   string `json:"-" header:"Content-Type"`
 }
 
 // asker is what this PUT presents to say who is asking.
 func (in *accountBody) asker() asker {
-	return asker{Method: http.MethodPut, Cookie: sessionCookie(in.Cookie), Site: in.Site, Type: in.Type, Bearer: httpx.BearerValue(in.Auth)}
+	return asker{Method: http.MethodPut, Cookie: sessionCookie(in.Cookie), Site: in.Site, Origin: in.Origin, Host: in.Host, Type: in.Type, Bearer: httpx.BearerValue(in.Auth)}
 }
 
 // profile is what a profile IS, on the wire: a bounded view of the stored row.

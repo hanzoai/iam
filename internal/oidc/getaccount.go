@@ -134,6 +134,8 @@ type asker struct {
 	Method string
 	Cookie string
 	Site   string // Sec-Fetch-Site
+	Origin string // Origin
+	Host   string // Host
 	Type   string // Content-Type
 	Bearer string
 }
@@ -154,6 +156,8 @@ func callerOf(ctx context.Context, c *zip.Ctx, db orm.DB) (owner, name string, e
 		Method: c.Method(),
 		Cookie: c.Fiber().Cookies(sessions.CookieName),
 		Site:   c.Header("Sec-Fetch-Site"),
+		Origin: c.Header("Origin"),
+		Host:   c.Header("Host"),
 		Type:   c.Header("Content-Type"),
 		Bearer: httpx.Bearer(c),
 	})
@@ -168,7 +172,7 @@ func callerOf(ctx context.Context, c *zip.Ctx, db orm.DB) (owner, name string, e
 // attach one — so a request carrying one is answered on it when its cookie may
 // not be spent.
 func callerFrom(ctx context.Context, db orm.DB, a asker) (owner, name string, err error) {
-	sc, err := sessions.WriterValue(ctx, a.Cookie, a.Method, a.Site, a.Type, db)
+	sc, err := sessions.WriterValue(ctx, a.Cookie, sessions.Request{Method: a.Method, Site: a.Site, Origin: a.Origin, Host: a.Host, Type: a.Type}, db)
 	if sc != nil {
 		owner, name, ok := sessionAccount(ctx, db, sc)
 		if !ok {

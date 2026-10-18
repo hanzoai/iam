@@ -161,6 +161,8 @@ type termsBody struct {
 	Cookie    string `json:"-" header:"Cookie"`
 	Auth      string `json:"-" header:"Authorization"`
 	Site      string `json:"-" header:"Sec-Fetch-Site"`
+	Origin    string `json:"-" header:"Origin"`
+	Host      string `json:"-" header:"Host"`
 	Type      string `json:"-" header:"Content-Type"`
 	Forwarded string `json:"-" header:"X-Forwarded-For"`
 }
@@ -173,7 +175,7 @@ type termsBody struct {
 func putTermsHandler(db orm.DB) zip.TypedHandler[termsBody, httpx.Answer] {
 	return func(ctx context.Context, in *termsBody) (*httpx.Answer, error) {
 		owner, name, err := callerFrom(ctx, db, asker{
-			Method: http.MethodPut, Cookie: sessionCookie(in.Cookie), Site: in.Site, Type: in.Type,
+			Method: http.MethodPut, Cookie: sessionCookie(in.Cookie), Site: in.Site, Origin: in.Origin, Host: in.Host, Type: in.Type,
 			Bearer: httpx.BearerValue(in.Auth),
 		})
 		if err != nil {

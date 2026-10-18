@@ -340,7 +340,7 @@ func registerFinish(db orm.DB) zip.Handler {
 		// browser attaches it to a form any page on the site posts, so the finish
 		// is judged by the rule every write on a cookie's authority is, before the
 		// challenge is spent.
-		if sessions.Forgeable(c.Method(), c.Header("Sec-Fetch-Site"), c.Header("Content-Type")) {
+		if sessions.Forgeable(sessions.RequestOf(c.Fiber())) {
 			return httpx.Fail(c, http.StatusForbidden, sessions.ErrForgeable.Error(), "")
 		}
 		user, session, err := resume(c, db, KindRegister)
