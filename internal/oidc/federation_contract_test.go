@@ -38,7 +38,7 @@ func TestFederationCallbackIsTheRegisteredContract(t *testing.T) {
 	} {
 		// The composition federationCallbackURL performs, through the same seam a
 		// live request takes.
-		if got := resolveFederationOrigin(host) + PathFederationCallback; got != want {
+		if got := mustOrigin(t, host) + PathFederationCallback; got != want {
 			t.Errorf("federation callback for %s = %s, want %s\n"+
 				"If this change is intended, register the new URI with EVERY external IdP "+
 				"(the Google OAuth client AND the GitHub App) BEFORE shipping — each refuses "+
@@ -72,13 +72,13 @@ func TestFederationCallbackPerBrandUnderASameHostMap(t *testing.T) {
 		"hanzo.id": "https://hanzo.id/v1/iam/oauth/callback",
 		"lux.id":   "https://lux.id/v1/iam/oauth/callback",
 	} {
-		if got := resolveFederationOrigin(host) + PathFederationCallback; got != want {
+		if got := mustOrigin(t, host) + PathFederationCallback; got != want {
 			t.Errorf("callback for %s = %s, want %s", host, got, want)
 		}
 	}
 
 	installFederationResolver(t, `{"hanzo.ai":"https://hanzo.ai"}`)
-	if got, want := resolveFederationOrigin("hanzo.ai")+PathFederationCallback, "https://hanzo.ai/v1/iam/oauth/callback"; got != want {
+	if got, want := mustOrigin(t, "hanzo.ai")+PathFederationCallback, "https://hanzo.ai/v1/iam/oauth/callback"; got != want {
 		t.Errorf("callback for hanzo.ai = %s, want %s\n"+
 			"Register it with EVERY external IdP (the Google OAuth client AND the GitHub App) "+
 			"BEFORE the map ships: each refuses a redirect_uri it does not already hold.", got, want)

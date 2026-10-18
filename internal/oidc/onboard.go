@@ -4,6 +4,8 @@
 package oidc
 
 import (
+	"errors"
+	"net/http"
 	"strings"
 
 	policy "github.com/hanzoai/authz"
@@ -69,8 +71,11 @@ type onboardForm struct {
 // there is no way to onboard another person's account through it.
 func onboardHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
-		owner, name, ok := callerOf(c.Context(), c, db)
-		if !ok {
+		owner, name, err := callerOf(c.Context(), c, db)
+		if errors.Is(err, sessions.ErrForgeable) {
+			return onboardErr(c, http.StatusForbidden, err.Error())
+		}
+		if err != nil {
 			return onboardErr(c, 401, "please sign in first")
 		}
 		var f onboardForm

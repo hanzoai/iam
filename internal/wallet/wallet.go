@@ -264,7 +264,9 @@ func check(db orm.DB) zip.Handler {
 		// in, and a chain that is slow or unreachable must not hold this
 		// response open or fail it. A no-op unless a registry is configured.
 		if in.bound != nil {
-			registry().Report(oidc.Subject(user), oidc.Issuer(trim(c.Host())), in.bound.Chain, in.bound.Address)
+			if iss, err := oidc.Issuer(trim(c.Host())); err == nil {
+				registry().Report(oidc.Subject(user), iss, in.bound.Chain, in.bound.Address)
+			}
 		}
 		return httpx.Ok(c, data)
 	}

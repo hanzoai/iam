@@ -78,9 +78,9 @@ func link(db orm.DB) zip.Handler {
 			return httpx.Err(c, "invalid request body")
 		}
 		ctx := c.Context()
-		owner, name, ok := callerOf(ctx, c, db)
-		if !ok {
-			return httpx.Err(c, "Please login first")
+		owner, name, err := callerOf(ctx, c, db)
+		if err != nil {
+			return refuseCaller(c, err, "Please login first")
 		}
 		user, err := store.GetUserByName(ctx, db, owner, name)
 		if err != nil {
@@ -126,7 +126,11 @@ func link(db orm.DB) zip.Handler {
 		if err != nil {
 			return httpx.Err(c, "server_error")
 		}
-		idpURL, err := idpAuthorizeURL(ctx, prov, st, federationCallbackURL(c))
+		callback, err := federationCallbackURL(c)
+		if err != nil {
+			return httpx.Fail(c, http.StatusInternalServerError, "server_error", "")
+		}
+		idpURL, err := idpAuthorizeURL(ctx, prov, st, callback)
 		if err != nil {
 			return httpx.Err(c, "the identity provider is unavailable")
 		}

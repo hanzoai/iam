@@ -57,13 +57,17 @@ func userinfoHandler(db orm.DB) zip.Handler {
 		if err != nil {
 			return c.JSON(500, map[string]string{"error": "server_error"})
 		}
+		iss, err := tokenIssuer(c)
+		if err != nil {
+			return c.JSON(500, map[string]string{"error": "server_error"})
+		}
 		// The membership set is read from the store, not echoed from the token, for
 		// the reason isAdmin is: a grant revoked a minute ago must stop counting now
 		// rather than when the token lapses.
 		// Wallets are read from the store beside the memberships, and for the
 		// identical reason: a wallet unlinked a minute ago must stop counting
 		// now rather than when the token lapses.
-		return c.JSON(200, buildUserinfo(user, claims, row, tokenIssuer(c),
+		return c.JSON(200, buildUserinfo(user, claims, row, iss,
 			store.MemberOrgRefs(ctx, db, user), store.WalletRefs(ctx, db, user)))
 	}
 }

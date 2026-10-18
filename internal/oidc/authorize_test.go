@@ -118,7 +118,7 @@ func TestAuthorize_DelegatesValidRequest(t *testing.T) {
 	}
 }
 
-// A sign-in must run AT its brand's pinned issuer: the hanzo_fed browser
+// A sign-in must run AT its brand's pinned issuer: the __Host-hanzo_fed browser
 // binding and the session are host-only cookies, while the IdP callback and
 // `iss` live at the issuer. An authorize served on an alias host (iam.hanzo.ai
 // folding into hanzo.id) is therefore answered with the SAME request relocated

@@ -71,7 +71,7 @@ func portalSession(t *testing.T, app *zip.App, org, user string) string {
 // onboardAs posts the onboarding form with the caller's session cookie.
 func onboardAs(t *testing.T, app *zip.App, cookie, orgName string) (*http.Response, map[string]any) {
 	t.Helper()
-	req := jsonReq("POST", PathOnboard, map[string]any{"name": orgName})
+	req := fromPage(jsonReq("POST", PathOnboard, map[string]any{"name": orgName}))
 	if cookie != "" {
 		req.Header.Set("Cookie", cookie)
 	}

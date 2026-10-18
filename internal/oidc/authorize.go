@@ -79,7 +79,7 @@ type authorizeRequest struct {
 func authorizeHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		// A sign-in must run AT its sign-in origin, because everything a flow
-		// sets along the way — the hanzo_fed browser binding, the session — is a
+		// sets along the way — the __Host-hanzo_fed browser binding, the session — is a
 		// host-only cookie, while the IdP callback is pinned to that origin.
 		// Answering on an alias host (iam.hanzo.ai, www.zoolabs.id, any host the
 		// map folds) strands those cookies and social sign-in fails closed at the

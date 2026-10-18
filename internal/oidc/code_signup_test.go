@@ -172,7 +172,7 @@ func TestPutTerms_RecordsTheCallersAcceptanceAndNobodyElses(t *testing.T) {
 	}
 
 	put := func(body string, withCookie bool) map[string]any {
-		req := jsonReq("PUT", PathTerms, nil)
+		req := fromPage(jsonReq("PUT", PathTerms, nil))
 		req.Body = io.NopCloser(strings.NewReader(body))
 		req.ContentLength = int64(len(body))
 		if withCookie {

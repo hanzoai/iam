@@ -818,8 +818,19 @@ func TestFederation_MissingOrWrongBindCookieRejected(t *testing.T) {
 	if wrong.StatusCode != 400 || wrong.Header.Get("Location") != "" {
 		t.Fatalf("callback with a wrong bind cookie must be refused; status=%d", wrong.StatusCode)
 	}
+	// The right value under the unprefixed name, which any sibling host can set:
+	// only the __Host- cookie is read.
+	if !strings.HasPrefix(cookie, "__Host-hanzo_fed=") {
+		t.Fatalf("the binding is %q, want the __Host-hanzo_fed cookie", cookie)
+	}
+	planted := callback(t, app, q.Get("state"), "idp-code-1", strings.TrimPrefix(cookie, "__Host-"))
+	if planted.StatusCode != 400 || planted.Header.Get("Location") != "" {
+		t.Fatalf("callback with the binding under the bare hanzo_fed name must be refused; status=%d", planted.StatusCode)
+	}
 	// The state was not consumed by the failed attempts — the legit browser still works.
-	_ = cookie
+	if resp := callback(t, app, q.Get("state"), "idp-code-1", cookie); resp.StatusCode != 302 {
+		t.Fatalf("the browser holding the binding was refused after the failed attempts; status=%d", resp.StatusCode)
+	}
 }
 
 // An id_token whose nonce does not match the transaction's nonce is rejected —

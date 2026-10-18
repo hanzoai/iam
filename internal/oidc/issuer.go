@@ -13,16 +13,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 
 	"github.com/zap-proto/zip"
 )
-
-// devFallbackIssuer is the ONE fixed, non-host-derived issuer this package ever
-// falls back to. It is a constant, never interpolated from the request, so a
-// fail-closed landing can never become a host echo.
-const devFallbackIssuer = "https://hanzo.id"
 
 // errNoIssuer is the fail-LOUD boot error when nothing pins the issuer — no
 // IAM_ISSUER, no IAM_ISSUER_MAP — and the operator has NOT explicitly opted into
@@ -33,6 +27,11 @@ var errNoIssuer = errors.New(
 	"no OIDC issuer configured: set IAM_ISSUER to an absolute https URL " +
 		"(optionally with IAM_ISSUER_MAP for per-brand pinning); " +
 		"set IAM_DEV_HOST_RELATIVE=1 only on a local dev box that intends host-relative issuers")
+
+// errNoResolver is every issuer read in a process that never installed one. There
+// is no issuer to fall back to: a constant one would be some brand's, and minting
+// under it is the silent mis-issue the boot check exists to refuse.
+var errNoResolver = errors.New("no OIDC issuer is installed: the host runs server.RequireIssuer before it serves")
 
 // The per-host OIDC issuer resolver.
 //
@@ -116,35 +115,35 @@ func newIssuerResolver(defaultIssuer, mapJSON string, devHostRelative bool) (*is
 }
 
 // issuerFor returns the pinned issuer for host. The host is echoed into `iss`
-// ONLY inside the explicit dev opt-in branch (4); every other branch yields a
-// trusted config value or the fixed fallback, so "never echo the request host"
-// is structural here, not merely an emergent property of construction:
+// ONLY inside the explicit dev opt-in branch (3); every other branch yields a
+// trusted config value or an error, so "never echo the request host" is
+// structural here, not merely an emergent property of construction:
 //
 //  1. host is a configured brand → that brand's PINNED issuer (trusted config).
 //  2. otherwise the default issuer (IAM_ISSUER) when one is pinned — the
 //     fail-closed landing spot for an unknown/spoofed Host. The attacker-supplied
 //     Host is NEVER echoed as the issuer.
-//  3. no default and NOT the dev opt-in → the fixed fallback. This is unreachable
-//     given newIssuerResolver's gate (a def-less, non-dev resolver never builds),
-//     but issuerFor still refuses to echo if one is ever hand-constructed.
-//  4. dev opt-in (IAM_DEV_HOST_RELATIVE=1) with no pin → host-relative from the
+//  3. dev opt-in (IAM_DEV_HOST_RELATIVE=1) with no pin → host-relative from the
 //     TRUSTED host, so a dev box still serves a coherent discovery / JWKS / iss
 //     triple. host here is zip.Ctx.Host(), which ignores X-Forwarded-Host, so even
 //     this dev branch cannot be steered by a client header.
-func (r *issuerResolver) issuerFor(host string) string {
-	if r == nil { // defensive: an unbuilt resolver still fails closed, never echoes
-		return devFallbackIssuer
+//  4. anything else is an error: no resolver at all is errNoResolver, and a
+//     hand-built one with no default and no opt-in, which newIssuerResolver never
+//     builds, is errNoIssuer.
+func (r *issuerResolver) issuerFor(host string) (string, error) {
+	if r == nil {
+		return "", errNoResolver
 	}
 	if iss, ok := r.byHost[normalizeHost(host)]; ok {
-		return iss
+		return iss, nil
 	}
 	if r.def != "" {
-		return r.def
+		return r.def, nil
 	}
 	if r.devHostRelative {
 		return devIssuer(host)
 	}
-	return devFallbackIssuer
+	return "", errNoIssuer
 }
 
 // devIssuer is the host-relative dev issuer, and it keeps the WHOLE address the
@@ -173,24 +172,24 @@ func (r *issuerResolver) issuerFor(host string) string {
 // so under IAM_DEV_HOST_RELATIVE a caller can already choose the issuer's host;
 // carrying the port it also sent changes the value, not who controls it. That is
 // exactly why the flag is a hard opt-in and a no-issuer boot is otherwise refused.
-func devIssuer(host string) string {
+//
+// A request with no host names no issuer, and that is an error rather than some
+// fixed brand's address.
+func devIssuer(host string) (string, error) {
 	h := strings.ToLower(strings.TrimSpace(host))
-	if h == "" {
-		return devFallbackIssuer
-	}
 	name, port := h, ""
 	if n, p, err := net.SplitHostPort(h); err == nil {
 		name, port = n, p
 	}
 	name = strings.TrimSuffix(name, ".")
 	if name == "" {
-		return devFallbackIssuer
+		return "", fmt.Errorf("IAM_DEV_HOST_RELATIVE: the request names no host to be its issuer (%q)", host)
 	}
 	addr := name
 	if port != "" {
 		addr = net.JoinHostPort(name, port)
 	}
-	return devScheme(name) + "://" + addr
+	return devScheme(name) + "://" + addr, nil
 }
 
 // devScheme is what a dev box is actually speaking on that address. A loopback
@@ -231,7 +230,9 @@ func normalizeIssuer(iss string) string {
 
 // activeResolver is the process issuer resolver, installed once at startup by
 // InitIssuerResolver (and swapped by tests). Atomic so the install is visible to
-// every request goroutine with no lock on the hot path.
+// every request goroutine with no lock on the hot path. It is the only place an
+// issuer comes from: a process that never installed one has none, and every
+// issuer read says so (errNoResolver).
 var activeResolver atomic.Pointer[issuerResolver]
 
 // devHostRelativeEnabled reports whether the operator has EXPLICITLY opted into
@@ -240,29 +241,12 @@ var activeResolver atomic.Pointer[issuerResolver]
 // a hard error (errNoIssuer) rather than a silent host echo.
 func devHostRelativeEnabled() bool { return os.Getenv("IAM_DEV_HOST_RELATIVE") == "1" }
 
-// envIssuerResolver builds the resolver from IAM_ISSUER + IAM_ISSUER_MAP exactly
-// once, lazily. It is the fallback for a request that reaches a handler before
-// InitIssuerResolver has installed one (only tests that skip the startup path).
-// A malformed map degrades fail-closed to the default issuer — never a boot an
-// attacker can steer — while InitIssuerResolver remains the eager, hard-error
-// path a real deploy hits first, so this degrade branch is a last-resort net. If
-// even the default is absent AND the dev opt-in is unset, the fallback build also
-// errors and yields nil, which issuerFor handles by failing closed (never echo).
-var envIssuerResolver = sync.OnceValue(func() *issuerResolver {
-	dev := devHostRelativeEnabled()
-	r, err := newIssuerResolver(os.Getenv("IAM_ISSUER"), os.Getenv("IAM_ISSUER_MAP"), dev)
-	if err != nil {
-		r, _ = newIssuerResolver(os.Getenv("IAM_ISSUER"), "", dev)
-	}
-	return r
-})
-
 // InitIssuerResolver parses IAM_ISSUER + IAM_ISSUER_MAP once at startup and
 // installs the process resolver. A malformed / fail-open / non-https config — or
 // nothing pinned at all without the IAM_DEV_HOST_RELATIVE opt-in — is a HARD error
 // so a misconfigured deploy fails to boot rather than silently minting tokens
-// under the wrong (or host-echoed) `iss`. Called from serve() before the listener
-// opens.
+// under the wrong (or host-echoed) `iss`. A refused config installs nothing. Run
+// at boot through server.RequireIssuer, before the listener opens.
 func InitIssuerResolver() error {
 	r, err := newIssuerResolver(os.Getenv("IAM_ISSUER"), os.Getenv("IAM_ISSUER_MAP"), devHostRelativeEnabled())
 	if err != nil {
@@ -275,24 +259,20 @@ func InitIssuerResolver() error {
 // resolveIssuer is THE seam every issuer read routes through. host is the TRUSTED
 // request host (zip.Ctx.Host(), which ignores X-Forwarded-Host), so a
 // client-supplied header can only ever SELECT an already-configured brand's
-// issuer, never inject an arbitrary one.
-func resolveIssuer(host string) string {
-	if r := activeResolver.Load(); r != nil {
-		return r.issuerFor(host)
-	}
-	return envIssuerResolver().issuerFor(host)
+// issuer, never inject an arbitrary one. With no resolver installed it is
+// errNoResolver, never an issuer.
+func resolveIssuer(host string) (string, error) {
+	return activeResolver.Load().issuerFor(host)
 }
 
 // issues reports whether iss is an issuer this IAM mints under: the pinned
 // default or a brand's pinned issuer, or — only under the dev host-relative
-// opt-in, where the issuer follows the request host — any issuer.
+// opt-in, where the issuer follows the request host — any issuer. With no
+// resolver installed it mints under none.
 func issues(iss string) bool {
 	r := activeResolver.Load()
 	if r == nil {
-		r = envIssuerResolver()
-	}
-	if r == nil {
-		return normalizeIssuer(iss) == devFallbackIssuer
+		return false
 	}
 	iss = normalizeIssuer(iss)
 	if r.def != "" && iss == r.def {
@@ -303,10 +283,7 @@ func issues(iss string) bool {
 			return true
 		}
 	}
-	if r.def == "" && len(r.byHost) == 0 {
-		return r.devHostRelative || iss == devFallbackIssuer
-	}
-	return false
+	return r.def == "" && len(r.byHost) == 0 && r.devHostRelative
 }
 
 // Issuer is the canonical OIDC issuer for a request host, for a caller outside
@@ -314,7 +291,7 @@ func issues(iss string) bool {
 // anchor, which records WHERE an identity is asserted — reads the one per-brand
 // resolver rather than assembling a second answer that could differ from the
 // `iss` on the token describing the same person.
-func Issuer(host string) string { return resolveIssuer(host) }
+func Issuer(host string) (string, error) { return resolveIssuer(host) }
 
 // The sign-in origin: where a browser sign-in on a host RUNS, and so the origin an
 // EXTERNAL IdP calls back to.
@@ -348,7 +325,7 @@ func Issuer(host string) string { return resolveIssuer(host) }
 // signs in there rather than being sent on — and loadFederationResolver refuses a
 // config that is not: the begin leg would set the binding on one host while the
 // IdP returns to another, and every social sign-in would fail closed at the
-// callback. Refused, the map is not used and every host signs in at its issuer.
+// callback. A refused map fails the boot (server.RequireIssuer).
 //
 // The value is trusted CONFIG selected by the request host, never interpolated
 // from it, so a client can at most select a configured origin. Each origin is also
@@ -456,24 +433,27 @@ func newFederationResolver(mapJSON string) (*signinMap, error) {
 }
 
 // federationOriginFor is r's sign-in origin for host: the host's own entry, else
-// its issuer host's entry, else its issuer.
-func federationOriginFor(r *signinMap, host string) string {
-	if o, ok := r.byHost[normalizeHost(host)]; ok {
-		return o
-	}
-	iss := resolveIssuer(host)
-	if u, err := url.Parse(iss); err == nil {
-		if o, ok := r.byHost[normalizeHost(u.Host)]; ok {
-			return o
+// its issuer host's entry, else its issuer. A nil r names no entries.
+func federationOriginFor(r *signinMap, host string) (string, error) {
+	if r != nil {
+		if o, ok := r.byHost[normalizeHost(host)]; ok {
+			return o, nil
 		}
 	}
-	return iss
+	iss, err := resolveIssuer(host)
+	if err != nil {
+		return "", err
+	}
+	if u, err := url.Parse(iss); err == nil && r != nil {
+		if o, ok := r.byHost[normalizeHost(u.Host)]; ok {
+			return o, nil
+		}
+	}
+	return iss, nil
 }
 
 // loadFederationResolver reads the sign-in origins from the environment and
-// judges them: parsed, and every origin a host can resolve to terminal. The one
-// reader, for the boot and for the lazy path alike, so neither can install a map
-// the other would refuse.
+// judges them: parsed, and every origin a host can resolve to terminal.
 func loadFederationResolver() (*signinMap, error) {
 	if strings.TrimSpace(os.Getenv("IAM_FEDERATION_ORIGIN")) != "" {
 		return nil, errors.New("IAM_FEDERATION_ORIGIN is not read: name each host that signs in " +
@@ -489,30 +469,17 @@ func loadFederationResolver() (*signinMap, error) {
 	return r, nil
 }
 
-// envFederationResolver is loadFederationResolver once, lazily, for a request that
-// reaches a handler before InitFederationResolver ran. A refused config is nil:
-// every host signs in at its issuer.
-var envFederationResolver = sync.OnceValue(func() *signinMap {
-	r, err := loadFederationResolver()
-	if err != nil {
-		return nil
-	}
-	return r
-})
-
-// InitFederationResolver reads the sign-in origins and installs them, or reports
-// why it would not. routeFederation calls it, the one place `iam serve` and an
-// embedding host (cloud) both pass, and a refusal leaves every host signing in at
-// its issuer: social sign-in keeps working where it worked before, rather than the
-// process that serves every identity request refusing to start over one map.
+// InitFederationResolver reads the sign-in origins and installs exactly what they
+// say — none, when the map is unset, so every host signs in at its issuer — or
+// reports why it would not and installs nothing. It judges the map against the
+// issuers, so it runs after InitIssuerResolver; server.RequireIssuer runs both,
+// in that order, at boot.
 func InitFederationResolver() error {
 	r, err := loadFederationResolver()
 	if err != nil {
 		return err
 	}
-	if r != nil {
-		activeFederationResolver.Store(r)
-	}
+	activeFederationResolver.Store(r)
 	return nil
 }
 
@@ -520,9 +487,6 @@ func InitFederationResolver() error {
 // brand's.
 func issuerValues() []string {
 	r := activeResolver.Load()
-	if r == nil {
-		r = envIssuerResolver()
-	}
 	if r == nil {
 		return nil
 	}
@@ -560,7 +524,15 @@ func signinOriginsTerminal(r *signinMap) error {
 		if err != nil || u.Host == "" {
 			return fmt.Errorf("IAM_FEDERATION_ORIGIN_MAP: %s signs in at %q, which is not an origin", host, origin)
 		}
-		if a, b := resolveIssuer(host), resolveIssuer(u.Host); a != b {
+		a, err := resolveIssuer(host)
+		if err != nil {
+			return err
+		}
+		b, err := resolveIssuer(u.Host)
+		if err != nil {
+			return err
+		}
+		if a != b {
 			return fmt.Errorf("IAM_FEDERATION_ORIGIN_MAP sends %s (issuer %s) to %s (issuer %s): "+
 				"a host signs in at an origin of its own issuer", host, a, origin, b)
 		}
@@ -571,7 +543,11 @@ func signinOriginsTerminal(r *signinMap) error {
 		if err != nil || u.Host == "" {
 			continue
 		}
-		if o := federationOriginFor(r, u.Host); via[o] == "" {
+		o, err := federationOriginFor(r, u.Host)
+		if err != nil {
+			return err
+		}
+		if via[o] == "" {
 			via[o] = u.Host
 		}
 	}
@@ -586,10 +562,14 @@ func signinOriginsTerminal(r *signinMap) error {
 		if err != nil || u.Host == "" {
 			return fmt.Errorf("IAM_FEDERATION_ORIGIN_MAP: %s signs in at %q, which is not an origin", host, origin)
 		}
-		if next := federationOriginFor(r, u.Host); next != origin {
+		next, err := federationOriginFor(r, u.Host)
+		if err != nil {
+			return err
+		}
+		if next != origin {
 			return fmt.Errorf(
 				"IAM_FEDERATION_ORIGIN_MAP sends %s to %s, which signs in at %s: the "+
-					"hanzo_fed browser-binding cookie is host-only, so a sign-in begun at %s "+
+					"__Host-hanzo_fed browser-binding cookie is host-only, so a sign-in begun at %s "+
 					"would set it there while the IdP returns to %s, and every social sign-in "+
 					"would fail closed. Map %s to itself",
 				host, origin, next, u.Host, next, u.Host)
@@ -602,27 +582,22 @@ func signinOriginsTerminal(r *signinMap) error {
 // callback, the 2FA page and the authorize relocation all read it. host is the
 // request host as zip reads it, so a client can at most select a configured
 // origin. Unconfigured, it is the host's issuer.
-func resolveFederationOrigin(host string) string {
-	r := activeFederationResolver.Load()
-	if r == nil {
-		r = envFederationResolver()
-	}
-	if r == nil {
-		return resolveIssuer(host)
-	}
-	return federationOriginFor(r, host)
+func resolveFederationOrigin(host string) (string, error) {
+	return federationOriginFor(activeFederationResolver.Load(), host)
 }
 
 // atIssuer reports whether the request arrived on its issuer's own host. A sign-in
 // origin that is not (hanzo.ai, signing in for hanzo.id) holds a session of its
 // own, which the issuer's sign-out does not end, so authorize there never answers
-// silently from it: the page asks "continue as" first.
+// silently from it: the page asks "continue as" first. A host with no issuer is
+// at none.
 func atIssuer(c *zip.Ctx) bool {
-	if activeResolver.Load() == nil && envIssuerResolver() == nil {
-		return true // nothing pinned: a hand-built server answers as it always has
-	}
 	host := strings.TrimSpace(c.Host())
-	u, err := url.Parse(resolveIssuer(host))
+	iss, err := resolveIssuer(host)
+	if err != nil {
+		return false
+	}
+	u, err := url.Parse(iss)
 	return err == nil && u.Host != "" && sameAddress(u.Host, host)
 }
 
@@ -649,24 +624,18 @@ func sameAddress(a, b string) bool {
 // is its own sign-in origin (hanzo.ai under the map above) is answered in place.
 //
 // The target is trusted config (never the request), so this can relocate but
-// not open-redirect. Fail-closed: no issuer pinned at all, an unparsable origin,
-// or an origin that would send the request on again (a miswritten map that would
+// not open-redirect. Fail-closed: no issuer installed, an unparsable origin, or an
+// origin that would send the request on again (a miswritten map that would
 // ping-pong browsers) all answer "no relocation".
 func signinRelocation(c *zip.Ctx) (string, bool) {
-	if activeResolver.Load() == nil && envIssuerResolver() == nil {
-		// Nothing pinned (a hand-built server; a real boot hard-errors first).
-		// The fixed fallback is a fail-closed placeholder, not an address to
-		// steer browsers to.
-		return "", false
-	}
 	// The FULL host, port included. The resolvers normalize for their own map
 	// lookups, so a brand still resolves from "lux.id:443"; passing the stripped
 	// host instead meant the dev branch could never see a port and relocated a
 	// request on 127.0.0.1:38080 to 127.0.0.1 — a port nothing serves, reached by
 	// a 307 the browser follows before anything says why.
 	host := strings.TrimSpace(c.Host())
-	origin := resolveFederationOrigin(host)
-	if host == "" || origin == "" {
+	origin, err := resolveFederationOrigin(host)
+	if host == "" || err != nil {
 		return "", false
 	}
 	u, err := url.Parse(origin)
@@ -681,7 +650,7 @@ func signinRelocation(c *zip.Ctx) (string, bool) {
 	if sameAddress(u.Host, host) {
 		return "", false
 	}
-	if resolveFederationOrigin(u.Host) != origin {
+	if next, err := resolveFederationOrigin(u.Host); err != nil || next != origin {
 		return "", false
 	}
 	return origin + c.Fiber().OriginalURL(), true

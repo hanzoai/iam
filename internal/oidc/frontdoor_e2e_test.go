@@ -130,7 +130,7 @@ func TestUpdatePreferences_ShallowMergeRoundTrip(t *testing.T) {
 	cookie := sessionCookieFor(t, app)
 
 	post := func(patch any) map[string]any {
-		req := jsonReq("POST", PathPreferences, patch)
+		req := fromPage(jsonReq("POST", PathPreferences, patch))
 		req.Header.Set("Cookie", cookie)
 		resp, body := do(t, app, req)
 		env := decode(t, body)
@@ -166,7 +166,7 @@ func TestOnboard_CreatesOrgTheCallerOwns(t *testing.T) {
 	seedRichUser(t, db)
 	cookie := sessionCookieFor(t, app)
 
-	req := jsonReq("POST", PathOnboard, map[string]any{"name": "Acme Inc"})
+	req := fromPage(jsonReq("POST", PathOnboard, map[string]any{"name": "Acme Inc"}))
 	req.Header.Set("Cookie", cookie)
 	resp, body := do(t, app, req)
 	env := decode(t, body)
@@ -196,7 +196,7 @@ func TestOnboard_PersonalOrg(t *testing.T) {
 	seedRichUser(t, db)
 	cookie := sessionCookieFor(t, app)
 
-	req := jsonReq("POST", PathOnboard, map[string]any{"personal": true})
+	req := fromPage(jsonReq("POST", PathOnboard, map[string]any{"personal": true}))
 	req.Header.Set("Cookie", cookie)
 	resp, body := do(t, app, req)
 	if env := decode(t, body); resp.StatusCode != 200 || env["org"] != "alice" {
@@ -214,7 +214,7 @@ func TestOnboard_ReservedRefused(t *testing.T) {
 	seedRichUser(t, db)
 	cookie := sessionCookieFor(t, app)
 
-	req := jsonReq("POST", PathOnboard, map[string]any{"name": "admin"})
+	req := fromPage(jsonReq("POST", PathOnboard, map[string]any{"name": "admin"}))
 	req.Header.Set("Cookie", cookie)
 	resp, body := do(t, app, req)
 	if resp.StatusCode == 200 || !strings.Contains(string(body), "reserved") {

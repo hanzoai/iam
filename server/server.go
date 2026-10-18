@@ -166,6 +166,28 @@ func Seed(ctx context.Context, db orm.DB, initDataPath string) (*seed.Summary, e
 	return sum, nil
 }
 
+// RequireIssuer installs the issuers this process mints under, from IAM_ISSUER and
+// IAM_ISSUER_MAP, then the sign-in origins, from IAM_FEDERATION_ORIGIN_MAP, and
+// says why when it will not. It is the other precondition a boot asserts before it
+// serves, beside [RequireSigning]: main() calls it before its listener, and a host
+// that embeds IAM calls it before it composes [NewApp].
+//
+// Fail-closed. IAM_ISSUER must be an absolute https URL — empty is allowed only
+// under the explicit IAM_DEV_HOST_RELATIVE=1 dev opt-in — every IAM_ISSUER_MAP
+// entry must be one too, and a sign-in map that would strand the browser binding
+// is refused; each is an error here and nothing stands in for it. A process that
+// skips this has no issuer at all: every mint, discovery document and sign-in
+// answers an error rather than naming some fixed brand's issuer.
+func RequireIssuer() error {
+	if err := oidc.InitIssuerResolver(); err != nil {
+		return fmt.Errorf("issuer: %w", err)
+	}
+	if err := oidc.InitFederationResolver(); err != nil {
+		return fmt.Errorf("sign-in origins: %w", err)
+	}
+	return nil
+}
+
 // RequireSigning reports whether this process holds the keys it must sign with,
 // and is the precondition a boot asserts before it serves — main() before its
 // listener, and [Seed] for an embedded host.

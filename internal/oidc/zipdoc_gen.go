@@ -181,7 +181,7 @@ func init() {
 		Description: "Verifies the signed challenge and signs the person in.\n\nIt answers exactly as a password sign-in does — the same envelope, through the\nsame grant — so nothing downstream branches on how somebody arrived.",
 	})
 	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/webauthn/signup/finish", zip.Doc{
-		Description: "Verifies the newly created passkey and stores it, so the person\ncan sign in with their device from then on.",
+		Description: "Verifies the newly created passkey and stores it, so the person\ncan sign in with their device from then on.\n\nOnly this site's own pages may finish an enrollment, and only as JSON.",
 	})
 	zip.Describe("github.com/hanzoai/iam/internal/oidc PUT /v1/iam/account", zip.Doc{
 		Description: "Saves the calling person's own profile — the name they are\nshown by, their picture, a line about themselves and a link.\n\nOnly their own: the request names nobody, so it cannot reach another account.\nSend only what you are changing; a field you leave out keeps the value it had,\nand a field you send empty is cleared.\n\nA picture is an https link or an inline image up to 96 KiB, the same value an\norganization's mark is (schema.AvatarRef) — one rule for how a subject appears,\nwhether the subject is a person or an organization.",

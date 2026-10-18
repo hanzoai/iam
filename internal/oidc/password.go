@@ -87,9 +87,17 @@ type passwordBody struct {
 	//
 	// Both, because the two arms of this endpoint serve two callers: the portal
 	// holds a session cookie, an API client holds a bearer. Resolving only one of
-	// them would silently take password change away from the other.
+	// them would silently take password change away from the other. Site and Type
+	// are what the cookie is judged by (sessions.Forgeable).
 	Cookie string `json:"-" header:"Cookie"`
 	Auth   string `json:"-" header:"Authorization"`
+	Site   string `json:"-" header:"Sec-Fetch-Site"`
+	Type   string `json:"-" header:"Content-Type"`
+}
+
+// asker is what this PUT presents to say who is asking.
+func (in *passwordBody) asker() asker {
+	return asker{Method: http.MethodPut, Cookie: sessionCookie(in.Cookie), Site: in.Site, Type: in.Type, Bearer: httpx.BearerValue(in.Auth)}
 }
 
 // sessionCookie is the session value carried by a raw `Cookie` header, or "".
@@ -144,11 +152,10 @@ func putPasswordHandler(db orm.DB) zip.TypedHandler[passwordBody, httpx.Answer] 
 				return httpx.Bad(400, errPasswordCode, ""), nil
 			}
 		} else {
-			owner, name, ok := callerFrom(ctx, db, sessionCookie(in.Cookie), httpx.BearerValue(in.Auth))
-			if !ok {
-				return httpx.Bad(400, "please sign in first", CodeLoginRequired), nil
+			owner, name, err := callerFrom(ctx, db, in.asker())
+			if err != nil {
+				return callerAnswer(err), nil
 			}
-			var err error
 			if user, err = store.GetUserByName(ctx, db, owner, name); err != nil {
 				return httpx.Bad(400, err.Error(), ""), nil
 			}

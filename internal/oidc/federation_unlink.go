@@ -69,9 +69,9 @@ func unlink(db orm.DB) zip.Handler {
 			return httpx.Err(c, "invalid request body")
 		}
 		ctx := c.Context()
-		caller, name, ok := callerOf(ctx, c, db)
-		if !ok {
-			return httpx.Err(c, "Please login first")
+		caller, name, err := callerOf(ctx, c, db)
+		if err != nil {
+			return refuseCaller(c, err, "Please login first")
 		}
 		self := caller == f.User.Owner && name == f.User.Name
 		me, err := store.GetUserByName(ctx, db, caller, name)

@@ -220,6 +220,12 @@ func deviceHandler(db orm.DB) zip.Handler {
 		if !appGrants(app, deviceGrant) {
 			return tokenError(c, 400, "unsupported_grant_type", "the application does not permit the device grant")
 		}
+		// The approval page lives at the issuer; with none there is nowhere to send
+		// the person, so nothing is minted.
+		iss, err := tokenIssuer(c)
+		if err != nil {
+			return tokenError(c, 500, "server_error", "")
+		}
 
 		deviceCode, err := newOpaqueToken()
 		if err != nil {
@@ -251,7 +257,7 @@ func deviceHandler(db orm.DB) zip.Handler {
 		// Both URIs point at the SPA approval page a human opens, never at this
 		// JSON API. The complete form is a PATH segment because that is the route
 		// the page is registered on (/login/oauth/device/:userCode).
-		verify := tokenIssuer(c) + PathDeviceVerify
+		verify := iss + PathDeviceVerify
 		return c.JSON(200, deviceResponse{
 			DeviceCode:              deviceCode,
 			UserCode:                userCode,

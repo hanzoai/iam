@@ -33,7 +33,6 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/compare"
-	"github.com/hanzoai/iam/internal/oidc"
 	"github.com/hanzoai/iam/internal/routes"
 	"github.com/hanzoai/iam/internal/seed"
 	"github.com/hanzoai/iam/pkg/provision"
@@ -99,11 +98,10 @@ func serve(ctx context.Context, storeBackend, dbPath, sqlAddr, zapAddr, httpAddr
 	}
 	defer db.Close()
 
-	// Pin the per-brand OIDC issuer map from config (IAM_ISSUER + IAM_ISSUER_MAP)
-	// before the listener opens. A malformed or fail-open map fails the boot LOUD
-	// rather than silently minting tokens under the wrong `iss`; an unset map keeps
-	// the single-issuer (IAM_ISSUER) behavior unchanged.
-	if err := oidc.InitIssuerResolver(); err != nil {
+	// Pin the issuers (IAM_ISSUER + IAM_ISSUER_MAP) and the sign-in origins
+	// (IAM_FEDERATION_ORIGIN_MAP) before the listener opens. A bad value fails the
+	// boot LOUD rather than silently minting tokens under the wrong `iss`.
+	if err := server.RequireIssuer(); err != nil {
 		return fmt.Errorf("serve: %w", err)
 	}
 

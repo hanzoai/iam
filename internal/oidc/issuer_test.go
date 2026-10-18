@@ -5,6 +5,7 @@ package oidc
 
 import (
 	"context"
+	"errors"
 	"net/url"
 	"strings"
 	"testing"
@@ -48,6 +49,36 @@ func installIssuerResolver(t *testing.T, def, mapJSON string) {
 	t.Cleanup(func() { activeResolver.Store(prev) })
 }
 
+// issuerOf is r's issuer for host, failing the test on an error.
+func issuerOf(t *testing.T, r *issuerResolver, host string) string {
+	t.Helper()
+	iss, err := r.issuerFor(host)
+	if err != nil {
+		t.Fatalf("issuerFor(%q): %v", host, err)
+	}
+	return iss
+}
+
+// mustIssuer is the process issuer for host, failing the test on an error.
+func mustIssuer(t *testing.T, host string) string {
+	t.Helper()
+	iss, err := resolveIssuer(host)
+	if err != nil {
+		t.Fatalf("resolveIssuer(%q): %v", host, err)
+	}
+	return iss
+}
+
+// mustOrigin is the process sign-in origin for host, failing the test on an error.
+func mustOrigin(t *testing.T, host string) string {
+	t.Helper()
+	o, err := resolveFederationOrigin(host)
+	if err != nil {
+		t.Fatalf("resolveFederationOrigin(%q): %v", host, err)
+	}
+	return o
+}
+
 // The resolver maps each configured brand host (and alias) to its pinned issuer,
 // normalizes case / whitespace / port, and — critically — FAILS CLOSED to the
 // default for anything not configured, never echoing the input host.
@@ -72,7 +103,7 @@ func TestIssuerResolver_Resolve(t *testing.T) {
 		{"empty host → default", "", "https://hanzo.id"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := r.issuerFor(tc.host); got != tc.want {
+			if got := issuerOf(t, r, tc.host); got != tc.want {
 				t.Errorf("issuerFor(%q) = %q, want %q", tc.host, got, tc.want)
 			}
 		})
@@ -94,7 +125,7 @@ func TestIssuerResolver_UnknownHostNeverEchoed(t *testing.T) {
 		"hanzo.id.attacker",   // prefix of a brand, but not the brand
 		"xn--80ak6aa92e.com",  // punycode lookalike
 	} {
-		got := r.issuerFor(evil)
+		got := issuerOf(t, r, evil)
 		if got != "https://hanzo.id" {
 			t.Errorf("issuerFor(%q) = %q, want fail-closed default https://hanzo.id", evil, got)
 		}
@@ -114,7 +145,7 @@ func TestIssuerResolver_BackwardCompat(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, h := range []string{"hanzo.id", "lux.id", "anything.example", "", "LUX.ID:8443"} {
-			if got := r.issuerFor(h); got != "https://hanzo.id" {
+			if got := issuerOf(t, r, h); got != "https://hanzo.id" {
 				t.Errorf("issuerFor(%q) = %q, want https://hanzo.id (single-issuer)", h, got)
 			}
 		}
@@ -124,7 +155,7 @@ func TestIssuerResolver_BackwardCompat(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := r.issuerFor("lux.id"); got != "https://hanzo.id" {
+		if got := issuerOf(t, r, "lux.id"); got != "https://hanzo.id" {
 			t.Errorf("issuerFor = %q, want https://hanzo.id (trailing slash trimmed)", got)
 		}
 	})
@@ -133,7 +164,7 @@ func TestIssuerResolver_BackwardCompat(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := r.issuerFor("lux.id"); got != "https://hanzo.id" {
+		if got := issuerOf(t, r, "lux.id"); got != "https://hanzo.id" {
 			t.Errorf("issuerFor = %q, want https://hanzo.id", got)
 		}
 	})
@@ -142,11 +173,11 @@ func TestIssuerResolver_BackwardCompat(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := r.issuerFor("dev.local"); got != "https://dev.local" {
+		if got := issuerOf(t, r, "dev.local"); got != "https://dev.local" {
 			t.Errorf("issuerFor(dev.local) = %q, want https://dev.local (dev host-relative)", got)
 		}
-		if got := r.issuerFor(""); got != "https://hanzo.id" {
-			t.Errorf("issuerFor(\"\") = %q, want https://hanzo.id (dev last-resort)", got)
+		if got, err := r.issuerFor(""); err == nil {
+			t.Errorf("issuerFor(\"\") = %q, want an error: a request naming no host names no issuer", got)
 		}
 	})
 }
@@ -199,22 +230,18 @@ func TestIssuerResolver_FailLoudNoIssuer(t *testing.T) {
 		if err != nil {
 			t.Fatalf("dev opt-in should construct: %v", err)
 		}
-		if got := r.issuerFor("dev.local"); got != "https://dev.local" {
+		if got := issuerOf(t, r, "dev.local"); got != "https://dev.local" {
 			t.Errorf("issuerFor(dev.local) = %q, want https://dev.local", got)
 		}
 	})
-	t.Run("a hand-built def-less non-dev resolver still refuses to echo", func(t *testing.T) {
+	t.Run("a hand-built def-less non-dev resolver names no issuer", func(t *testing.T) {
 		// Belt and suspenders: even bypassing the constructor, issuerFor never
-		// derives `iss` from the request host without the dev opt-in — it fails
-		// closed to the fixed default, never https://<host>.
+		// derives `iss` from the request host without the dev opt-in, and never
+		// stands a fixed brand's issuer in for the missing one — it is an error.
 		r := &issuerResolver{} // def=="", devHostRelative==false
 		for _, evil := range []string{"evil.example", "lux.id.attacker", "hanzo.id.evil"} {
-			got := r.issuerFor(evil)
-			if got == "https://"+evil {
-				t.Fatalf("SECURITY: issuerFor(%q) echoed the request host", evil)
-			}
-			if got != devFallbackIssuer {
-				t.Errorf("issuerFor(%q) = %q, want fail-closed %q", evil, got, devFallbackIssuer)
+			if got, err := r.issuerFor(evil); err == nil || got != "" {
+				t.Fatalf("issuerFor(%q) = %q, %v; want no issuer and an error", evil, got, err)
 			}
 		}
 	})
@@ -251,6 +278,41 @@ func TestInitIssuerResolver_FailLoud(t *testing.T) {
 			t.Fatalf("dev opt-in should boot: %v", err)
 		}
 	})
+}
+
+// A process that never installed an issuer has none: every read is an error, no
+// token is minted or accepted, and discovery names nothing — never a fixed brand's
+// issuer standing in for the missing one.
+func TestNoIssuerInstalled_NamesNone(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "svc", secret: "svc-secret", redirectURIs: []string{testRedirect}, grants: machineGrants})
+	prevIss, prevFed := activeResolver.Swap(nil), activeFederationResolver.Swap(nil)
+	t.Cleanup(func() { activeResolver.Store(prevIss); activeFederationResolver.Store(prevFed) })
+
+	if iss, err := resolveIssuer("hanzo.id"); !errors.Is(err, errNoResolver) || iss != "" {
+		t.Fatalf("resolveIssuer = %q, %v; want no issuer and errNoResolver", iss, err)
+	}
+	if iss, err := Issuer("hanzo.id"); err == nil || iss != "" {
+		t.Fatalf("Issuer = %q, %v; want an error", iss, err)
+	}
+	if o, err := resolveFederationOrigin("hanzo.id"); err == nil || o != "" {
+		t.Fatalf("resolveFederationOrigin = %q, %v; want an error", o, err)
+	}
+	if issues("https://hanzo.id") {
+		t.Fatal("with no issuer installed, https://hanzo.id was accepted as one of ours")
+	}
+
+	resp, body := do(t, app, formReqNoBody("GET", PathDiscovery))
+	if resp.StatusCode == 200 || strings.Contains(string(body), "https://hanzo.id") {
+		t.Fatalf("discovery with no issuer: status=%d %s, want a refusal naming no issuer", resp.StatusCode, body)
+	}
+	req := formReq("POST", PathToken, url.Values{
+		"grant_type": {"client_credentials"}, "client_id": {"svc"}, "client_secret": {"svc-secret"},
+	})
+	resp, body = do(t, app, req)
+	if resp.StatusCode != 500 || strings.Contains(string(body), "access_token") {
+		t.Fatalf("a mint with no issuer: status=%d %s, want 500 and no token", resp.StatusCode, body)
+	}
 }
 
 // End-to-end over the real HTTP surface: for each brand host, the `iss` a minted
@@ -403,11 +465,11 @@ func TestFederationOriginFoldBootsOnlyOntoATerminalOrigin(t *testing.T) {
 		if err := bootFederation(t, "https://hanzo.id", testIssuerMap, `{"iam.hanzo.ai":"https://hanzo.ai","hanzo.ai":"https://hanzo.ai"}`); err != nil {
 			t.Fatalf("a fold onto a terminal origin must boot: %v", err)
 		}
-		if got := resolveFederationOrigin("iam.hanzo.ai"); got != "https://hanzo.ai" {
+		if got := mustOrigin(t, "iam.hanzo.ai"); got != "https://hanzo.ai" {
 			t.Errorf("iam.hanzo.ai signs in at %q, want the fold https://hanzo.ai", got)
 		}
 		// The ISSUER half of the split is untouched: that is what an RP pins.
-		if got := resolveIssuer("iam.hanzo.ai"); got != "https://hanzo.id" {
+		if got := mustIssuer(t, "iam.hanzo.ai"); got != "https://hanzo.id" {
 			t.Errorf("issuer for iam.hanzo.ai = %q, want https://hanzo.id", got)
 		}
 	})
@@ -430,7 +492,7 @@ func TestFederationOriginFoldBootsOnlyOntoATerminalOrigin(t *testing.T) {
 		if activeFederationResolver.Load() != nil {
 			t.Error("a refused federation config was installed anyway")
 		}
-		if got := resolveFederationOrigin("iam.hanzo.ai"); got != "https://hanzo.id" {
+		if got := mustOrigin(t, "iam.hanzo.ai"); got != "https://hanzo.id" {
 			t.Errorf("refused, iam.hanzo.ai signs in at %q, want its issuer https://hanzo.id", got)
 		}
 	})
@@ -453,11 +515,11 @@ func TestFederationOriginAliasesFollowTheirIssuer(t *testing.T) {
 		"lux.id":          "https://lux.id",
 		"iam.lux.network": "https://lux.id",
 	} {
-		if got := resolveFederationOrigin(host); got != want {
+		if got := mustOrigin(t, host); got != want {
 			t.Errorf("sign-in origin for %s = %q, want %q", host, got, want)
 		}
 	}
-	if got := resolveIssuer("hanzo.ai"); got != "https://hanzo.id" {
+	if got := mustIssuer(t, "hanzo.ai"); got != "https://hanzo.id" {
 		t.Errorf("issuer for hanzo.ai = %q; the issuer does not move", got)
 	}
 }
@@ -476,11 +538,11 @@ func TestFederationOriginMapNamesOneHost(t *testing.T) {
 		"lux.id":         "https://lux.id",
 		"id.zoo.network": "https://id.zoo.network",
 	} {
-		if got := resolveFederationOrigin(host); got != want {
+		if got := mustOrigin(t, host); got != want {
 			t.Errorf("sign-in origin for %s = %q, want %q", host, got, want)
 		}
 	}
-	if got := resolveIssuer("hanzo.ai"); got != "https://hanzo.id" {
+	if got := mustIssuer(t, "hanzo.ai"); got != "https://hanzo.id" {
 		t.Errorf("issuer for hanzo.ai = %q; signing in on hanzo.ai must not move `iss` off https://hanzo.id", got)
 	}
 	if err := signinOriginsTerminal(activeFederationResolver.Load()); err != nil {
@@ -547,7 +609,7 @@ func TestFederationOriginDefaultIsRefused(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "IAM_FEDERATION_ORIGIN_MAP") {
 		t.Fatalf("IAM_FEDERATION_ORIGIN must be refused naming the map; got %v", err)
 	}
-	if got := resolveFederationOrigin("lux.id"); got != "https://lux.id" {
+	if got := mustOrigin(t, "lux.id"); got != "https://lux.id" {
 		t.Errorf("refused, lux.id signs in at %q, want its issuer", got)
 	}
 }
@@ -557,7 +619,7 @@ func TestFederationOriginUnsetFollowsIssuer(t *testing.T) {
 		t.Fatalf("InitFederationResolver on empty config: %v", err)
 	}
 	for _, h := range []string{"lux.id", "hanzo.id", "unknown.example"} {
-		if got, want := resolveFederationOrigin(h), resolveIssuer(h); got != want {
+		if got, want := mustOrigin(t, h), mustIssuer(t, h); got != want {
 			t.Errorf("unset federation origin for %q = %q, want issuer %q", h, got, want)
 		}
 	}
@@ -644,10 +706,14 @@ func TestDevIssuerKeepsTheWholeAddress(t *testing.T) {
 		{"lux.id", "https://lux.id"},
 		{"LUX.ID.", "https://lux.id"},
 		{" lux.id ", "https://lux.id"},
-		{"", devFallbackIssuer},
 	} {
-		if got := devIssuer(c.host); got != c.want {
-			t.Errorf("devIssuer(%q) = %q, want %q", c.host, got, c.want)
+		if got, err := devIssuer(c.host); err != nil || got != c.want {
+			t.Errorf("devIssuer(%q) = %q, %v; want %q", c.host, got, err, c.want)
+		}
+	}
+	for _, host := range []string{"", " ", ":8080", "."} {
+		if got, err := devIssuer(host); err == nil {
+			t.Errorf("devIssuer(%q) = %q, want an error: no host, no issuer", host, got)
 		}
 	}
 }

@@ -198,7 +198,7 @@ func (a *authenticator) sign(t *testing.T, challenge string, handle []byte, rpID
 // and the cookie that names the outstanding ceremony.
 func begin(t *testing.T, app *zip.App, path, cookie string) (challenge, held string) {
 	t.Helper()
-	req := formReqNoBody("GET", path)
+	req := fromPage(formReqNoBody("GET", path))
 	if cookie != "" {
 		req.Header.Set("Cookie", cookie)
 	}
@@ -228,7 +228,7 @@ func finish(t *testing.T, app *zip.App, path, held string, body []byte) map[stri
 	req, _ := http.NewRequest("POST", path, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Cookie", held)
-	_, raw := do(t, app, req)
+	_, raw := do(t, app, fromPage(req))
 	return decode(t, raw)
 }
 
@@ -407,7 +407,7 @@ func TestPasskeyUnverifiedAssertionIsRefused(t *testing.T) {
 func TestPasskeyCeremoniesAskForVerification(t *testing.T) {
 	app, _, cookie := passkeyServer(t)
 
-	req := formReqNoBody("GET", PathWebauthnRegisterBegin)
+	req := fromPage(formReqNoBody("GET", PathWebauthnRegisterBegin))
 	req.Header.Set("Cookie", cookie)
 	_, body := do(t, app, req)
 	var reg struct {
@@ -464,7 +464,7 @@ func TestPasskeyOptionsMatchTheBrowserContract(t *testing.T) {
 
 	// Enrollment options: challenge + user handle, and the relying party the
 	// browser will check its own origin against.
-	req := formReqNoBody("GET", PathWebauthnRegisterBegin)
+	req := fromPage(formReqNoBody("GET", PathWebauthnRegisterBegin))
 	req.Header.Set("Cookie", cookie)
 	_, body := do(t, app, req)
 	if _, ok := decodeAny(t, body)["status"]; ok {

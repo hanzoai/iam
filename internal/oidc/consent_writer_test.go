@@ -68,7 +68,7 @@ func putConsent(t *testing.T, app *zip.App, cookie, body string) (int, map[strin
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Cookie", cookie)
-	resp, raw := do(t, app, req)
+	resp, raw := do(t, app, fromPage(req))
 	return resp.StatusCode, decode(t, raw)
 }
 

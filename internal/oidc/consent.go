@@ -87,9 +87,9 @@ func getConsentHandler(db orm.DB) zip.Handler {
 func putConsentHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
-		owner, name, ok := callerOf(ctx, c, db)
-		if !ok {
-			return httpx.Err(c, "please sign in first")
+		owner, name, err := callerOf(ctx, c, db)
+		if err != nil {
+			return refuseCaller(c, err, "please sign in first")
 		}
 		var in consentBody
 		if err := json.Unmarshal(c.Fiber().Body(), &in); err != nil {

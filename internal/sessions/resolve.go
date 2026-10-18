@@ -5,6 +5,7 @@ package sessions
 import (
 	"context"
 	"errors"
+	"mime"
 	"strings"
 	"time"
 
@@ -138,23 +139,80 @@ func set(ctx context.Context, c fiber.Ctx, db orm.DB, sc Cookie) error {
 // no metadata, which is not a browser. A form posted from another site, or from a
 // sibling host under the same domain, may not: its answer still completes, and it
 // signs nobody in on the browser, so it cannot put someone else in front.
+//
+// This judges a sign-in that has just proven a credential and is deciding whether
+// to leave a cookie; a write the cookie itself authorizes is judged by Forgeable.
 func fromIssuer(c fiber.Ctx) bool {
-	if FromIssuer(c.Get("Sec-Fetch-Site")) {
+	switch c.Get("Sec-Fetch-Site") {
+	case "", "same-origin", "none":
 		return true
 	}
 	return c.Method() == fiber.MethodGet && c.Get("Sec-Fetch-Mode") == "navigate"
 }
 
-// FromIssuer is that rule for a write the session cookie authorizes: the request
-// came from the issuer's own pages (same-origin), the person started it (none),
-// or it carries no fetch metadata and so is not a browser. A sibling host under
-// the same domain is "same-site" and is refused with every other site.
-func FromIssuer(site string) bool {
-	switch site {
-	case "", "same-origin", "none":
+// ErrForgeable refuses a change of state the session cookie would authorize on a
+// request another page could have sent (Forgeable).
+var ErrForgeable = errors.New("this change can only be made from this site's own pages")
+
+// Forgeable reports whether another page could have sent a request that changes
+// state on the session cookie's authority. Every such write asks it, through
+// Writer or Clear, so there is one rule and no write that skips it.
+//
+// SameSite=Lax keeps the cookie off requests from other SITES, not from other
+// hosts of the same site: a page on any host under the identity host's
+// registrable domain (every *.hanzo.ai, once hanzo.ai signs people in) posts a
+// form here and the browser attaches the cookie. Without this, any of those pages
+// could approve an attacker's `hanzo login` device code, mint an authorization
+// code, or edit the account. Two facts a page cannot fake close it:
+//
+//   - Sec-Fetch-Site, which the browser sets and script cannot. Only
+//     "same-origin" (the issuer's own pages) and "none" (the person typed or
+//     bookmarked the address) may spend the cookie. "same-site" is a sibling host
+//     and is refused with "cross-site". No value at all is refused too: every
+//     browser that can hold this cookie sends the header, and a client that is
+//     not a browser authenticates with a bearer, which no page can attach.
+//   - A JSON body. An HTML form sends urlencoded, multipart or text/plain and
+//     nothing else, and a page that sends JSON to another origin must pass a CORS
+//     preflight first. A GET or HEAD carries no body and is judged by the site.
+func Forgeable(method, site, contentType string) bool {
+	if site != "same-origin" && site != "none" {
 		return true
 	}
-	return false
+	if method == fiber.MethodGet || method == fiber.MethodHead {
+		return false
+	}
+	t, _, err := mime.ParseMediaType(contentType)
+	return err != nil || t != fiber.MIMEApplicationJSON
+}
+
+// Writer is Current for a request that changes state: the live session it acts
+// as, nil when it carries none, and ErrForgeable when it carries the cookie on a
+// request another page could have sent.
+func Writer(ctx context.Context, c fiber.Ctx, db orm.DB) (*Cookie, error) {
+	return WriterValue(ctx, c.Cookies(CookieName), c.Method(), c.Get("Sec-Fetch-Site"), c.Get(fiber.HeaderContentType), db)
+}
+
+// WriterValue is Writer for a typed handler, which zip hands the header values
+// rather than the request.
+func WriterValue(ctx context.Context, raw, method, site, contentType string, db orm.DB) (*Cookie, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	if Forgeable(method, site, contentType) {
+		return nil, ErrForgeable
+	}
+	sc, ok := CurrentValue(ctx, raw, db)
+	if !ok {
+		return nil, nil
+	}
+	return sc, nil
+}
+
+// navigation reports whether a request is the browser itself going to a page: a
+// top-level GET (Sec-Fetch-Mode navigate, Sec-Fetch-Dest document). An image, a
+// frame or a fetch says otherwise, and script can set none of the three.
+func navigation(c fiber.Ctx) bool {
+	return c.Method() == fiber.MethodGet && c.Get("Sec-Fetch-Mode") == "navigate" && c.Get("Sec-Fetch-Dest") == "document"
 }
 
 // write puts list on the response as the browser's session cookie, in order. When
@@ -284,12 +342,22 @@ func Resolve(ctx context.Context, c fiber.Ctx, db orm.DB) (owner, name string, o
 // of the cookie is dead server-side, and the cookie is expired on the response so
 // the browser stops presenting it.
 //
-// The cookie is expired FIRST and unconditionally, before any parse: a cookie
-// that no longer verifies (expired signature, rotated key) still must not be left
-// in the browser. Returns the sessions that were signed out, so the caller can
+// Ending sessions is a change of state on the cookie's authority, so a request
+// another page could have sent (Forgeable) ends nothing and gets ErrForgeable —
+// with one exception, the browser itself navigating here: that is how a relying
+// party signs a person out (OpenID Connect RP-Initiated Logout 1.0 §2), and an
+// image, a frame or a form a sibling page plants is not a navigation.
+//
+// Past that, the cookie is expired FIRST and unconditionally, before any parse: a
+// cookie that no longer verifies (expired signature, rotated key) still must not be
+// left in the browser. Returns the sessions that were signed out, so the caller can
 // revoke those principals' tokens too; an empty result means there was nothing to
 // end (already signed out — an idempotent no-op, never an error).
-func Clear(ctx context.Context, c fiber.Ctx, db orm.DB) []Cookie {
+func Clear(ctx context.Context, c fiber.Ctx, db orm.DB) ([]Cookie, error) {
+	if c.Cookies(CookieName) != "" && !navigation(c) &&
+		Forgeable(c.Method(), c.Get("Sec-Fetch-Site"), c.Get(fiber.HeaderContentType)) {
+		return nil, ErrForgeable
+	}
 	c.Cookie(&fiber.Cookie{
 		Name:     CookieName,
 		Value:    "",
@@ -301,13 +369,13 @@ func Clear(ctx context.Context, c fiber.Ctx, db orm.DB) []Cookie {
 	})
 	key, err := keyFor(ctx, db)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	list := signed(c.Cookies(CookieName), key)
 	for _, sc := range list {
 		revokeSID(db, sc.Owner, sc.Name, sc.Application, sc.SID)
 	}
-	return list
+	return list, nil
 }
 
 // Rekey follows the most recent session across a change of that user's OWNING

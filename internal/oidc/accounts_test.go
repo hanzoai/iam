@@ -175,7 +175,7 @@ func TestSilent_IdTokenHintPicksAHeldPerson(t *testing.T) {
 func TestLogout_EndsEveryAccountHere(t *testing.T) {
 	app, _, cookie := twoPeople(t)
 
-	req := formReqNoBody("GET", PathLogout)
+	req := navigate(formReqNoBody("GET", PathLogout))
 	req.Header.Set("Cookie", cookie)
 	do(t, app, req)
 

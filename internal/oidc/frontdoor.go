@@ -55,7 +55,7 @@ func routeFrontDoor(r *zip.Group, db orm.DB) {
 	// The write half of the same noun: a person's own profile, a fixed set of
 	// display fields, self-scoped like the password and consent writes beside it.
 	r.Put(PathAccount, putAccountHandler(db),
-		zip.WithStatus(200, 400), zip.WithTags("auth"))
+		zip.WithStatus(200, 400, 403), zip.WithTags("auth"))
 	// Account creation + email/phone OTP send. signup is JSON; the OTP send is
 	// multipart/form-data (HIP-0111 §4 invariant), read via fiber's FormValue.
 	r.Raw(http.MethodPost, PathSignup, signupHandler(db))
@@ -78,7 +78,7 @@ func routeFrontDoor(r *zip.Group, db orm.DB) {
 	// account's own address. Self-scoped like consent below it; it mints nothing, so a
 	// reset is followed by an ordinary sign-in.
 	r.Put(PathPassword, putPasswordHandler(db),
-		zip.WithStatus(200, 400), zip.WithTags("auth"))
+		zip.WithStatus(200, 400, 403), zip.WithTags("auth"))
 	// A platform operator stepping into an organization, and back out. Both
 	// re-scope the credential the caller presents and neither reads one, so they
 	// self-authenticate on that token exactly as the minters above do.
@@ -95,7 +95,7 @@ func routeFrontDoor(r *zip.Group, db orm.DB) {
 	r.Raw(http.MethodGet, PathConsent, getConsentHandler(db))
 	r.Raw(http.MethodPut, PathConsent, putConsentHandler(db))
 	r.Put(PathTerms, putTermsHandler(db),
-		zip.WithStatus(200, 400), zip.WithTags("auth"))
+		zip.WithStatus(200, 400, 403), zip.WithTags("auth"))
 	r.Raw(http.MethodGet, PathLinkedAccounts, linkedAccountsHandler(db))
 	r.Post(PathInvitationsAccept, acceptInvitation(db),
 		zip.WithStatus(200, 400, 403, 429, 502, 503), zip.WithTags("auth"))

@@ -5,6 +5,7 @@ package oidc
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
@@ -53,9 +54,17 @@ type accountBody struct {
 	// The two credentials a signed-in caller can present, bound from the request
 	// headers so this stays a typed op — the portal holds a session cookie, an API
 	// client holds a bearer, and resolving only one would take profile editing away
-	// from the other.
+	// from the other. Site and Type are what the cookie is judged by
+	// (sessions.Forgeable).
 	Cookie string `json:"-" header:"Cookie"`
 	Auth   string `json:"-" header:"Authorization"`
+	Site   string `json:"-" header:"Sec-Fetch-Site"`
+	Type   string `json:"-" header:"Content-Type"`
+}
+
+// asker is what this PUT presents to say who is asking.
+func (in *accountBody) asker() asker {
+	return asker{Method: http.MethodPut, Cookie: sessionCookie(in.Cookie), Site: in.Site, Type: in.Type, Bearer: httpx.BearerValue(in.Auth)}
 }
 
 // profile is what a profile IS, on the wire: a bounded view of the stored row.
@@ -82,9 +91,9 @@ type profile struct {
 // whether the subject is a person or an organization.
 func putAccountHandler(db orm.DB) zip.TypedHandler[accountBody, httpx.Answer] {
 	return func(ctx context.Context, in *accountBody) (*httpx.Answer, error) {
-		owner, name, ok := callerFrom(ctx, db, sessionCookie(in.Cookie), httpx.BearerValue(in.Auth))
-		if !ok {
-			return httpx.Bad(400, "please sign in first", CodeLoginRequired), nil
+		owner, name, err := callerFrom(ctx, db, in.asker())
+		if err != nil {
+			return callerAnswer(err), nil
 		}
 		// Validated BEFORE the write, so a picture this service will not store is a
 		// refusal rather than a half-saved profile.

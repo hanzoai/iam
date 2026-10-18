@@ -627,9 +627,9 @@ func withdrawGrants(t *testing.T, db orm.DB, name string) {
 // already signed in.
 func approveWithSessionOnly(t *testing.T, app *zip.App, cookie, userCode string) map[string]any {
 	t.Helper()
-	req := jsonReq("POST", PathLogin, map[string]string{
+	req := fromPage(jsonReq("POST", PathLogin, map[string]string{
 		"type": "device", "userCode": userCode, "application": "hanzo-app",
-	})
+	}))
 	req.Header.Set("Cookie", cookie)
 	_, body := do(t, app, req)
 	return decode(t, body)

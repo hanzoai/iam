@@ -30,7 +30,7 @@ import (
 // so a test can drive combinations onboardAs does not spell.
 func onboardBody(t *testing.T, app *zip.App, cookie string, body map[string]any) (*http.Response, map[string]any) {
 	t.Helper()
-	req := jsonReq("POST", PathOnboard, body)
+	req := fromPage(jsonReq("POST", PathOnboard, body))
 	if cookie != "" {
 		req.Header.Set("Cookie", cookie)
 	}

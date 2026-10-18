@@ -6,7 +6,7 @@ package oidc
 import (
 	"context"
 	"errors"
-	"mime"
+	"net/http"
 	"strings"
 	"time"
 
@@ -182,9 +182,8 @@ func acceptInvitation(db orm.DB) zip.TypedHandler[acceptBody, httpx.Answer] {
 //     applications (PlatformBearer). A tenant's application holds its users'
 //     tokens and must not be able to join them to its org with them.
 //   - The identity host's session cookie, which a browser attaches to any request
-//     to the host, including one a sibling host's page makes. So the request must
-//     come from the issuer's own pages by the rule session writes use
-//     (sessions.FromIssuer), and carry a JSON body, which a cross-site form cannot.
+//     to the host, including one a sibling host's page makes. So it is spent only
+//     on a request no other page could have sent (sessions.WriterValue).
 //
 // A refusal comes back as the answer to send.
 //
@@ -211,11 +210,11 @@ func acceptCaller(ctx context.Context, db orm.DB, in *acceptBody) (*schema.User,
 		}
 		owner, name, sender = u.Owner, u.Name, app.Organization
 	} else {
-		if !sessions.FromIssuer(in.Site) || !jsonBody(in.Type) {
-			return nil, "", httpx.Bad(403, "open the invitation link to join", ""), nil
+		sc, err := sessions.WriterValue(ctx, sessionCookie(in.Cookie), http.MethodPost, in.Site, in.Type, db)
+		if err != nil {
+			return nil, "", httpx.Bad(http.StatusForbidden, err.Error(), ""), nil
 		}
-		sc, ok := sessions.CurrentValue(ctx, sessionCookie(in.Cookie), db)
-		if !ok {
+		if sc == nil {
 			return nil, "", signIn, nil
 		}
 		owner, name = sc.Owner, sc.Name
@@ -236,12 +235,6 @@ func acceptCaller(ctx context.Context, db orm.DB, in *acceptBody) (*schema.User,
 		return nil, "", httpx.Bad(403, "an invitation is accepted by a person", ""), nil
 	}
 	return user, sender, nil, nil
-}
-
-// jsonBody reports whether a request's Content-Type is JSON.
-func jsonBody(contentType string) bool {
-	t, _, err := mime.ParseMediaType(contentType)
-	return err == nil && t == "application/json"
 }
 
 // clip bounds a caller-supplied string before it is recorded.

@@ -12,6 +12,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/sessions"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
@@ -54,10 +55,15 @@ func logoutHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
 
-		// (1) End every session the browser holds. Unconditional and first: it must
-		// happen whether or not a hint is supplied, whether or not a redirect is
-		// asked for, and whether or not any of what follows succeeds.
-		ended := sessions.Clear(ctx, c.Fiber(), db)
+		// (1) End every session the browser holds. First: it must happen whether or
+		// not a hint is supplied, whether or not a redirect is asked for, and
+		// whether or not any of what follows succeeds. The one thing that stops it
+		// is a request another page could have sent (sessions.Clear), which ends
+		// nothing and revokes nothing.
+		ended, err := sessions.Clear(ctx, c.Fiber(), db)
+		if err != nil {
+			return httpx.Fail(c, http.StatusForbidden, err.Error(), "")
+		}
 
 		// The hint is verified — a forged or unsigned one yields nil — and is the
 		// only thing that can name an application here, for BOTH the revocation and
@@ -108,7 +114,11 @@ func logoutHandler(db orm.DB) zip.Handler {
 		// lands on the sign-in page, an API caller keeps the JSON envelope it
 		// parses. Same logout either way — only the way it is reported differs.
 		if c.Method() == http.MethodGet || wantsHTML(c) {
-			return c.Redirect(302, signInPage(c, app))
+			page, err := signInPage(c, app)
+			if err != nil {
+				return httpx.Fail(c, http.StatusInternalServerError, "server_error", "")
+			}
+			return c.Redirect(302, page)
 		}
 		return c.JSON(200, map[string]string{"status": "ok"})
 	}
@@ -116,12 +126,16 @@ func logoutHandler(db orm.DB) zip.Handler {
 
 // signInPage is this issuer's hosted sign-in page for app, or the issuer's
 // default sign-in when no application was identified.
-func signInPage(c *zip.Ctx, app *schema.Application) string {
-	page := tokenIssuer(c) + PathSignIn
+func signInPage(c *zip.Ctx, app *schema.Application) (string, error) {
+	iss, err := tokenIssuer(c)
+	if err != nil {
+		return "", err
+	}
+	page := iss + PathSignIn
 	if app != nil && app.ClientId != "" {
 		page += "?" + url.Values{"client_id": {app.ClientId}}.Encode()
 	}
-	return page
+	return page, nil
 }
 
 // wantsHTML reports whether a POST comes from a browser form rather than a

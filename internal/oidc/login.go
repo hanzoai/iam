@@ -155,9 +155,20 @@ func loginHandler(db orm.DB) zip.Handler {
 			// Access-Control-Allow-Credentials: true. Any page on a hanzo.ai
 			// subdomain could reach this branch. Narrowing an edge rule is therefore
 			// part of this branch's threat model, not an unrelated concern.
+			//
+			// And a page that only SENDS the cookie needs no answer at all to approve a
+			// device: the approval is the whole attack. A form posted from any page on
+			// the identity host's site carries the Lax cookie, so the cookie is spent
+			// here only on a request no other page could have sent (sessions.Writer):
+			// from the issuer's own pages, as JSON. Anything else is refused 403 before
+			// the session is read.
 			if f.Type == "code" || f.Type == "device" {
-				if owner, name, ok := sessions.Resolve(ctx, c.Fiber(), db); ok {
-					user, err := store.GetUserByName(ctx, db, owner, name)
+				sc, err := sessions.Writer(ctx, c.Fiber(), db)
+				if err != nil {
+					return httpx.Fail(c, http.StatusForbidden, err.Error(), "")
+				}
+				if sc != nil {
+					user, err := store.GetUserByName(ctx, db, sc.Owner, sc.Name)
 					if err != nil {
 						return httpx.Err(c, err.Error())
 					}

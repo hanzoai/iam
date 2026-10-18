@@ -157,7 +157,10 @@ func Route(r *zip.Group, db orm.DB) {
 // The issuer is derived from the host you asked on and is the same value the
 // tokens carry, so a client that pins the issuer never sees it change.
 func Discovery(c *zip.Ctx) error {
-	iss := tokenIssuer(c)
+	iss, err := tokenIssuer(c)
+	if err != nil {
+		return c.JSON(503, map[string]string{"error": "temporarily_unavailable", "error_description": "this server has no issuer configured"})
+	}
 	return c.JSON(200, map[string]any{
 		"issuer":                        iss,
 		"authorization_endpoint":        iss + PathAuthorize,

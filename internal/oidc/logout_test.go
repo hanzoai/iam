@@ -48,7 +48,8 @@ func sessionLives(t *testing.T, app *zip.App, cookie string) bool {
 // return address is named: the issuer's own /login, for the application when one
 // was identified.
 func signInFor(clientID string) string {
-	page := Issuer("hanzo.id") + PathSignIn
+	iss, _ := Issuer("hanzo.id")
+	page := iss + PathSignIn
 	if clientID != "" {
 		page += "?client_id=" + clientID
 	}
@@ -63,14 +64,15 @@ func requireSignedOut(t *testing.T, resp *http.Response, clientID string) {
 	}
 }
 
-// logout calls the endpoint with an optional session cookie and Accept header.
+// logout follows a relying party's sign-out link — a top-level navigation — with
+// an optional session cookie and Accept header.
 func logout(t *testing.T, app *zip.App, cookie, accept, query string) *http.Response {
 	t.Helper()
 	path := PathLogout
 	if query != "" {
 		path += "?" + query
 	}
-	req := formReqNoBody("GET", path)
+	req := navigate(formReqNoBody("GET", path))
 	if cookie != "" {
 		req.Header.Set("Cookie", cookie)
 	}
@@ -252,9 +254,10 @@ func TestLogout_HintAloneDoesNotRevoke(t *testing.T) {
 }
 
 // A GET is the end-session navigation, so it always lands on a page — whatever
-// it Accepts, because a browser following a link, a window.location assignment
-// and curl all send something different. A POST is how a program signs out, and
-// it keeps the JSON envelope it parses unless it is a form asking for HTML.
+// it Accepts, because a browser following a link and a window.location
+// assignment send something different. A POST is how the issuer's own page
+// signs out by script, and it keeps the JSON envelope it parses unless it asks
+// for HTML.
 func TestLogout_NavigationAndAPI(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
@@ -272,7 +275,7 @@ func TestLogout_NavigationAndAPI(t *testing.T) {
 	}
 
 	post := func(accept, requestedWith string) *http.Response {
-		req := formReq("POST", PathLogout, url.Values{})
+		req := fromPage(jsonReq("POST", PathLogout, map[string]string{}))
 		req.Header.Set("Cookie", signIn(t, app, "conf"))
 		if accept != "" {
 			req.Header.Set("Accept", accept)
@@ -284,7 +287,7 @@ func TestLogout_NavigationAndAPI(t *testing.T) {
 		return resp
 	}
 
-	t.Run("POST form asking for html lands on the sign-in page", func(t *testing.T) {
+	t.Run("POST asking for html lands on the sign-in page", func(t *testing.T) {
 		requireSignedOut(t, post("text/html", ""), "")
 	})
 	for name, h := range map[string][2]string{

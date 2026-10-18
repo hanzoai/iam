@@ -81,15 +81,9 @@ const fedStateTTL = 10 * time.Minute
 // SameSite=None + its own CSRF analysis). The callback self-authenticates via the
 // single-use state + the browser cookie.
 //
-// The sign-in origins are judged here, where the callback they name is
-// registered: it is the one place `iam serve` and a host that embeds IAM (cloud)
-// both pass. A map that would strand the browser binding is refused and said so,
-// and every host keeps signing in at its issuer, so a bad value costs the move to
-// a sign-in origin and never the process that answers every identity request.
+// The sign-in origins the callback answers at are installed at boot, with the
+// issuers they are judged against (server.RequireIssuer).
 func routeFederation(r *zip.Group, db orm.DB) {
-	if err := InitFederationResolver(); err != nil {
-		log.Printf("iam: sign-in origins refused, every host signs in at its issuer: %v", err)
-	}
 	r.Raw(http.MethodGet, PathFederationCallback, federationCallbackHandler(db))
 }
 
@@ -161,7 +155,11 @@ func beginFederation(c *zip.Ctx, db orm.DB, app *schema.Application, q authorize
 
 	// Build the IdP authorize URL BEFORE persisting so a discovery/config failure
 	// never leaves an orphaned transaction row.
-	idpURL, err := idpAuthorizeURL(ctx, prov, st, federationCallbackURL(c))
+	callback, err := federationCallbackURL(c)
+	if err != nil {
+		return authorizeErrorRedirect(c, q, "server_error", "")
+	}
+	idpURL, err := idpAuthorizeURL(ctx, prov, st, callback)
 	if err != nil {
 		return authorizeErrorRedirect(c, q, "temporarily_unavailable", "the identity provider is unavailable")
 	}
@@ -264,7 +262,11 @@ func federationCallbackHandler(db orm.DB) zip.Handler {
 			return fedErrorRedirect(c, st, "invalid_request", "the identity provider returned no code")
 		}
 
-		identity, err := idpExchange(ctx, prov, st, code, federationCallbackURL(c), now)
+		callback, err := federationCallbackURL(c)
+		if err != nil {
+			return fedErrorRedirect(c, st, "server_error", "")
+		}
+		identity, err := idpExchange(ctx, prov, st, code, callback, now)
 		if err != nil || identity.subject == "" {
 			return fedErrorRedirect(c, st, "access_denied", "the identity provider could not be verified")
 		}
@@ -401,8 +403,12 @@ func federationChallenge(c *zip.Ctx, db orm.DB, st *schema.FederationState, user
 	if err != nil {
 		return fedFault(c, st, "challenge mint", err)
 	}
+	base, err := federationBaseURL(c)
+	if err != nil {
+		return fedFault(c, st, "sign-in origin", err)
+	}
 	SetChallenge(c, id)
-	return c.Redirect(302, federationBaseURL(c)+PathMfaVerify)
+	return c.Redirect(302, base+PathMfaVerify)
 }
 
 // fedMintErrorRedirect maps a federationMint error to the RP redirect_uri.
@@ -691,8 +697,12 @@ func providerOwner(p *schema.Provider) string {
 // federationCallbackURL is the iam callback iam registers with the IdP and
 // re-presents at the token exchange. It is PINNED from config, never steered by a
 // request header, so an attacker cannot redirect the IdP leg via X-Forwarded-Host.
-func federationCallbackURL(c *zip.Ctx) string {
-	return federationBaseURL(c) + PathFederationCallback
+func federationCallbackURL(c *zip.Ctx) (string, error) {
+	base, err := federationBaseURL(c)
+	if err != nil {
+		return "", err
+	}
+	return base + PathFederationCallback, nil
 }
 
 // federationBaseURL is the pinned public origin the IdP callback is registered
@@ -701,7 +711,7 @@ func federationCallbackURL(c *zip.Ctx) string {
 // unless IAM_FEDERATION_ORIGIN_MAP names another, as it does to sign Hanzo in on
 // hanzo.ai while tokens still say hanzo.id. Header-immune, never steered to an
 // attacker origin. See resolveFederationOrigin for the resolution order.
-func federationBaseURL(c *zip.Ctx) string {
+func federationBaseURL(c *zip.Ctx) (string, error) {
 	return resolveFederationOrigin(c.Host())
 }
 

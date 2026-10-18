@@ -83,7 +83,10 @@ func newHarness(t *testing.T) *harness {
 		return c.String(http.StatusOK, "ok")
 	})
 	app.Raw(http.MethodPost, "/clear", func(c *zip.Ctx) error {
-		ended := Clear(context.Background(), c.Fiber(), db)
+		ended, err := Clear(context.Background(), c.Fiber(), db)
+		if err != nil {
+			return c.String(http.StatusForbidden, err.Error())
+		}
 		if len(ended) > 0 {
 			c.SetHeader("X-Owner", ended[0].Owner)
 			c.SetHeader("X-Name", ended[0].Name)
@@ -107,6 +110,10 @@ func newHarness(t *testing.T) *harness {
 	})
 	return &harness{app: app, db: db}
 }
+
+// page is what the issuer's own pages send with a write: the browser's
+// same-origin fetch metadata and a JSON body.
+var page = []string{"Sec-Fetch-Site", "same-origin", "Content-Type", "application/json"}
 
 // do sends method+target, carrying cookie as the session cookie when non-empty.
 func (h *harness) do(t *testing.T, method, target, cookie string, headers ...string) *http.Response {
@@ -377,7 +384,7 @@ func TestClear_RevokesAndReportsIdentity(t *testing.T) {
 	value := h.mint(t, "hanzo", "alice", "cloud")
 	sid := h.do(t, http.MethodGet, "/current", value).Header.Get("X-Sid")
 
-	res := h.do(t, http.MethodPost, "/clear", value)
+	res := h.do(t, http.MethodPost, "/clear", value, page...)
 	if res.Header.Get("X-Ok") != "true" {
 		t.Fatal("clearing a live session must report it ended")
 	}
@@ -456,7 +463,7 @@ func TestClear_EndsEveryPerson(t *testing.T) {
 	value = h.open(t, "acme", "bob", value)
 	bobSid := h.do(t, http.MethodGet, "/current", value).Header.Get("X-Sid")
 
-	res := h.do(t, http.MethodPost, "/clear", value)
+	res := h.do(t, http.MethodPost, "/clear", value, page...)
 	if got := res.Header.Get("X-People"); got != "acme/bob,hanzo/alice" {
 		t.Fatalf("Clear ended %q, want acme/bob,hanzo/alice", got)
 	}
@@ -482,7 +489,7 @@ func TestClear_NoLiveSessionStillExpiresCookie(t *testing.T) {
 
 	// A cookie that no longer verifies: still expired first, then reported as no
 	// live session.
-	res = h.do(t, http.MethodPost, "/clear", "garbage.notacookie")
+	res = h.do(t, http.MethodPost, "/clear", "garbage.notacookie", page...)
 	if res.Header.Get("X-Ok") != "false" {
 		t.Fatal("an unverifiable cookie clears to no live session")
 	}

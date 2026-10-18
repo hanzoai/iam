@@ -148,7 +148,7 @@ func TestDeviceInfo_TenantBoundary(t *testing.T) {
 // approveFor approves a pending user_code as the signed-in browser.
 func approveFor(t *testing.T, app *zip.App, userCode, cookie string) {
 	t.Helper()
-	req := jsonReq("POST", PathLogin, map[string]string{"type": "device", "userCode": userCode})
+	req := fromPage(jsonReq("POST", PathLogin, map[string]string{"type": "device", "userCode": userCode}))
 	req.Header.Set("Cookie", cookie)
 	_, body := do(t, app, req)
 	if decode(t, body)["status"] != "ok" {

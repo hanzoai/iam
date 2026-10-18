@@ -185,7 +185,11 @@ func delegate(c *zip.Ctx, db orm.DB, client *schema.Application) error {
 		id.Billing = ""
 	}
 	id.Act = &actor
-	signer, err := delegationSigner(ctx, db, tokenIssuer(c))
+	iss, err := tokenIssuer(c)
+	if err != nil {
+		return tokenError(c, 500, "server_error", "")
+	}
+	signer, err := delegationSigner(ctx, db, iss)
 	if errors.Is(err, ErrNoSigningCert) {
 		return refuse(503, "temporarily_unavailable", keyNotMounted)
 	}

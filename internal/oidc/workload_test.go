@@ -182,7 +182,7 @@ func writeCA(t *testing.T, cert *x509.Certificate) string {
 
 // audience is the issuer an assertion must name — the same value tokenIssuer
 // resolves for the test host, so the fixture and the server cannot drift.
-func audience() string { return resolveIssuer("hanzo.id") }
+func audience() string { iss, _ := resolveIssuer("hanzo.id"); return iss }
 
 // present posts an assertion at the token endpoint. No client_id and no
 // client_secret travel with it: the assertion IS the authentication, which is

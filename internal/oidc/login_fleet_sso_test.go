@@ -45,10 +45,10 @@ func TestLogin_CodeFlowLeavesTheIdPSessionForTheNextApp(t *testing.T) {
 	}
 
 	// 2. The payoff: the SECOND app mints a code from that session alone.
-	req := jsonReq("POST", PathLogin+"?clientId=second&responseType=code&redirectUri="+testRedirect+
+	req := fromPage(jsonReq("POST", PathLogin+"?clientId=second&responseType=code&redirectUri="+testRedirect+
 		"&scope=openid+profile+email&type=code", map[string]any{
 		"type": "code", "application": "second", "autoSignin": true,
-	})
+	}))
 	req.Header.Set("Cookie", cookie)
 	resp2, body2 := do(t, app, req)
 	env := decode(t, body2)

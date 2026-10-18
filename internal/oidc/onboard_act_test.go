@@ -37,7 +37,7 @@ func TestOnboard_ADelegatedTokenFoundsNothing(t *testing.T) {
 		t.Fatalf("an org was founded for the person a delegated token named: %+v", org)
 	}
 	// The account surface writes refuse it the same way, by the same resolution.
-	if owner, name, ok := callerFrom(ctx, db, "", delegated); ok {
+	if owner, name, err := callerFrom(ctx, db, asker{Method: "POST", Bearer: delegated}); err == nil {
 		t.Fatalf("a delegated token resolved as the account holder %s/%s", owner, name)
 	}
 	if owner, _, _, ok := accountOf(ctx, db, "", delegated); !ok || owner != "hanzo" {

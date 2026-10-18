@@ -33,7 +33,7 @@ func putPassword(t *testing.T, app *zip.App, cookie, body string) (int, map[stri
 	if cookie != "" {
 		req.Header.Set("Cookie", cookie)
 	}
-	resp, raw := do(t, app, req)
+	resp, raw := do(t, app, fromPage(req))
 	return resp.StatusCode, decode(t, raw)
 }
 

@@ -97,7 +97,7 @@ func TestIssueUserToken_mintsTargetUserToken(t *testing.T) {
 	}
 	// A token the client minted for someone is no account caller: it founds no org
 	// and writes nothing of the person's.
-	if owner, name, ok := callerFrom(context.Background(), db, "", access); ok {
+	if owner, name, err := callerFrom(context.Background(), db, asker{Method: "POST", Bearer: access}); err == nil {
 		t.Fatalf("an acted-for token resolved as the account holder %s/%s", owner, name)
 	}
 }

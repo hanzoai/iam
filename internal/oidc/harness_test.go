@@ -141,6 +141,23 @@ func jsonReq(method, path string, body any) *http.Request {
 	return req
 }
 
+// fromPage marks req as a browser marks a request the issuer's own page makes:
+// same-origin fetch metadata, which sessions.Forgeable requires before the session
+// cookie may authorize a write.
+func fromPage(req *http.Request) *http.Request {
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	return req
+}
+
+// navigate marks req as a top-level browser navigation another site sent the
+// browser on — a relying party's sign-out link.
+func navigate(req *http.Request) *http.Request {
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	req.Header.Set("Sec-Fetch-Mode", "navigate")
+	req.Header.Set("Sec-Fetch-Dest", "document")
+	return req
+}
+
 func do(t *testing.T, app *zip.App, req *http.Request) (*http.Response, []byte) {
 	t.Helper()
 	resp, err := testhttp.Do(app, req)

@@ -136,7 +136,11 @@ func workloadGrant(c *zip.Ctx, db orm.DB) error {
 	if assertion == "" {
 		return tokenError(c, 400, "invalid_request", "assertion is required")
 	}
-	claims, err := verifyAssertion(assertion, tokenIssuer(c), set)
+	iss, err := tokenIssuer(c)
+	if err != nil {
+		return tokenError(c, 500, "server_error", "")
+	}
+	claims, err := verifyAssertion(assertion, iss, set)
 	if err != nil {
 		return tokenError(c, 400, "invalid_grant", "the assertion is invalid or expired")
 	}
@@ -185,7 +189,7 @@ func workloadGrant(c *zip.Ctx, db orm.DB) error {
 
 	// 4) Mint what client_credentials would mint for this application — same
 	//    signer, same claims, azp = the app — and record who obtained it.
-	resp, err := machineToken(ctx, db, app, tokenIssuer(c), param(c, "scope"), resourceOf(c), "wl", now)
+	resp, err := machineToken(ctx, db, app, iss, param(c, "scope"), resourceOf(c), "wl", now)
 	if err != nil {
 		return mintError(c, err)
 	}

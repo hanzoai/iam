@@ -4,6 +4,8 @@ package oidc
 
 import (
 	"context"
+	"errors"
+	"net/http"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
@@ -122,9 +124,24 @@ func accountEnvelopeFor(ctx context.Context, db orm.DB, owner, name string) (acc
 	}, 200
 }
 
-// callerOf resolves the signed-in principal by SESSION COOKIE first (the portal
-// and gateway-admin-guard path) then bearer access token (the API path) — two
-// credentials, one identity. ok=false means no valid session or token.
+// errSignedOut is a write no credential on the request speaks for.
+var errSignedOut = errors.New("please sign in first")
+
+// asker is what a write presents to say who is asking: the identity host's
+// session cookie VALUE with the request facts sessions.Forgeable judges it by,
+// and a bearer.
+type asker struct {
+	Method string
+	Cookie string
+	Site   string // Sec-Fetch-Site
+	Type   string // Content-Type
+	Bearer string
+}
+
+// callerOf resolves the principal a WRITE acts as, by SESSION COOKIE first (the
+// portal) then bearer access token (the API) — two credentials, one identity.
+// errSignedOut means neither names a live account; sessions.ErrForgeable means
+// the cookie came on a request another page could have sent, with no bearer.
 //
 // It answers the account's HOLDER, which is who every self-service write acts
 // as: a bearer someone else acts through resolves nobody here — an impersonation,
@@ -132,17 +149,62 @@ func accountEnvelopeFor(ctx context.Context, db orm.DB, owner, name string) (acc
 // org key that minted it — because neither is the person it names. A delegated
 // token founded orgs and took their keys for the person it named. Reads use
 // readerOf.
-func callerOf(ctx context.Context, c *zip.Ctx, db orm.DB) (owner, name string, ok bool) {
-	return callerFrom(ctx, db, c.Fiber().Cookies(sessions.CookieName), httpx.Bearer(c))
+func callerOf(ctx context.Context, c *zip.Ctx, db orm.DB) (owner, name string, err error) {
+	return callerFrom(ctx, db, asker{
+		Method: c.Method(),
+		Cookie: c.Fiber().Cookies(sessions.CookieName),
+		Site:   c.Header("Sec-Fetch-Site"),
+		Type:   c.Header("Content-Type"),
+		Bearer: httpx.Bearer(c),
+	})
 }
 
 // callerFrom is callerOf for a typed handler, which zip hands no *Ctx — it gets
-// the same two credentials as bound header values instead. Same order and the
-// same checks: session cookie first (the portal), then bearer (the API). callerOf
-// delegates here so one of the two cannot quietly become the lenient one.
-func callerFrom(ctx context.Context, db orm.DB, sessionCookie, bearer string) (owner, name string, ok bool) {
-	owner, name, acted, ok := accountOf(ctx, db, sessionCookie, bearer)
-	return owner, name, ok && !acted
+// the same facts as bound header values instead. callerOf delegates here so one
+// of the two cannot quietly become the lenient one.
+//
+// The cookie is spent only through sessions.WriterValue, the one rule for a write
+// the cookie authorizes. A bearer is not ambient — no page can make a browser
+// attach one — so a request carrying one is answered on it when its cookie may
+// not be spent.
+func callerFrom(ctx context.Context, db orm.DB, a asker) (owner, name string, err error) {
+	sc, err := sessions.WriterValue(ctx, a.Cookie, a.Method, a.Site, a.Type, db)
+	if sc != nil {
+		owner, name, ok := sessionAccount(ctx, db, sc)
+		if !ok {
+			return "", "", errSignedOut
+		}
+		return owner, name, nil
+	}
+	if a.Bearer == "" {
+		if err != nil {
+			return "", "", err
+		}
+		return "", "", errSignedOut
+	}
+	owner, name, acted, ok := bearerAccount(ctx, db, a.Bearer)
+	if !ok || acted {
+		return "", "", errSignedOut
+	}
+	return owner, name, nil
+}
+
+// refuseCaller answers a raw write callerOf resolved nobody for: 403 for a cookie
+// on a request another page could have sent, else the handler's own sign-in
+// refusal msg.
+func refuseCaller(c *zip.Ctx, err error, msg string) error {
+	if errors.Is(err, sessions.ErrForgeable) {
+		return httpx.Fail(c, http.StatusForbidden, err.Error(), "")
+	}
+	return httpx.Err(c, msg)
+}
+
+// callerAnswer is refuseCaller for a typed handler, which returns its answer.
+func callerAnswer(err error) *httpx.Answer {
+	if errors.Is(err, sessions.ErrForgeable) {
+		return httpx.Bad(http.StatusForbidden, err.Error(), "")
+	}
+	return httpx.Bad(400, errSignedOut.Error(), CodeLoginRequired)
 }
 
 // readerOf is callerOf for a READ: a bearer someone else acts through resolves to
@@ -154,24 +216,36 @@ func readerOf(ctx context.Context, c *zip.Ctx, db orm.DB) (owner, name string, o
 	return owner, name, ok
 }
 
-// accountOf is the one resolution behind callerOf and readerOf: the account a
-// session cookie or a bearer speaks for, and whether someone else acts through that
-// bearer (an impersonation, or a delegation naming its actor in `act`).
+// accountOf is the resolution behind readerOf: the account a session cookie or a
+// bearer speaks for, and whether someone else acts through that bearer (an
+// impersonation, or a delegation naming its actor in `act`).
 //
 // A suspended or deleted account resolves nobody on either credential: a session
 // outlives the suspension that ends its account, so the account is read on every
 // call, not trusted from the session.
 func accountOf(ctx context.Context, db orm.DB, sessionCookie, bearer string) (owner, name string, acted, ok bool) {
 	if sc, ok := sessions.CurrentValue(ctx, sessionCookie, db); ok {
-		u, err := store.GetUserByName(ctx, db, sc.Owner, sc.Name)
-		if err != nil || u == nil || u.IsForbidden || u.IsDeleted {
-			return "", "", false, false
-		}
-		return u.Owner, u.Name, false, true
+		owner, name, ok := sessionAccount(ctx, db, sc)
+		return owner, name, false, ok
 	}
 	if bearer == "" {
 		return "", "", false, false
 	}
+	return bearerAccount(ctx, db, bearer)
+}
+
+// sessionAccount is the live account a verified session names.
+func sessionAccount(ctx context.Context, db orm.DB, sc *sessions.Cookie) (owner, name string, ok bool) {
+	u, err := store.GetUserByName(ctx, db, sc.Owner, sc.Name)
+	if err != nil || u == nil || u.IsForbidden || u.IsDeleted {
+		return "", "", false
+	}
+	return u.Owner, u.Name, true
+}
+
+// bearerAccount is the live account a bearer speaks for, and whether someone else
+// acts through it.
+func bearerAccount(ctx context.Context, db orm.DB, bearer string) (owner, name string, acted, ok bool) {
 	claims, err := verifyBearer(ctx, db, bearer)
 	if err != nil {
 		return "", "", false, false

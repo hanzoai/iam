@@ -160,4 +160,19 @@ func mustGenRSA(t *testing.T) *rsa.PrivateKey {
 	return k
 }
 
-func TestMain(m *testing.M) { os.Exit(m.Run()) }
+// TestMain boots the package the way a server boots (server.RequireIssuer): the
+// issuer is https://hanzo.id and no host signs in anywhere else. A test that
+// needs other issuers installs them for itself and restores these.
+func TestMain(m *testing.M) {
+	os.Setenv("IAM_ISSUER", "https://hanzo.id")
+	for _, k := range []string{"IAM_ISSUER_MAP", "IAM_FEDERATION_ORIGIN_MAP", "IAM_FEDERATION_ORIGIN", "IAM_DEV_HOST_RELATIVE"} {
+		os.Unsetenv(k)
+	}
+	if err := InitIssuerResolver(); err != nil {
+		panic(err)
+	}
+	if err := InitFederationResolver(); err != nil {
+		panic(err)
+	}
+	os.Exit(m.Run())
+}

@@ -21,10 +21,10 @@ func TestLogin_SessionMintsCodeForTheNextApp(t *testing.T) {
 
 	cookie := portalSession(t, app, "hanzo", "alice")
 
-	req := jsonReq("POST", PathLogin+"?clientId=conf&responseType=code&redirectUri="+testRedirect+
+	req := fromPage(jsonReq("POST", PathLogin+"?clientId=conf&responseType=code&redirectUri="+testRedirect+
 		"&scope=openid+profile+email&type=code", map[string]any{
 		"type": "code", "application": "conf", "autoSignin": true,
-	})
+	}))
 	req.Header.Set("Cookie", cookie)
 	resp, body := do(t, app, req)
 	env := decode(t, body)
@@ -54,8 +54,8 @@ func TestLogin_NoSessionStillNeedsACredential(t *testing.T) {
 	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
 	seedFounder(t, db, "hanzo", "alice")
 
-	req := jsonReq("POST", PathLogin+"?clientId=conf&responseType=code&redirectUri="+testRedirect+"&type=code",
-		map[string]any{"type": "code", "application": "conf"})
+	req := fromPage(jsonReq("POST", PathLogin+"?clientId=conf&responseType=code&redirectUri="+testRedirect+"&type=code",
+		map[string]any{"type": "code", "application": "conf"}))
 	_, body := do(t, app, req)
 	if decode(t, body)["status"] != "error" {
 		t.Fatalf("credential-less login with NO session was granted: %s", body)
@@ -70,8 +70,8 @@ func TestLogin_SessionGrantKeepsTheRedirectBinding(t *testing.T) {
 	seedFounder(t, db, "hanzo", "alice")
 	cookie := portalSession(t, app, "hanzo", "alice")
 
-	req := jsonReq("POST", PathLogin+"?clientId=conf&responseType=code&redirectUri=https://evil.example/steal&type=code",
-		map[string]any{"type": "code", "application": "conf"})
+	req := fromPage(jsonReq("POST", PathLogin+"?clientId=conf&responseType=code&redirectUri=https://evil.example/steal&type=code",
+		map[string]any{"type": "code", "application": "conf"}))
 	req.Header.Set("Cookie", cookie)
 	_, body := do(t, app, req)
 	if decode(t, body)["status"] != "error" {
@@ -96,8 +96,8 @@ func TestLogin_ForbiddenUserCannotSsoOnAnOldSession(t *testing.T) {
 		t.Fatalf("forbid alice: %v", err)
 	}
 
-	req := jsonReq("POST", PathLogin+"?clientId=conf&responseType=code&redirectUri="+testRedirect+"&type=code",
-		map[string]any{"type": "code", "application": "conf"})
+	req := fromPage(jsonReq("POST", PathLogin+"?clientId=conf&responseType=code&redirectUri="+testRedirect+"&type=code",
+		map[string]any{"type": "code", "application": "conf"}))
 	req.Header.Set("Cookie", cookie)
 	_, body := do(t, app, req)
 	if decode(t, body)["status"] != "error" {

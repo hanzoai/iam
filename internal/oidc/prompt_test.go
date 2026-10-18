@@ -173,7 +173,7 @@ func TestSilent_AfterLogoutPromptNoneIsLoginRequired(t *testing.T) {
 	codeFromLocation(t, requireRedirect(t, authorizeWith(t, app, q, cookie, nil), secondRedirect))
 
 	// Sign out.
-	logout := formReqNoBody("GET", PathLogout)
+	logout := navigate(formReqNoBody("GET", PathLogout))
 	logout.Header.Set("Cookie", cookie)
 	if resp, _ := do(t, app, logout); resp.StatusCode != 200 && resp.StatusCode != 302 {
 		t.Fatalf("logout status = %d", resp.StatusCode)

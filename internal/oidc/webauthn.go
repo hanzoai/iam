@@ -18,6 +18,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/httpx"
+	"github.com/hanzoai/iam/internal/sessions"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -83,7 +84,10 @@ const errNoPasskey = "no passkey is registered for this account"
 // required too: that is what makes the credential a passkey the device holds and
 // syncs, rather than a blob only our server can hand back.
 func relyingParty(host string) (*wan.WebAuthn, error) {
-	issuer := resolveIssuer(host)
+	issuer, err := resolveIssuer(host)
+	if err != nil {
+		return nil, err
+	}
 	u, err := url.Parse(issuer)
 	if err != nil || u.Hostname() == "" {
 		return nil, errors.New("passkeys are not available on this host")
@@ -293,9 +297,9 @@ func verified(cred *wan.Credential) bool { return cred.Flags.UserVerified }
 func registerBegin(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
-		owner, name, ok := callerOf(ctx, c, db)
-		if !ok {
-			return httpx.Err(c, "please sign in first")
+		owner, name, err := callerOf(ctx, c, db)
+		if err != nil {
+			return refuseCaller(c, err, "please sign in first")
 		}
 		user, err := store.GetUserByName(ctx, db, owner, name)
 		if err != nil || user == nil {
@@ -327,9 +331,18 @@ func registerBegin(db orm.DB) zip.Handler {
 
 // registerFinish verifies the newly created passkey and stores it, so the person
 // can sign in with their device from then on.
+//
+// Only this site's own pages may finish an enrollment, and only as JSON.
 func registerFinish(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
+		// The challenge cookie registerBegin set names the account here, and a
+		// browser attaches it to a form any page on the site posts, so the finish
+		// is judged by the rule every write on a cookie's authority is, before the
+		// challenge is spent.
+		if sessions.Forgeable(c.Method(), c.Header("Sec-Fetch-Site"), c.Header("Content-Type")) {
+			return httpx.Fail(c, http.StatusForbidden, sessions.ErrForgeable.Error(), "")
+		}
 		user, session, err := resume(c, db, KindRegister)
 		if err != nil {
 			return httpx.Err(c, err.Error())

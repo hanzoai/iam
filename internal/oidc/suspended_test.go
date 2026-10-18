@@ -36,15 +36,16 @@ func TestAccount_aSuspendedAccountIsNobody(t *testing.T) {
 	twoApps(t, db)
 	cookie := signInOn(t, app, "", "alice")
 	_, value, _ := strings.Cut(cookie, "=")
-	if owner, name, ok := callerFrom(ctx, db, value, ""); !ok || owner+"/"+name != "hanzo/alice" {
-		t.Fatalf("alice's session resolved %s/%s %v", owner, name, ok)
+	page := asker{Method: "POST", Cookie: value, Site: "same-origin", Type: "application/json"}
+	if owner, name, err := callerFrom(ctx, db, page); err != nil || owner+"/"+name != "hanzo/alice" {
+		t.Fatalf("alice's session resolved %s/%s %v", owner, name, err)
 	}
 
 	suspend(t, db, "hanzo/alice")
-	if owner, name, ok := callerFrom(ctx, db, value, ""); ok {
+	if owner, name, err := callerFrom(ctx, db, page); err == nil {
 		t.Fatalf("a suspended account's session resolved %s/%s", owner, name)
 	}
-	req := jsonReq("POST", PathOnboard, map[string]any{"name": "Founded Suspended"})
+	req := fromPage(jsonReq("POST", PathOnboard, map[string]any{"name": "Founded Suspended"}))
 	req.Header.Set("Cookie", cookie)
 	if resp, raw := do(t, app, req); resp.StatusCode != 401 {
 		t.Fatalf("a suspended account founding an org: %d %s, want 401", resp.StatusCode, raw)

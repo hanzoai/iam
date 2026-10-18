@@ -305,7 +305,11 @@ func clientCredentialsGrant(c *zip.Ctx, db orm.DB) error {
 		return tokenError(c, 400, "unauthorized_client", "the application does not permit the client_credentials grant")
 	}
 
-	resp, err := machineToken(ctx, db, app, tokenIssuer(c), param(c, "scope"), resourceOf(c), "cc", now)
+	iss, err := tokenIssuer(c)
+	if err != nil {
+		return tokenError(c, 500, "server_error", "")
+	}
+	resp, err := machineToken(ctx, db, app, iss, param(c, "scope"), resourceOf(c), "cc", now)
 	if err != nil {
 		return mintError(c, err)
 	}
@@ -583,7 +587,11 @@ func passwordGrant(c *zip.Ctx, db orm.DB) error {
 // never drift between them.
 func issueTokens(ctx context.Context, db orm.DB, c *zip.Ctx, app *schema.Application, row *schema.Token, family string, now time.Time) (tokenResponse, error) {
 	ttl := appTTL(app)
-	signer, err := signerFor(ctx, db, app, tokenIssuer(c))
+	iss, err := tokenIssuer(c)
+	if err != nil {
+		return tokenResponse{}, err
+	}
+	signer, err := signerFor(ctx, db, app, iss)
 	if err != nil {
 		return tokenResponse{}, err
 	}
@@ -789,8 +797,9 @@ func signAccessToken(ctx context.Context, db orm.DB, app *schema.Application, to
 // issuer resolver (issuer.go), keyed on the TRUSTED request host (c.Host(), which
 // ignores X-Forwarded-Host), so the value is always a pinned CONFIG issuer for the
 // brand the ingress routed this request to — never a string interpolated from a
-// request header. See resolveIssuer for the fail-closed resolution order.
-func tokenIssuer(c *zip.Ctx) string {
+// request header. See resolveIssuer for the fail-closed resolution order; with
+// no issuer installed it is an error, and nothing is minted or advertised.
+func tokenIssuer(c *zip.Ctx) (string, error) {
 	return resolveIssuer(c.Host())
 }
 

@@ -125,7 +125,11 @@ func MintUserToken(ctx context.Context, db orm.DB, clientApp *schema.Application
 	if aud == "" {
 		aud = defaultUserAudience(ctx, db, user, clientApp)
 	}
-	signer, err := signerFor(ctx, db, clientApp, resolveIssuer(host))
+	iss, err := resolveIssuer(host)
+	if err != nil {
+		return "", 0, err
+	}
+	signer, err := signerFor(ctx, db, clientApp, iss)
 	if err != nil {
 		return "", 0, err
 	}
@@ -180,7 +184,11 @@ func mintActedToken(ctx context.Context, db orm.DB, clientApp *schema.Applicatio
 	if aud == "" {
 		aud = defaultUserAudience(ctx, db, user, clientApp)
 	}
-	signer, err := signerFor(ctx, db, clientApp, resolveIssuer(host))
+	iss, err := resolveIssuer(host)
+	if err != nil {
+		return "", 0, err
+	}
+	signer, err := signerFor(ctx, db, clientApp, iss)
 	if err != nil {
 		return "", 0, err
 	}
@@ -536,7 +544,11 @@ func mintAsToken(ctx context.Context, db orm.DB, c *zip.Ctx, key *schema.Key) er
 	if userApp == nil {
 		return mintErr(c, 500, "server_error")
 	}
-	signer, err := signerFor(ctx, db, userApp, tokenIssuer(c))
+	iss, err := tokenIssuer(c)
+	if err != nil {
+		return mintErr(c, 500, "server_error")
+	}
+	signer, err := signerFor(ctx, db, userApp, iss)
 	if err != nil {
 		return mintErr(c, 500, "server_error")
 	}
