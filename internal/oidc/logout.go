@@ -55,6 +55,16 @@ func logoutHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
 
+		// (0) A relying party's sign-out form posted from another site arrives
+		// without the session cookie, because SameSite=Lax keeps it off a cross-site
+		// POST. Answering it would end nothing and still return the browser to the
+		// relying party, which reads that as signed out while the session lives. So
+		// the browser comes back here as a GET with the same parameters, the one
+		// cross-site request the cookie rides on.
+		if again, ok := crossSiteForm(c); ok {
+			return c.Redirect(http.StatusSeeOther, again)
+		}
+
 		// (1) End every session the browser holds. First: it must happen whether or
 		// not a hint is supplied, whether or not a redirect is asked for, and
 		// whether or not any of what follows succeeds. The one thing that stops it
@@ -229,4 +239,25 @@ func appFromIDTokenHint(ctx context.Context, db orm.DB, hint string) *schema.App
 		return nil
 	}
 	return app
+}
+
+// crossSiteForm reports whether a sign-out is a form another site posted with no
+// session cookie, and if so the GET of this endpoint carrying its parameters.
+func crossSiteForm(c *zip.Ctx) (string, bool) {
+	f := c.Fiber()
+	if f.Method() != http.MethodPost || f.Cookies(sessions.CookieName) != "" ||
+		f.Get("Sec-Fetch-Site") != "cross-site" || f.Get("Sec-Fetch-Mode") != "navigate" {
+		return "", false
+	}
+	q := url.Values{}
+	for k, v := range f.Request().URI().QueryArgs().All() {
+		q.Add(string(k), string(v))
+	}
+	for k, v := range f.Request().PostArgs().All() {
+		q.Add(string(k), string(v))
+	}
+	if len(q) == 0 {
+		return PathLogout, true
+	}
+	return PathLogout + "?" + q.Encode(), true
 }

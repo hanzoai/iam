@@ -246,7 +246,7 @@ func TestLogout_EverySignOutEndsTheSession(t *testing.T) {
 	}
 	rpForm := func() *http.Request {
 		req := formReq("POST", PathLogout, url.Values{"client_id": {"conf"}})
-		req.Header.Set("Sec-Fetch-Site", "cross-site")
+		req.Header.Set("Sec-Fetch-Site", "same-site")
 		req.Header.Set("Sec-Fetch-Mode", "navigate")
 		req.Header.Set("Sec-Fetch-Dest", "document")
 		return req
@@ -261,7 +261,7 @@ func TestLogout_EverySignOutEndsTheSession(t *testing.T) {
 	for name, req := range map[string]func() *http.Request{
 		"@hanzo/iam end()":                 end,
 		"a bodyless POST from the page":    bodyless,
-		"a relying party's sign-out form":  rpForm,
+		"a sibling relying party's form":   rpForm,
 		"a browser with no fetch metadata": oldBrowser,
 		"an old browser's sign-out link":   oldNavigation,
 	} {
@@ -280,5 +280,43 @@ func TestLogout_EverySignOutEndsTheSession(t *testing.T) {
 				t.Errorf("the session cookie was not expired: %q", sc)
 			}
 		})
+	}
+}
+
+// SameSite=Lax keeps the session cookie off a form another site posts, so a
+// relying party's cross-site sign-out form reaches here with no cookie. It is sent
+// back as a GET with its parameters, which the cookie rides on, and that GET ends
+// the session and returns to the registered address.
+func TestLogout_ACrossSiteFormComesBackAsANavigation(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
+	seedRichUser(t, db)
+	cookie := signIn(t, app, "conf")
+
+	form := url.Values{"client_id": {"conf"}, "post_logout_redirect_uri": {testRedirect}, "state": {"s1"}}
+	req := formReq("POST", PathLogout, form)
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	req.Header.Set("Sec-Fetch-Mode", "navigate")
+	req.Header.Set("Sec-Fetch-Dest", "document")
+	resp, _ := do(t, app, req)
+	loc := resp.Header.Get("Location")
+	if resp.StatusCode != http.StatusSeeOther || !strings.HasPrefix(loc, PathLogout+"?") {
+		t.Fatalf("a cookieless cross-site form: status=%d Location=%q, want 303 back to %s", resp.StatusCode, loc, PathLogout)
+	}
+	if got, _ := url.Parse(loc); got.Query().Encode() != form.Encode() {
+		t.Fatalf("the GET dropped parameters: %q, want %q", got.RawQuery, form.Encode())
+	}
+	if !sessionLives(t, app, cookie) {
+		t.Fatal("precondition: nothing is ended before the browser comes back")
+	}
+
+	again := navigate(formReqNoBody("GET", loc))
+	again.Header.Set("Cookie", cookie)
+	resp, _ = do(t, app, again)
+	if resp.StatusCode != 302 || !strings.HasPrefix(resp.Header.Get("Location"), testRedirect) {
+		t.Fatalf("the navigation back: status=%d Location=%q, want 302 to %s", resp.StatusCode, resp.Header.Get("Location"), testRedirect)
+	}
+	if sessionLives(t, app, cookie) {
+		t.Fatal("the relying party's sign-out left the session alive")
 	}
 }
