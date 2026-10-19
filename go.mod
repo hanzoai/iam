@@ -30,6 +30,7 @@ require (
 	github.com/hanzoai/account v0.2.1
 	github.com/hanzoai/authz v1.10.47
 	github.com/hanzoai/orm v0.6.44
+	github.com/hanzoai/outbound v1.0.0
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/luxfi/crypto v1.20.2
 	github.com/luxwallet/connect/go v0.1.4

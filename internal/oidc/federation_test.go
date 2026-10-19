@@ -8,6 +8,7 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -66,14 +67,21 @@ type mockOIDC struct {
 	tokenForm      url.Values
 }
 
-// allowPrivateFederationDial relaxes the SSRF dial guard for the test's duration
-// so the httptest mock IdPs (bound to 127.0.0.1) are reachable — the same
-// package-var test-injection pattern as nowFuncSet. Production never flips it.
+// allowPrivateFederationDial hands the IdP calls a plain client for the test's
+// duration so the httptest mock IdPs (bound to 127.0.0.1) are reachable — the same
+// package-var test-injection pattern as nowFuncSet. It follows no redirect, like
+// the production client; the address rule itself is outbound's and is pinned by
+// TestFederationClientRefusesNonPublicAddresses.
 func allowPrivateFederationDial(t *testing.T) {
 	t.Helper()
-	prev := federationDialAllowsPrivate
-	federationDialAllowsPrivate = true
-	t.Cleanup(func() { federationDialAllowsPrivate = prev })
+	prev := federationHTTPClient
+	federationHTTPClient = &http.Client{
+		Timeout: 12 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return errors.New("federation: an idp endpoint does not redirect")
+		},
+	}
+	t.Cleanup(func() { federationHTTPClient = prev })
 }
 
 func newMockOIDC(t *testing.T, clientID string) *mockOIDC {

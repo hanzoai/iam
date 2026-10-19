@@ -10,7 +10,6 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"math/big"
-	"net"
 	"testing"
 
 	"github.com/hanzoai/iam/pkg/schema"
@@ -19,29 +18,6 @@ import (
 // The IdP-facing helpers are the SSRF/transport hygiene and JWKS-decoding seam:
 // pure functions that decide which endpoints are reachable and how a fetched
 // JWK becomes a verification key. These tests pin each edge.
-
-// isCGNAT covers the shared 100.64.0.0/10 range net.IP.IsPrivate misses.
-func TestIsCGNAT(t *testing.T) {
-	cases := []struct {
-		ip   string
-		want bool
-	}{
-		{"100.64.0.1", true},
-		{"100.100.50.2", true},
-		{"100.127.255.255", true},
-		{"100.63.255.255", false},
-		{"100.128.0.0", false},
-		{"10.0.0.1", false},
-		{"192.168.1.1", false},
-		{"8.8.8.8", false},
-		{"2001:db8::1", false},
-	}
-	for _, tc := range cases {
-		if got := isCGNAT(net.ParseIP(tc.ip)); got != tc.want {
-			t.Errorf("isCGNAT(%s) = %v, want %v", tc.ip, got, tc.want)
-		}
-	}
-}
 
 // isLoopbackHost recognizes the loopback name and addresses, nothing else.
 func TestIsLoopbackHost(t *testing.T) {

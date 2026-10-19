@@ -329,6 +329,20 @@ nothing.
   added to it neither reads nor edits the admin org's registry row. `hanzo/z`
   with an admin membership is an ordinary hanzo account; `admin/z` is the
   operator.
+- **An org name is canonical, and nothing folds onto `admin`.** `schema.OrgName`
+  (lowercase letters, digits, inner hyphens, 2-55) is asked by every write that
+  files a principal under an org: an organization (`organizations.Create`), an
+  account (`users.Create`, the choke point signup, federation, SCIM and the CRUD
+  share), a service account, and the org an application serves. A non-canonical
+  name is refused, never lowercased — lowercasing "Admin" would make it the
+  reserved org. Probed live 2026-10-19 (a throwaway user and org, deleted after):
+  no person, org admin or onboarding path could found or sign in to an org
+  spelled `Admin`/`ADMIN`/`aDmin`/`admiN` (onboarding slugifies, the CRUD refuses
+  the shape, sign-in resolves the org verbatim), but a SuperAdmin's
+  `POST /v1/iam/users` stored `Admin/<name>` and `ac/me/<name>` — accounts in orgs
+  that do not exist, the first of which a case-folding consumer (commerce, then)
+  read as SuperAdmin. Census at the fix: 563 orgs, 506 account owners, all
+  canonical; one leftover QA application serves `qa-final-1781575733@hanzo-qa.dev`.
 - **A machine in `admin` is never SuperAdmin** — `User.Type` service-account or
   application. `admin/provisioner` is declared `type: service` in universe's
   provision document but the upsert writes it with no machine class, so it is a
@@ -1158,6 +1172,19 @@ gone must not fail a sign-in.
 - `main.go` — cobra root (`serve` / `compare` / `version`); `server/server.go` route registration.
 - `internal/{oidc,routes}` — OAuth2/OIDC surface; `internal/{scim,mfa,webauthn,providers,sessions,tokens,cred,authz,certs,keys}`.
 - `internal/{users,organizations,applications,roles,permission,memberships}` — entities; `pkg/model`, `pkg/store`; `MIGRATION.md` (RFC surface + phases).
+
+## An identity provider's address is dialled by one rule (`hanzoai/outbound`)
+
+Every IdP call (discovery, JWKS, token, userinfo) rides `federationHTTPClient`,
+which is `outbound.Client`: the address is judged at the dial, after resolution,
+on the IP the socket connects to, by the IANA special-purpose registries, and no
+redirect is followed. The provider URLs are configuration a tenant admin writes,
+so this is a request-forgery boundary. The guard it replaced (`ipBlockedForFederation`,
+`net.IP` predicates) admitted Oracle's metadata (192.0.0.192), NAT64 and 6to4
+spellings of 169.254.169.254, the benchmarking and documentation blocks and 240/4;
+`TestFederationClientRefusesNonPublicAddresses` holds each. The tests' mock IdPs
+bind 127.0.0.1, so `allowPrivateFederationDial` swaps in a plain client for the
+test's duration; outbound itself has no switch that turns the rule off.
 
 ## CORS — two questions, and the edge answers a third
 
