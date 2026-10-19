@@ -11,7 +11,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
@@ -25,10 +24,6 @@ import (
 )
 
 const orgBase = "/v1/iam/organizations"
-
-// orgName is the shape of an organization name: lowercase ASCII letters and digits
-// with inner hyphens, 2 to 55 characters (the bound first-run provisioning keeps).
-var orgName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,53}[a-z0-9]$`)
 
 //go:generate go run github.com/zap-proto/zip/cmd/zipdoc
 
@@ -150,7 +145,7 @@ func (h *OrganizationAPI) Create(ctx context.Context, in *CreateOrganizationInpu
 	}
 	// The name is a tenant key everywhere, compared byte for byte: lowercase ASCII
 	// in the shape every person-facing path produces, and never a held one.
-	if !orgName.MatchString(org.Name) {
+	if schema.OrgName(org.Name) != nil {
 		return nil, zip.ErrBadRequest("an organization name is lowercase letters, digits and inner hyphens")
 	}
 	if policy.IsHeldOrg(org.Name) {

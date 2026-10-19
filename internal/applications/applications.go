@@ -32,9 +32,16 @@ import (
 // org. A context carrying no principal is refused for the reason AuthorizeCert
 // states: this handler is reached from the router and nowhere else, so arriving
 // without one is a door left open rather than a caller to trust.
+//
+// The org it names is an org name before it is anyone's to grant: a SuperAdmin may
+// point an app at any org, and "Admin" is not one — it names no org, and every
+// app token minted through it would carry it.
 func authorizeOrganization(ctx context.Context, in *schema.Application) error {
 	if in.Organization == "" {
 		return nil // an org-less app mints no cross-tenant/SuperAdmin identity
+	}
+	if err := schema.OrgName(in.Organization); err != nil {
+		return zip.ErrBadRequest(err.Error())
 	}
 	p, ok := principal.From(ctx)
 	if !ok {

@@ -246,6 +246,12 @@ func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error)
 	if owner == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
 	}
+	// THE org rule, at the same one write. The owner becomes orgs[0] of every token
+	// this account is ever issued — the org platform authority is decided on — so
+	// it is an org name or nothing: "Admin" is refused, never folded onto admin.
+	if err := schema.OrgName(owner); err != nil {
+		return nil, zip.ErrBadRequest(err.Error())
+	}
 	// THE username rule, at the ONE write every create path reaches: password
 	// signup, social federation, SCIM, the legacy add-user verb, the typed CRUD
 	// create and the embedder seam all land here. Stating it at the start of each of

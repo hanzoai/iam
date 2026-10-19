@@ -5,10 +5,30 @@ package schema
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 )
+
+// orgNameRe is THE shape of an organization name: lowercase ASCII letters and
+// digits with inner hyphens, 2 to 55 characters (the bound first-run provisioning
+// keeps). An org name is a tenancy key compared byte for byte everywhere — the
+// first entry of every token's `orgs`, the namespace a store opens, the reserved
+// "admin" platform authority is read from — so nothing about it may fold.
+var orgNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,53}[a-z0-9]$`)
+
+// OrgName reports whether name is an organization name, refusing anything else
+// rather than rewriting it: lowercasing "Admin" would make it the reserved org,
+// which is the escalation this rule exists to rule out. Every write that files a
+// principal under an org — an organization, an account, a service account, the
+// org an application serves — asks it.
+func OrgName(name string) error {
+	if !orgNameRe.MatchString(name) {
+		return fmt.Errorf("an organization name is lowercase letters, digits and inner hyphens, not %q", name)
+	}
+	return nil
+}
 
 // MaxOrgDisplayName bounds an organization's display name, in characters (the
 // column is varchar(100)).

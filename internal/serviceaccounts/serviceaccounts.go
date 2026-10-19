@@ -135,6 +135,11 @@ func create(db orm.DB) zip.Handler {
 		if in.Organization == "" {
 			return httpx.Err(c, "organization is required")
 		}
+		// The org the machine is filed under is the org its credential acts in, so
+		// it is an org name: a SuperAdmin may create in any org, never in "Admin".
+		if err := schema.OrgName(in.Organization); err != nil {
+			return httpx.Err(c, err.Error())
+		}
 		p, ok := principal.From(c.Context())
 		if !ok || !admin(p, in.Organization) {
 			return httpx.Err(c, unauthorized)
