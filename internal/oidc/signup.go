@@ -557,7 +557,8 @@ func allocate(base string, free func(string) (bool, error)) (string, error) {
 // application of registrar: the handle its address yields, or the first free
 // variant of it ([nameTaken]). It is the ONE derivation both
 // ways into this store use — a password signup with no username of its own, and a
-// federated signup, which never has one.
+// federated signup whose provider keeps no free handle for the person
+// ([federatedName]).
 //
 // What an address yields is schema.Handle's to decide, and only the ADDRESS may
 // become an identity: an IdP profile says "Grace Hopper", which is not a username
@@ -581,6 +582,28 @@ func allocateName(ctx context.Context, db orm.DB, org, registrar, email, fallbac
 		taken, err := nameTaken(ctx, db, org, registrar, name)
 		return !taken, err
 	})
+}
+
+// federatedName mints the username a NEW federated account gets in org: the
+// provider's handle for the person (GitHub's login) when the provider keeps one,
+// it is a usable username, and nobody here holds it — the name they already go by
+// — and otherwise what [allocateName] derives from the address, with its numbered
+// walk. A handle that is taken is not numbered: "octocat2" would read as the
+// GitHub user octocat2, who is someone else, so the address's name is used instead.
+//
+// Only a HANDLE qualifies, never a display name ("Grace Hopper"), and a provider
+// with no handles (Google) gets the address's name as before.
+func federatedName(ctx context.Context, db orm.DB, org string, id federatedIdentity, fallback string) (string, error) {
+	if handle, err := schema.Username(id.handle); err == nil {
+		taken, err := nameTaken(ctx, db, org, org, handle)
+		if err != nil {
+			return "", err
+		}
+		if !taken {
+			return handle, nil
+		}
+	}
+	return allocateName(ctx, db, org, org, id.email, fallback)
 }
 
 // displayName is the user's display name: the supplied name, a "First Last"

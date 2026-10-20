@@ -613,16 +613,17 @@ func linkOrProvision(ctx context.Context, db orm.DB, app *schema.Application, pr
 
 // provisionFederatedUser creates a new federated account through the ONE
 // canonical user-create path (users.Create, no password → no login-able digest),
-// stamping the provider subject on its connector column. The username comes from
-// allocateName — the same derivation a password signup with no username of its own
-// gets — and the address proof is carried straight from the IdP, on the create's
-// own field rather than in the user body, which cannot state it.
+// stamping the provider subject on its connector column. The username is the
+// provider's handle for the person when it has one and it is free, else what
+// allocateName derives from the address ([federatedName]); the address proof is
+// carried straight from the IdP, on the create's own field rather than in the
+// user body, which cannot state it.
 //
-// The display name reaches DisplayName and stops there: only the ADDRESS may
-// become an identity, which is allocateName's rule to keep.
+// The display name reaches DisplayName and stops there: a profile name never
+// becomes an identity.
 func provisionFederatedUser(ctx context.Context, db orm.DB, app *schema.Application, prov *schema.Provider, binding connectorBinding, id federatedIdentity) (*schema.User, error) {
 	org := app.Organization
-	name, err := allocateName(ctx, db, org, org, id.email, prov.Type)
+	name, err := federatedName(ctx, db, org, id, prov.Type)
 	if err != nil {
 		return nil, fmt.Errorf("federation: %w", err)
 	}

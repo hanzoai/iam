@@ -59,6 +59,11 @@ type federatedIdentity struct {
 	emailVerified bool
 	displayName   string
 	avatar        string
+	// handle is the provider's own USERNAME for the person, where it keeps one
+	// (GitHub's login): a handle they chose and the provider holds unique, which a
+	// new account takes as its name when it is free ([federatedName]). Never a
+	// display name — "Grace Hopper" is displayName's, and Google keeps no handle.
+	handle string
 }
 
 // federationHTTPClient is the client every IdP call rides: hanzoai/outbound's,
@@ -394,6 +399,7 @@ func githubExchange(ctx context.Context, p *schema.Provider, st *schema.Federati
 		emailVerified: verified,
 		displayName:   name,
 		avatar:        gu.AvatarURL,
+		handle:        gu.Login,
 	}, nil
 }
 
