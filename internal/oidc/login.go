@@ -353,6 +353,16 @@ func codeLogin(ctx context.Context, db orm.DB, f loginForm, user *schema.User) (
 func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
 	ctx := c.Context()
 
+	// An account an operator archived (isForbidden) or deleted gets no grant, and is
+	// told so HERE, where the credential has just been proven, rather than by a code
+	// the token endpoint then refuses to redeem — which reached the person as an
+	// opaque "exchange failed" with no reason in it. Only the holder of the
+	// password or the code ever reaches this line, so saying why is no oracle; it
+	// is the same refusal a provider's sign-in gets (federation.go).
+	if user.IsForbidden || user.IsDeleted {
+		return httpx.ErrCode(c, "the account is not permitted", CodeAccountNotPermitted)
+	}
+
 	// type=device: approve a pending RFC 8628 device authorization against the
 	// identity now fully proven (device.go). Device approval has its OWN tenant model —
 	// a SuperAdmin may deliberately approve a device across tenants (device.go), a

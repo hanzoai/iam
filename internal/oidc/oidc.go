@@ -59,6 +59,12 @@ const (
 // never sends. An error must describe the thing the caller can actually do.
 const CodeLoginRequired = "login_required"
 
+// CodeAccountNotPermitted is the `code` beside a sign-in refused because the
+// account itself may not sign in — archived by an operator (isForbidden) or
+// deleted — after its credential was proven. The client says the account is
+// archived rather than reading it as a wrong password or a failed exchange.
+const CodeAccountNotPermitted = "account_not_permitted"
+
 // PathRefreshToken is the spelling signed-in clients POST their refresh to. It is
 // the SAME handler as PathToken at a second address — grant_type=refresh_token
 // travels in the body, so this is a second spelling of the endpoint, never a
