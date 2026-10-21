@@ -66,3 +66,62 @@ func TestLogout_EverywhereRetiresTheOrganizationsGrants(t *testing.T) {
 		})
 	}
 }
+
+// Applications the deployment names on IAM_SIGNOUT_APPS share one sign-out:
+// leaving one of them retires the person's grant to the others with no
+// `everywhere` from the client — hanzo.ai's existing sign-out reaches
+// platform.hanzo.ai. An application off the list keeps its grant, and leaving
+// an application off the list reaches nothing on it.
+func TestLogout_SignoutAppsShareOneSignOut(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		leave    string
+		retired  []string
+		survives []string
+	}{
+		{"listed app leaves the list", "conf", []string{"conf", "sib"}, []string{"other"}},
+		{"unlisted app leaves itself", "other", []string{"other"}, []string{"conf", "sib"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(envSignoutApps, "conf, sib")
+			app, db := newServer(t)
+			for _, client := range []string{"conf", "sib", "other"} {
+				seedApp(t, db, appOpts{clientID: client, secret: "s3cret", redirectURIs: []string{testRedirect}, refreshHours: 24})
+			}
+			seedRichUser(t, db)
+
+			held := map[string]string{}
+			for _, client := range []string{"conf", "sib", "other"} {
+				code, resp, body := loginForCode(t, app, loginParams(client, "openid offline_access"))
+				if code == "" {
+					t.Fatalf("%s: no code: status=%d %s", client, resp.StatusCode, body)
+				}
+				_, tok := exchangeCode(t, app, url.Values{
+					"code": {code}, "client_id": {client}, "client_secret": {"s3cret"}, "redirect_uri": {testRedirect},
+				})
+				held[client], _ = tok["refresh_token"].(string)
+				if held[client] == "" {
+					t.Fatalf("%s: no refresh token: %v", client, tok)
+				}
+			}
+
+			q := url.Values{"client_id": {tc.leave}}.Encode()
+			requireSignedOut(t, logout(t, app, signIn(t, app, tc.leave), "", q), tc.leave)
+
+			mints := func(client string) bool {
+				status, _ := refresh(t, app, client, held[client], url.Values{"client_secret": {"s3cret"}})
+				return status == 200
+			}
+			for _, client := range tc.retired {
+				if mints(client) {
+					t.Errorf("%s still mints after signing out of %s", client, tc.leave)
+				}
+			}
+			for _, client := range tc.survives {
+				if !mints(client) {
+					t.Errorf("%s was signed out by leaving %s", client, tc.leave)
+				}
+			}
+		})
+	}
+}
