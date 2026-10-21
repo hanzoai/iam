@@ -843,6 +843,16 @@ func ListTokensByUserApp(ctx context.Context, db orm.DB, user, application strin
 		Filter("User=", user).Filter("Application=", application).GetAll(ctx)
 }
 
+// ListTokensByUser returns every token row one user holds, across every
+// application — what a sign-out of every application of one organization
+// sorts through. An empty user returns nothing rather than matching everyone.
+func ListTokensByUser(ctx context.Context, db orm.DB, user string) ([]*schema.Token, error) {
+	if user == "" {
+		return nil, nil
+	}
+	return orm.TypedQuery[schema.Token](db).Filter("User=", user).GetAll(ctx)
+}
+
 // RekeyTokens moves every token row a user holds from one identity key to
 // another — the "owner/name" pair the mint stamps on the row as User. Moving a
 // user between orgs re-keys their identity, and a grant still naming the old key

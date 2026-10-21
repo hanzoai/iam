@@ -99,13 +99,25 @@ func logoutHandler(db orm.DB) zip.Handler {
 		// which is what a revoke-everything would do. With no hint, the grant
 		// retired is the one for the application the session itself names, so a
 		// plain browser logout still leaves no mintable refresh token behind.
+		//
+		// Unless the person asked for every one (`everywhere=true`): the sign-out a
+		// suite of first-party sites shares, where leaving one of them (hanzo.ai)
+		// must leave the others (platform.hanzo.ai) too. It reaches only the
+		// applications of the SAME organization as the one signed out of, so a
+		// third-party app the person signed into through IAM keeps its grant, and
+		// like the scoped default it needs the session: a hint alone retires nothing.
 		for _, sc := range ended {
 			application := sc.Application
 			if app != nil {
 				application = app.Name
 			}
-			if application != "" {
-				revokeGrant(ctx, db, sc.Owner+"/"+sc.Name, application)
+			if application == "" {
+				continue
+			}
+			user := sc.Owner + "/" + sc.Name
+			revokeGrant(ctx, db, user, application)
+			if everywhere(c) {
+				revokeSiblings(ctx, db, user, application, app)
 			}
 		}
 
@@ -166,6 +178,49 @@ func wantsHTML(c *zip.Ctx) bool {
 		return false
 	}
 	return strings.Contains(accept, "text/html")
+}
+
+// everywhere reports whether a sign-out asks to leave every application of the
+// organization it is signing out of, not only that one.
+func everywhere(c *zip.Ctx) bool {
+	v := strings.ToLower(param(c, "everywhere"))
+	return v == "true" || v == "1"
+}
+
+// revokeSiblings retires the grant a user holds for every application of the
+// organization `application` belongs to (`app` when the request named it, else
+// the one the session was opened for). The organization is read off each
+// application row, never the token's own Organization, which some mints stamp
+// with the user's org instead. An application that cannot be resolved is left
+// alone: retiring a grant nobody can place in the organization would be the
+// revoke-everything this exists to avoid.
+func revokeSiblings(ctx context.Context, db orm.DB, user, application string, app *schema.Application) {
+	if app == nil {
+		found, err := store.GetApplicationNamed(ctx, db, application)
+		if err != nil || found == nil {
+			return
+		}
+		app = found
+	}
+	if app.Organization == "" {
+		return
+	}
+	rows, err := store.ListTokensByUser(ctx, db, user)
+	if err != nil {
+		return
+	}
+	seen := map[string]bool{application: true}
+	for _, row := range rows {
+		if row.Application == "" || seen[row.Application] {
+			continue
+		}
+		seen[row.Application] = true
+		sibling, err := store.GetApplicationNamed(ctx, db, row.Application)
+		if err != nil || sibling == nil || sibling.Organization != app.Organization {
+			continue
+		}
+		revokeGrant(ctx, db, user, row.Application)
+	}
 }
 
 // revokeGrant deletes every token row a user holds for one application, together
