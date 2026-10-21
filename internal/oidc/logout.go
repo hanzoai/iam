@@ -7,6 +7,7 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/hanzoai/orm"
@@ -119,6 +120,7 @@ func logoutHandler(db orm.DB) zip.Handler {
 			if everywhere(c) {
 				revokeSiblings(ctx, db, user, application, app)
 			}
+			revokeShared(ctx, db, user, application, app)
 		}
 
 		// (3) Redirect only to an address the identified application registered.
@@ -220,6 +222,42 @@ func revokeSiblings(ctx context.Context, db orm.DB, user, application string, ap
 			continue
 		}
 		revokeGrant(ctx, db, user, row.Application)
+	}
+}
+
+// envSignoutApps names, by clientId, the applications that share one sign-out:
+// leaving any of them leaves them all, whatever the client asked. It is the
+// deployment's statement that a set of sites is one product to the person —
+// hanzo.ai (hanzo-app) and platform.hanzo.ai (hanzo-cloud) sign in from one
+// session, so a sign-out on either that left the other minting would leave the
+// person signed in where they believe they are not. Unset, no sign-out reaches
+// past its own application unless it asks (`everywhere`).
+const envSignoutApps = "IAM_SIGNOUT_APPS"
+
+// revokeShared retires the user's grant to every application on
+// IAM_SIGNOUT_APPS when the application signed out of (`app` when the request
+// named it, else the one the session was opened for) is itself on the list. An
+// application off the list, or a listed clientId no row answers, is untouched.
+func revokeShared(ctx context.Context, db orm.DB, user, application string, app *schema.Application) {
+	if app == nil {
+		found, err := store.GetApplicationNamed(ctx, db, application)
+		if err != nil || found == nil {
+			return
+		}
+		app = found
+	}
+	if !appInList(envSignoutApps, app.ClientId) {
+		return
+	}
+	for _, clientID := range strings.FieldsFunc(os.Getenv(envSignoutApps), func(r rune) bool { return r == ',' || r == ' ' }) {
+		if clientID == app.ClientId {
+			continue
+		}
+		shared, err := store.GetApplicationByClientId(ctx, db, clientID)
+		if err != nil || shared == nil {
+			continue
+		}
+		revokeGrant(ctx, db, user, shared.Name)
 	}
 }
 
