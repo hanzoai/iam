@@ -236,3 +236,84 @@ func TestChannelComesFromTheAddress(t *testing.T) {
 		t.Errorf("Channel(number) = %q, want %q", got, Phone)
 	}
 }
+
+// capture keeps every message handed to delivery, whole.
+type capture struct{ sent []Message }
+
+func (c *capture) Send(_ context.Context, m Message) error {
+	c.sent = append(c.sent, m)
+	return nil
+}
+
+// The plain wording is pinned byte for byte: the link is added beside it, never by
+// editing it.
+func TestMessageWording(t *testing.T) {
+	m := message("hanzo", Email, "ada@example.com", "123456")
+	if m.Subject != "Your verification code" {
+		t.Errorf("subject = %q", m.Subject)
+	}
+	want := "Your verification code is 123456. It expires in 10 minutes. " +
+		"If you did not request it, ignore this message and do not share it with anyone."
+	if m.Body != want {
+		t.Errorf("body =\n%q\nwant\n%q", m.Body, want)
+	}
+	if sms := message("hanzo", Phone, "+14155550134", "123456"); sms.Subject != "" || sms.Body != want {
+		t.Errorf("sms = %+v, want no subject and the same body", sms)
+	}
+}
+
+func TestLinkedWording(t *testing.T) {
+	m := linked("hanzo", "ada+x@example.com", "123456", "https://hanzo.ai/auth/callback")
+	if m.Org != "hanzo" || m.Channel != Email || m.To != "ada+x@example.com" {
+		t.Errorf("addressed %+v", m)
+	}
+	if m.Subject != "Your sign-in link" {
+		t.Errorf("subject = %q", m.Subject)
+	}
+	want := "Sign in with this link:\n" +
+		"https://hanzo.ai/auth/callback#code=123456&email=ada%2Bx%40example.com\n\n" +
+		"Or enter this code: 123456\n\n" +
+		"It expires in 10 minutes. If you did not request it, ignore this message and do not share it with anyone."
+	if m.Body != want {
+		t.Errorf("body =\n%q\nwant\n%q", m.Body, want)
+	}
+}
+
+// IssueLink words a link only into an email, and only when it has one; every other
+// case is the message Issue sends.
+func TestIssueLinkWording(t *testing.T) {
+	const link = "https://hanzo.ai/auth/callback"
+	for _, tc := range []struct {
+		name, dest, link string
+		linked           bool
+	}{
+		{"email with link", "ada@example.com", link, true},
+		{"email without link", "ada@example.com", "", false},
+		{"phone with link", "+14155550134", link, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := openDB(t)
+			c := &capture{}
+			bind(t, c)
+			if err := IssueLink(context.Background(), db, "hanzo", tc.dest, "", nil, time.Now(), tc.link); err != nil {
+				t.Fatalf("issue: %v", err)
+			}
+			if len(c.sent) != 1 {
+				t.Fatalf("sent %d messages, want 1", len(c.sent))
+			}
+			got := c.sent[0]
+			code := sixDigits.FindString(got.Body)
+			want := message("hanzo", Channel(tc.dest), Receiver(tc.dest), code)
+			if tc.linked {
+				want = linked("hanzo", tc.dest, code, tc.link)
+			}
+			if got != want {
+				t.Errorf("sent %+v\nwant %+v", got, want)
+			}
+			rec, err := store.GetLatestVerificationRecord(context.Background(), db, "hanzo", Receiver(tc.dest))
+			if err != nil || rec == nil || rec.Code != code {
+				t.Fatalf("filed record %+v (err %v) does not hold the delivered code %q", rec, err, code)
+			}
+		})
+	}
+}

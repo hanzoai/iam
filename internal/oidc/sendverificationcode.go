@@ -5,6 +5,7 @@ package oidc
 
 import (
 	"errors"
+	"net/url"
 	"strings"
 
 	"github.com/hanzoai/orm"
@@ -37,6 +38,9 @@ import (
 // ignores them (the captcha/forget/MFA flows those drive are not ported), and
 // CAPTCHA verification is likewise not enforced — iam models no captcha provider —
 // so the code is issued once the destination and application validate.
+//
+// An email also carries a sign-in link when the request's Origin is the origin of
+// one of the application's redirect URIs ([landing]); otherwise it is the code alone.
 func sendVerificationCode(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
@@ -80,11 +84,13 @@ func sendVerificationCode(db orm.DB) zip.Handler {
 		// accepted as typed: otp.Receiver files it under its digits, so the punctuation
 		// somebody used here cannot decide whether the code verifies later.
 		var user *schema.User
+		var uri string
 		switch typ {
 		case otp.Email:
 			if !isEmailValid(dest) {
 				return httpx.Err(c, "email is invalid")
 			}
+			uri = landing(app, c.Header("Origin"))
 			// An ambiguous address is treated as NO USER, not reported. This endpoint
 			// is unauthenticated too, so echoing the resolver would tell a stranger
 			// which addresses exist — and the endpoint below already handles a nil
@@ -121,7 +127,7 @@ func sendVerificationCode(db orm.DB) zip.Handler {
 			return httpx.Err(c, "unsupported verification type: "+typ)
 		}
 
-		if err := otp.Issue(ctx, db, org.Name, dest, fc.IP(), user, nowFunc()); err != nil {
+		if err := otp.IssueLink(ctx, db, org.Name, dest, fc.IP(), user, nowFunc(), uri); err != nil {
 			// Report the real outcome. Answering ok because the code was minted would be
 			// the same lie one layer down: the send is what the caller asked for.
 			if errors.Is(err, otp.ErrNoDelivery) || errors.Is(err, otp.ErrTooSoon) {
@@ -131,4 +137,29 @@ func sendVerificationCode(db orm.DB) zip.Handler {
 		}
 		return httpx.Ok(c, nil)
 	}
+}
+
+// landing is the URI an emailed sign-in link opens: the first of the application's
+// RedirectUris, in its own order, whose origin is exactly origin (scheme, host and
+// port), with any fragment cut off. origin is the request's Origin header and must
+// be a serialized http or https origin. No Origin, a malformed one, or one no
+// registered URI is at answers "", and the email carries no link.
+//
+// Only a registered URI is ever returned, so a forged Origin can at most choose
+// among the application's own callbacks. Host, Referer and X-Forwarded-* are never
+// read: the Origin header is the one statement of which page asked.
+func landing(app *schema.Application, origin string) string {
+	o, err := url.Parse(origin)
+	if err != nil || (o.Scheme != "http" && o.Scheme != "https") || o.Host == "" || o.Scheme+"://"+o.Host != origin {
+		return ""
+	}
+	for _, raw := range app.RedirectUris {
+		r, err := url.Parse(raw)
+		if err != nil || r.Scheme != o.Scheme || r.Host != o.Host {
+			continue
+		}
+		uri, _, _ := strings.Cut(raw, "#")
+		return uri
+	}
+	return ""
 }

@@ -1000,6 +1000,18 @@ the same request resolves through `GetUserByPhone`, which normalizes first, so
 "+1 415 555 0134" at send and "+14155550134" at login found the right user and then
 answered "the code is incorrect or has expired".
 
+## An emailed code carries a sign-in link when the page's origin is registered
+
+`POST /v1/iam/verification-codes` type=email reads the request's `Origin` and
+`landing` (sendverificationcode.go) picks the first of the application's
+`RedirectUris` whose scheme+host+port equals it exactly, fragment cut. Then
+`otp.IssueLink` words the mail "Your sign-in link":
+`<uri>#code=<code>&email=<addr>` plus the code itself. No Origin, no match, SMS,
+and every other `Issue` caller send the plain `message`, unchanged. Only a
+registered URI can be named, so a forged Origin picks among the app's own
+callbacks; Host, Referer and X-Forwarded-* are never read. hanzo.ai needs
+`https://hanzo.ai/auth/callback` registered on its app for the link to appear.
+
 ## Sign-up by code — the code proves the address, the click creates the account
 
 A code sent to an address no account holds is filed with `User == ""` under the application's org. `POST /v1/iam/login` type=code with that code and no resolved user (`codeSignup`, code_signup.go):

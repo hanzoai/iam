@@ -27,6 +27,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net/url"
 	"strings"
 	"time"
 
@@ -131,6 +132,25 @@ func message(org, channel, to, code string) Message {
 		m.Subject = "Your verification code"
 	}
 	return m
+}
+
+// linked words one sign-in code for one email, with a link beside it. The link is
+// link plus a fragment carrying the address and the code, which the page it opens
+// reads to finish the sign-in; a fragment never reaches a server, so neither lands
+// in a request log. The code is printed as well, for a person who reads the mail
+// on another device. Like [message], it names no brand and renders the expiry from
+// [TTL].
+func linked(org, to, code, link string) Message {
+	fragment := url.Values{"email": {to}, "code": {code}}.Encode()
+	return Message{
+		Org:     org,
+		Channel: Email,
+		To:      to,
+		Subject: "Your sign-in link",
+		Body: fmt.Sprintf("Sign in with this link:\n%s#%s\n\nOr enter this code: %s\n\n"+
+			"It expires in %d minutes. If you did not request it, ignore this message and do not share it with anyone.",
+			link, fragment, code, int(TTL.Minutes())),
+	}
 }
 
 // sender is bound once at boot, before the server accepts a request, and read
@@ -244,6 +264,19 @@ func Receiver(dest string) string {
 func Issue(ctx context.Context, db orm.DB, org, dest, remoteAddr string, user *schema.User, now time.Time) error {
 	return issue(ctx, db, PurposeCode, org, dest, remoteAddr, user, now, func(channel, to, code string) Message {
 		return message(org, channel, to, code)
+	})
+}
+
+// IssueLink is [Issue] for an email that also carries a sign-in link. link is a URI
+// the caller has matched to the application, with no fragment; the message appends
+// one naming the address and the code ([linked]). An empty link, or a destination
+// that is not an email, is worded exactly as [Issue] words it.
+func IssueLink(ctx context.Context, db orm.DB, org, dest, remoteAddr string, user *schema.User, now time.Time, link string) error {
+	return issue(ctx, db, PurposeCode, org, dest, remoteAddr, user, now, func(channel, to, code string) Message {
+		if link == "" || channel != Email {
+			return message(org, channel, to, code)
+		}
+		return linked(org, to, code, link)
 	})
 }
 
