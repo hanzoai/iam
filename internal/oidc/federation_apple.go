@@ -54,15 +54,21 @@ func appleOrigin(p *schema.Provider) string {
 // than a redirect. Apple is the one dialect that does.
 func posts(p *schema.Provider) bool { return idpKind(p) == "apple" }
 
-// appleKey answers whether the provider can mint a client secret: a Team ID, a
-// Key ID, and a .p8 that parses as a P-256 PKCS#8 key, as PEM or as its bare
-// base64 body (the form that survives a JSON document or an environment variable
-// without its line breaks).
+// appleKey answers whether the provider can mint a client secret: a Team ID and
+// a Key ID of Apple's shape (appleID), and a .p8 that parses as a P-256 PKCS#8
+// key, as PEM or as its bare base64 body (the form that survives a JSON document
+// or an environment variable without its line breaks). A PEM whose line breaks
+// were written as the two characters `\n`, as a JSON string or a one-line
+// environment value carries them, is read with real ones: a backslash never
+// appears in PEM or base64. The errors name the cause and never the key.
 func appleKey(p *schema.Provider) (*ecdsa.PrivateKey, error) {
-	if strings.TrimSpace(p.ClientSecret) == "" || strings.TrimSpace(p.ClientId2) == "" {
-		return nil, errors.New("federation: Apple provider has no team id or key id")
+	if !appleID(p.ClientSecret) {
+		return nil, errors.New("federation: Apple team id is not ten characters of A-Z and 0-9")
 	}
-	raw := strings.TrimSpace(p.ClientSecret2)
+	if !appleID(p.ClientId2) {
+		return nil, errors.New("federation: Apple key id is not ten characters of A-Z and 0-9")
+	}
+	raw := strings.TrimSpace(strings.ReplaceAll(p.ClientSecret2, `\n`, "\n"))
 	var der []byte
 	if b, _ := pem.Decode([]byte(raw)); b != nil {
 		der = b.Bytes
@@ -82,6 +88,21 @@ func appleKey(p *schema.Provider) (*ecdsa.PrivateKey, error) {
 		return nil, errors.New("federation: Apple key is not a P-256 key")
 	}
 	return ec, nil
+}
+
+// appleID reports whether s, trimmed, has the shape Apple gives a Team ID and a
+// Key ID: exactly ten characters, each A-Z or 0-9. A placeholder fails it.
+func appleID(s string) bool {
+	s = strings.TrimSpace(s)
+	if len(s) != 10 {
+		return false
+	}
+	for _, r := range s {
+		if (r < 'A' || r > 'Z') && (r < '0' || r > '9') {
+			return false
+		}
+	}
+	return true
 }
 
 // appleSecret mints the client secret Apple's token endpoint takes: an ES256 JWT

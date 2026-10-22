@@ -73,12 +73,17 @@ const fedCookieName = "__Host-hanzo_fed"
 // redeemable. Short, because it only has to survive one IdP round-trip.
 const fedStateTTL = 10 * time.Minute
 
+// handoffTTL bounds the row a form_post reply is handed to a GET on (handoff).
+// The browser follows the 303 at once, so it only has to outlive that hop.
+const handoffTTL = time.Minute
+
 // routeFederation registers the IdP callback on the PUBLIC group r, by both of the
 // ways a provider returns: a top-level GET redirect (Google, GitHub), and a
 // form_post (Apple) — a cross-site POST of application/x-www-form-urlencoded. One
 // handler serves both, with the same single-use state and browser-binding checks,
-// and each dialect is answered only by its own method (see posts). The callback
-// self-authenticates via the single-use state + the browser cookie.
+// and each dialect is answered only by its own method (see posts). A form_post
+// is handed to a same-origin GET (handoff), so every sign-in finishes on a GET.
+// The callback self-authenticates via the single-use state + the browser cookie.
 //
 // The sign-in origins the callback answers at are installed at boot, with the
 // issuers they are judged against (server.RequireIssuer).
@@ -114,6 +119,15 @@ func beginFederation(c *zip.Ctx, db orm.DB, app *schema.Application, q authorize
 	}
 	if _, ok := connectorFor(prov.Type); !ok {
 		return authorizeErrorRedirect(c, q, "invalid_request", "provider has no local identity binding")
+	}
+	// A form_post dialect's binding cookie is SameSite=None, which a browser keeps
+	// from any response, a cross-site image's or frame's included, where it keeps a
+	// Lax one only from a top-level navigation or a same-site request. So that leg
+	// begins only on a request the browser does not mark as embedded: the one
+	// binding cookie a browser holds is replaced by a navigation and nothing else.
+	// Refused in place, since an embedded request has no page to send anywhere.
+	if posts(prov) && !topLevelNavigation(c) {
+		return authorizeUserError(c, "this provider is reached by navigating to it")
 	}
 
 	state, err := newOpaqueToken()
@@ -174,8 +188,10 @@ func beginFederation(c *zip.Ctx, db orm.DB, app *schema.Application, q authorize
 // single-use transaction (checking expiry + browser binding), exchanges and
 // verifies the IdP response, links or provisions the local user, and mints the
 // iam authorization code the relying party expects — then redirects to the
-// original redirect_uri with code + state. The IdP's reply is read from the query
-// of a GET or the form body of a form_post alike.
+// original redirect_uri with code + state. A redirect provider's reply is read
+// from the query of its GET. A form_post provider's POST is answered with a 303
+// to a GET of this address naming a single-use handoff that holds the reply, and
+// that GET finishes the sign-in.
 func federationCallbackHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
@@ -253,17 +269,29 @@ func federationCallbackHandler(db orm.DB) zip.Handler {
 			return fedErrorRedirect(c, st, "temporarily_unavailable", "the identity provider is unavailable")
 		}
 		// A dialect returns by one method, and a reply by the other is not one its
-		// provider sent: only a form_post dialect is answered on a POST.
-		if (c.Method() == http.MethodPost) != posts(prov) {
+		// provider sent. A form_post dialect's own state is answered on the POST, by
+		// a handoff to a GET; a GET finishes a redirect dialect's state or a handoff.
+		handed := st.Reply != ""
+		switch {
+		case c.Method() == http.MethodPost && posts(prov) && !handed:
+			return handoff(c, db, st, prov, raw, now)
+		case c.Method() == http.MethodPost || posts(prov) != handed:
 			return fedErrorRedirect(c, st, "invalid_request", "the identity provider answered by the wrong method")
+		}
+		// The provider's reply: the query of its redirect, or what its form_post
+		// left on the handoff row. A handoff's URL names the row and nothing else.
+		reply := func(k string) string { return param(c, k) }
+		if handed {
+			v, _ := url.ParseQuery(st.Reply)
+			reply = v.Get
 		}
 
 		// An IdP-reported denial (user declined / error) is surfaced to the RP as
 		// access_denied, not a server error.
-		if e := param(c, "error"); e != "" {
+		if e := reply("error"); e != "" {
 			return fedErrorRedirect(c, st, "access_denied", "the identity provider denied the request")
 		}
-		code := param(c, "code")
+		code := reply("code")
 		if code == "" {
 			return fedErrorRedirect(c, st, "invalid_request", "the identity provider returned no code")
 		}
@@ -272,8 +300,14 @@ func federationCallbackHandler(db orm.DB) zip.Handler {
 		if err != nil {
 			return fedErrorRedirect(c, st, "server_error", "")
 		}
-		identity, err := idpExchange(ctx, prov, st, code, param(c, "user"), callback, now)
-		if err != nil || identity.subject == "" {
+		identity, err := idpExchange(ctx, prov, st, code, reply("user"), callback, now)
+		if err == nil && identity.subject == "" {
+			err = errors.New("federation: the identity names no subject")
+		}
+		if err != nil {
+			// The cause is logged for the operator; every error idpExchange returns is
+			// built to carry no token, secret or key.
+			log.Printf("federation: exchange: provider=%s client=%s tx=%s: %v", st.Provider, st.ClientId, fedTx(st), err)
 			return fedErrorRedirect(c, st, "access_denied", "the identity provider could not be verified")
 		}
 
@@ -332,6 +366,43 @@ func federationCallbackHandler(db orm.DB) zip.Handler {
 		}
 		return c.Redirect(302, loc)
 	}
+}
+
+// handoff answers a form_post reply with a 303 to a same-origin GET of the
+// callback, which finishes the sign-in. The reply arrives as a cross-site POST,
+// on which the browser keeps no session cookie (sessions.Open declines one), and
+// the GET it is sent to is a top-level navigation, on which it does.
+//
+// The caller has proven the state and its binding cookie and burned the state.
+// handoff writes the transaction again under a fresh unguessable id, holding the
+// reply (Reply), bound to the same cookie and living handoffTTL, and names that
+// id in the GET. The GET resolves, binds and burns it like any state, so it is
+// single-use and reachable only by the browser that made the POST, and the
+// provider's code stays server-side.
+func handoff(c *zip.Ctx, db orm.DB, st *schema.FederationState, prov *schema.Provider, bind string, now time.Time) error {
+	id, err := newOpaqueToken()
+	if err != nil {
+		return fedFault(c, st, "handoff", err)
+	}
+	callback, err := federationCallbackURL(c)
+	if err != nil {
+		return fedFault(c, st, "handoff", err)
+	}
+	h := *st
+	h.Name = id
+	h.CreatedTime = now.UTC().Format(time.RFC3339)
+	h.ExpireIn = now.Add(handoffTTL).Unix()
+	h.Used = false
+	// Every key is named, so the encoding is never empty and an empty Reply always
+	// means a row no POST wrote.
+	h.Reply = url.Values{"code": {param(c, "code")}, "user": {param(c, "user")}, "error": {param(c, "error")}}.Encode()
+	if err := store.PersistFederationState(c.Context(), db, &h); err != nil {
+		return fedFault(c, st, "handoff", err)
+	}
+	// The GET presents the same binding, so the cookie is set again in place of
+	// the clear the burn queued.
+	setBindCookie(c, bind, prov)
+	return c.Redirect(http.StatusSeeOther, joinQuery(callback, url.Values{"state": {id}}))
 }
 
 // fedResumeParams is the ORIGINAL iam authorize request, pinned server-side so
@@ -790,7 +861,8 @@ func fedTx(st *schema.FederationState) string {
 // cookie whose hash that state's row holds, so a page that makes a browser POST
 // here still needs the state that browser was issued, which only it and the IdP
 // have seen; and the `__Host-` prefix still keeps any other host from planting
-// one. It is set this way for that one leg, never for a redirect dialect.
+// one. It is set this way for that one leg, never for a redirect dialect, and
+// beginFederation sets it only on a top-level navigation.
 func setBindCookie(c *zip.Ctx, value string, p *schema.Provider) {
 	site := fiber.CookieSameSiteLaxMode
 	if posts(p) {

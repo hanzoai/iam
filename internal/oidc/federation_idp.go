@@ -511,12 +511,31 @@ func doJSON(req *http.Request, out any) error {
 		return fmt.Errorf("federation: reading idp response failed")
 	}
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("federation: idp returned status %d", resp.StatusCode)
+		return fmt.Errorf("federation: idp returned status %d%s", resp.StatusCode, rejection(body))
 	}
 	if err := json.Unmarshal(body, out); err != nil {
 		return fmt.Errorf("federation: decoding idp response failed")
 	}
 	return nil
+}
+
+// rejection names the RFC 6749 §5.2 error code a refused token request answers
+// with, as " (code)" for a log line, or "". invalid_client says the client
+// authentication was refused (for Apple, the minted secret), invalid_grant the
+// code or its redirect_uri. Only that closed vocabulary is echoed, so nothing
+// else in the body reaches a log.
+func rejection(body []byte) string {
+	var e struct {
+		Error string `json:"error"`
+	}
+	if json.Unmarshal(body, &e) != nil {
+		return ""
+	}
+	switch e.Error {
+	case "invalid_request", "invalid_client", "invalid_grant", "unauthorized_client", "unsupported_grant_type", "invalid_scope":
+		return " (" + e.Error + ")"
+	}
+	return ""
 }
 
 // requireSafeURL parses rawURL and enforces the transport guard: http(s) only,

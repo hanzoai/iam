@@ -23,7 +23,9 @@ import "github.com/hanzoai/orm"
 // the IdP response (the IdP-leg PKCE verifier and, for OIDC, the nonce checked
 // against the id_token) and to RESUME the app-leg (the original authorize
 // parameters, so the callback mints an iam authorization code identical to the
-// one a password login mints). The row is burned on consume.
+// one a password login mints). The row is burned on consume. A form_post
+// provider's authorization code is held on a handoff row (Reply) for the minute
+// between its POST and the GET that redeems it.
 type FederationState struct {
 	orm.Model[FederationState]
 
@@ -67,6 +69,12 @@ type FederationState struct {
 	IdpVerifier string `json:"idpVerifier"`
 	IdpNonce    string `json:"idpNonce"`
 	BindHash    string `json:"bindHash"`
+
+	// Reply is a form_post provider's answer — its code, user and error fields,
+	// form-encoded — on the handoff row the callback's POST leg writes, so the GET
+	// that finishes reads it here and never from a URL. Empty on a row a begin
+	// leg writes.
+	Reply string `json:"reply,omitempty"`
 
 	// ExpireIn is the unix expiry; Used marks the transaction consumed so a
 	// replayed callback completes nothing.

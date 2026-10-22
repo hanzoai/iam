@@ -4,6 +4,7 @@
 package oidc
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/hanzoai/iam/pkg/schema"
@@ -147,6 +148,12 @@ func TestOfferableAppleNeedsItsKey(t *testing.T) {
 			ClientId2: "KEY1234567", ClientSecret2: key}, false},
 		{"no key id", schema.Provider{Type: "Apple", Category: "OAuth", ClientId: "ai.hanzo.id",
 			ClientSecret: "TEAM123456", ClientSecret2: key}, false},
+		{"placeholder team id", schema.Provider{Type: "Apple", Category: "OAuth", ClientId: "ai.hanzo.id",
+			ClientSecret: "your-team-id", ClientId2: "KEY1234567", ClientSecret2: key}, false},
+		{"placeholder key id", schema.Provider{Type: "Apple", Category: "OAuth", ClientId: "ai.hanzo.id",
+			ClientSecret: "TEAM123456", ClientId2: "KEY_ID", ClientSecret2: key}, false},
+		{"a PEM with escaped line breaks", schema.Provider{Type: "Apple", Category: "OAuth", ClientId: "ai.hanzo.id",
+			ClientSecret: "TEAM123456", ClientId2: "KEY1234567", ClientSecret2: strings.ReplaceAll(strings.TrimSpace(key), "\n", `\n`)}, true},
 	} {
 		if got := offerable(&tc.p); got != tc.want {
 			t.Errorf("%s: offerable = %v, want %v", tc.name, got, tc.want)

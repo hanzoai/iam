@@ -4,6 +4,7 @@
 package oidc
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -13,6 +14,7 @@ import (
 	"encoding/base64"
 	"encoding/pem"
 	"fmt"
+	"log"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -26,6 +28,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/sessions"
 	"github.com/hanzoai/iam/pkg/pkce"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
@@ -175,17 +178,71 @@ func seedAppleProvider(t *testing.T, db orm.DB, appClientID string, m *mockApple
 	linkProvider(t, db, appClientID, fedProvApple)
 }
 
-// applePost is the browser's form_post back from appleid.apple.com.
-func applePost(t *testing.T, app *zip.App, form url.Values, cookie string) *http.Response {
+// appleReply is the browser's form_post back from appleid.apple.com: a
+// cross-site, top-level POST navigation.
+func appleReply(t *testing.T, app *zip.App, form url.Values, cookie string) *http.Response {
 	t.Helper()
-	req := formReq("POST", PathFederationCallback, form)
+	req := navigate(formReq("POST", PathFederationCallback, form))
 	req.Header.Set("Origin", "https://appleid.apple.com")
-	req.Header.Set("Sec-Fetch-Site", "cross-site")
 	if cookie != "" {
 		req.Header.Set("Cookie", cookie)
 	}
 	resp, _ := do(t, app, req)
 	return resp
+}
+
+// handoffGet is the GET a browser makes following the callback's 303: the same
+// top-level navigation, still cross-site by its redirect chain, with the cookie.
+func handoffGet(t *testing.T, app *zip.App, loc, cookie string) *http.Response {
+	t.Helper()
+	u, err := url.Parse(loc)
+	if err != nil {
+		t.Fatalf("handoff location %q: %v", loc, err)
+	}
+	req := navigate(formReqNoBody("GET", u.RequestURI()))
+	if cookie != "" {
+		req.Header.Set("Cookie", cookie)
+	}
+	resp, _ := do(t, app, req)
+	return resp
+}
+
+// handoffOf returns the Location of the callback's 303 to its own GET.
+func handoffOf(t *testing.T, resp *http.Response) string {
+	t.Helper()
+	loc := resp.Header.Get("Location")
+	if resp.StatusCode != http.StatusSeeOther || !strings.HasPrefix(loc, "https://hanzo.id"+PathFederationCallback+"?") {
+		t.Fatalf("form_post answered %d %q, want a 303 to the callback", resp.StatusCode, loc)
+	}
+	return loc
+}
+
+// applePost is the form_post and, when the callback hands it to a GET, that GET.
+func applePost(t *testing.T, app *zip.App, form url.Values, cookie string) *http.Response {
+	t.Helper()
+	resp := appleReply(t, app, form, cookie)
+	if resp.StatusCode != http.StatusSeeOther {
+		return resp
+	}
+	return handoffGet(t, app, handoffOf(t, resp), cookie)
+}
+
+// cookieNamed is the cookie a response sets under name, or nil.
+func cookieNamed(resp *http.Response, name string) *http.Cookie {
+	for _, ck := range resp.Cookies() {
+		if ck.Name == name {
+			return ck
+		}
+	}
+	return nil
+}
+
+// appleAuthorize is the authorize request a "continue with Apple" button makes.
+func appleAuthorize() string {
+	return PathAuthorize + "?" + url.Values{
+		"response_type": {"code"}, "client_id": {"webapp"}, "redirect_uri": {testRedirect},
+		"state": {fedAppState}, "code_challenge": {pkce.Challenge(fedVerifier)}, "code_challenge_method": {"S256"}, "provider": {"apple"},
+	}.Encode()
 }
 
 // beginApple starts a sign-in through the Apple provider and binds the
@@ -234,10 +291,24 @@ func TestAppleSecret(t *testing.T) {
 	if _, err := appleKey(&schema.Provider{ClientSecret: appleTeam, ClientId2: appleKid, ClientSecret2: body}); err != nil {
 		t.Errorf("bare base64 body refused: %v", err)
 	}
+	// And as a PEM whose line breaks were written as the two characters \n, the
+	// way a JSON string or a one-line environment value carries them; the secret
+	// it mints verifies under the same public half.
+	escaped := &schema.Provider{ClientId: appleCID, ClientSecret: appleTeam, ClientId2: appleKid,
+		ClientSecret2: strings.ReplaceAll(strings.TrimSpace(p8(t, key)), "\n", `\n`)}
+	if s, err := appleSecret(escaped, appleIssuer, now); err != nil {
+		t.Errorf("a PEM with escaped line breaks refused: %v", err)
+	} else if _, err := jwt.Parse(s, func(*jwt.Token) (any, error) { return &key.PublicKey, nil },
+		jwt.WithValidMethods([]string{"ES256"}), jwt.WithTimeFunc(func() time.Time { return now })); err != nil {
+		t.Errorf("the escaped PEM minted a secret its public half does not verify: %v", err)
+	}
 
 	for name, bad := range map[string]*schema.Provider{
 		"no team id":    {ClientId2: appleKid, ClientSecret2: p8(t, key)},
 		"no key id":     {ClientSecret: appleTeam, ClientSecret2: p8(t, key)},
+		"a placeholder": {ClientSecret: "your-team-id", ClientId2: appleKid, ClientSecret2: p8(t, key)},
+		"lowercase":     {ClientSecret: appleTeam, ClientId2: strings.ToLower(appleKid), ClientSecret2: p8(t, key)},
+		"nine":          {ClientSecret: appleTeam[:9], ClientId2: appleKid, ClientSecret2: p8(t, key)},
 		"no key":        {ClientSecret: appleTeam, ClientId2: appleKid},
 		"not a key":     {ClientSecret: appleTeam, ClientId2: appleKid, ClientSecret2: "${APPLE_PRIVATE_KEY}"},
 		"an RSA key":    {ClientSecret: appleTeam, ClientId2: appleKid, ClientSecret2: p8(t, mustGenRSA(t))},
@@ -429,5 +500,187 @@ func TestIdpKindApple(t *testing.T) {
 	}
 	if appleName(`{"name":{"firstName":"Ada"}}`) != "Ada" || appleName("") != "" || appleName("{") != "" {
 		t.Fatal("appleName must read the name and nothing else")
+	}
+}
+
+// A form_post sign-in finishes on a GET. Apple's POST is cross-site, and a browser
+// keeps no session cookie from it, so the callback answers it with a 303 to its
+// own GET naming a single-use handoff bound to the same binding cookie; that GET
+// is a top-level navigation, and it mints the code and opens the session as
+// Google's GET does. Nothing Apple sent is in the URL, and the handoff answers
+// once, to the browser holding the binding.
+func TestFederation_AppleHandoff(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "webapp", signup: true, redirectURIs: []string{testRedirect}})
+	m := newMockApple(t)
+	seedAppleProvider(t, db, "webapp", m)
+
+	q, cookie := beginApple(t, app, m)
+	user := `{"name":{"firstName":"Grace","lastName":"Hopper"}}`
+	post := appleReply(t, app, url.Values{"state": {q.Get("state")}, "code": {"apple-code-h"}, "user": {user}}, cookie)
+	loc := handoffOf(t, post)
+	hq := mustQuery(t, loc)
+	if len(hq) != 1 || hq.Get("state") == "" || hq.Get("state") == q.Get("state") {
+		t.Fatalf("handoff URL %q must name a fresh id and nothing else", loc)
+	}
+	if strings.Contains(loc, "apple-code-h") || strings.Contains(loc, "Grace") {
+		t.Fatalf("handoff URL %q carries Apple's reply", loc)
+	}
+	if cookieNamed(post, sessions.CookieName) != nil {
+		t.Fatal("the cross-site POST set a session cookie")
+	}
+	bind := cookieNamed(post, fedCookieName)
+	if bind == nil || bind.Value != strings.TrimPrefix(cookie, fedCookieName+"=") || bind.MaxAge <= 0 {
+		t.Fatalf("the POST must keep the binding for its GET; Set-Cookie %+v", bind)
+	}
+
+	// An id never issued, the handoff without the binding cookie, and with
+	// another binding are refused, and none of them spends the handoff.
+	for name, r := range map[string]*http.Response{
+		"forged id":      handoffGet(t, app, PathFederationCallback+"?state=forged", cookie),
+		"no binding":     handoffGet(t, app, loc, ""),
+		"other binding":  handoffGet(t, app, loc, fedCookieName+"=not-the-secret"),
+		"original state": handoffGet(t, app, PathFederationCallback+"?"+url.Values{"state": {q.Get("state")}}.Encode(), cookie),
+	} {
+		if r.StatusCode != 400 {
+			t.Errorf("%s: answered %d %q", name, r.StatusCode, r.Header.Get("Location"))
+		}
+	}
+
+	// The GET finishes from the row: a code or error in its query is not Apple's.
+	resp := handoffGet(t, app, loc+"&code=forged&user=forged", cookie)
+	ret, _ := url.Parse(requireRedirect(t, resp, testRedirect+"?code="))
+	m.mu.Lock()
+	redeemed := m.tokenForm.Get("code")
+	m.mu.Unlock()
+	if redeemed != "apple-code-h" {
+		t.Fatalf("the GET redeemed %q, want the code Apple posted", redeemed)
+	}
+	session := cookieNamed(resp, sessions.CookieName)
+	if session == nil || session.Value == "" || !session.HttpOnly || !session.Secure {
+		t.Fatalf("an Apple sign-in must open the IdP session; Set-Cookie %v", resp.Cookies())
+	}
+	if u, _ := store.GetUserByConnector(context.Background(), db, "hanzo", "apple", m.sub); u == nil || u.DisplayName != "Grace Hopper" {
+		t.Fatalf("the account must carry the posted name; got %+v", u)
+	}
+	if tr, tok := exchangeCode(t, app, url.Values{
+		"code": {ret.Query().Get("code")}, "client_id": {"webapp"}, "redirect_uri": {testRedirect}, "code_verifier": {fedVerifier},
+	}); tr.StatusCode != 200 || tok["access_token"] == nil {
+		t.Fatalf("iam code exchange: %d %v", tr.StatusCode, tok)
+	}
+
+	// Single-use: the handoff and the state it replaced are both spent.
+	if r := handoffGet(t, app, loc, cookie); r.StatusCode != 400 {
+		t.Fatalf("a replayed handoff answered %d %q", r.StatusCode, r.Header.Get("Location"))
+	}
+	if r := appleReply(t, app, url.Values{"state": {q.Get("state")}, "code": {"apple-code-h"}}, cookie); r.StatusCode != 400 {
+		t.Fatalf("a replayed form_post answered %d %q", r.StatusCode, r.Header.Get("Location"))
+	}
+}
+
+// A handoff is answered by its GET alone and within handoffTTL, and Apple's
+// denial travels through it to the relying party.
+func TestFederation_AppleHandoffRefusals(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "webapp", signup: true, redirectURIs: []string{testRedirect}})
+	m := newMockApple(t)
+	seedAppleProvider(t, db, "webapp", m)
+	errorOf := func(resp *http.Response) string {
+		ret, _ := url.Parse(requireRedirect(t, resp, testRedirect))
+		return ret.Query().Get("error")
+	}
+
+	q, cookie := beginApple(t, app, m)
+	loc := handoffOf(t, appleReply(t, app, url.Values{"state": {q.Get("state")}, "code": {"c"}}, cookie))
+	if e := errorOf(appleReply(t, app, url.Values{"state": {mustQuery(t, loc).Get("state")}, "code": {"c2"}}, cookie)); e != "invalid_request" {
+		t.Fatalf("a POST of the handoff id: error %q, want invalid_request", e)
+	}
+	if r := handoffGet(t, app, loc, cookie); r.StatusCode != 400 {
+		t.Fatalf("the refused POST must spend the handoff; GET answered %d", r.StatusCode)
+	}
+
+	q, cookie = beginApple(t, app, m)
+	resp := applePost(t, app, url.Values{"state": {q.Get("state")}, "error": {"user_cancelled_authorize"}}, cookie)
+	if e := errorOf(resp); e != "access_denied" {
+		t.Fatalf("Apple's denial: error %q, want access_denied", e)
+	}
+
+	q, cookie = beginApple(t, app, m)
+	loc = handoffOf(t, appleReply(t, app, url.Values{"state": {q.Get("state")}, "code": {"c"}}, cookie))
+	nowFuncSet(t, time.Now().Add(handoffTTL+time.Second))
+	if r := handoffGet(t, app, loc, cookie); r.StatusCode != 400 {
+		t.Fatalf("an expired handoff answered %d %q", r.StatusCode, r.Header.Get("Location"))
+	}
+}
+
+// The begin leg sets its SameSite=None binding only on a top-level navigation. A
+// request the browser marks as an image, a frame, a script or a fetch is refused
+// before any state or cookie, so it cannot replace the binding of a sign-in
+// under way; that sign-in still completes.
+func TestFederation_AppleBeginsOnlyOnNavigation(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "webapp", signup: true, redirectURIs: []string{testRedirect}})
+	m := newMockApple(t)
+	seedAppleProvider(t, db, "webapp", m)
+
+	resp, _ := do(t, app, navigate(formReqNoBody("GET", appleAuthorize())))
+	if loc := resp.Header.Get("Location"); resp.StatusCode != 302 || !strings.HasPrefix(loc, m.URL+"/auth/authorize?") {
+		t.Fatalf("a top-level navigation must begin the sign-in; %d %q", resp.StatusCode, loc)
+	}
+	if ck := cookieNamed(resp, fedCookieName); ck == nil || ck.SameSite != http.SameSiteNoneMode {
+		t.Fatalf("a top-level navigation must set the SameSite=None binding; %+v", ck)
+	}
+
+	q, cookie := beginApple(t, app, m)
+	for dest, mode := range map[string]string{"image": "no-cors", "iframe": "navigate", "script": "no-cors", "empty": "cors"} {
+		req := formReqNoBody("GET", appleAuthorize())
+		req.Header.Set("Sec-Fetch-Site", "cross-site")
+		req.Header.Set("Sec-Fetch-Mode", mode)
+		req.Header.Set("Sec-Fetch-Dest", dest)
+		resp, _ := do(t, app, req)
+		if resp.StatusCode != 400 || resp.Header.Get("Set-Cookie") != "" || resp.Header.Get("Location") != "" {
+			t.Errorf("%s: answered %d, Location %q, Set-Cookie %q", dest, resp.StatusCode, resp.Header.Get("Location"), resp.Header.Get("Set-Cookie"))
+		}
+	}
+	requireRedirect(t, applePost(t, app, url.Values{"state": {q.Get("state")}, "code": {"c"}}, cookie), testRedirect+"?code=")
+}
+
+// A refused exchange is logged with its cause, the provider's OAuth error code
+// among it, and with no key material: here Apple holds a different key from the
+// one the row signs its secret with.
+func TestFederation_AppleExchangeFailureIsLogged(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "webapp", signup: true, redirectURIs: []string{testRedirect}})
+	m := newMockApple(t)
+	seedAppleProvider(t, db, "webapp", m)
+	prov, err := store.GetProvider(context.Background(), db, "admin", fedProvApple)
+	if err != nil || prov == nil {
+		t.Fatalf("provider: %v", err)
+	}
+	m.mu.Lock()
+	m.p8 = genP256(t)
+	m.mu.Unlock()
+
+	var buf bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(prev) })
+
+	q, cookie := beginApple(t, app, m)
+	ret, _ := url.Parse(requireRedirect(t, applePost(t, app, url.Values{"state": {q.Get("state")}, "code": {"c"}}, cookie), testRedirect))
+	if ret.Query().Get("error") != "access_denied" {
+		t.Fatalf("a refused secret: %q", ret)
+	}
+	line := buf.String()
+	if !strings.Contains(line, "federation: exchange: provider="+fedProvApple) || !strings.Contains(line, "status 400 (invalid_client)") {
+		t.Fatalf("the log does not name the cause: %q", line)
+	}
+	if strings.Contains(line, "PRIVATE KEY") || strings.Contains(line, "eyJ") {
+		t.Fatalf("the log carries key material: %q", line)
+	}
+	for _, l := range strings.Split(prov.ClientSecret2, "\n") {
+		if len(l) >= 16 && !strings.HasPrefix(l, "-----") && strings.Contains(line, l[:16]) {
+			t.Fatalf("the log carries the key: %q", line)
+		}
 	}
 }

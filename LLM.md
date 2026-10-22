@@ -1212,15 +1212,27 @@ none. The Provider row keeps the v1 mapping:
 
 - **The client secret is minted at each token exchange**: ES256 JWT, `aud` = the
   issuer as a string, five-minute life. `offerable` shows Apple only when
-  `appleKey` holds: Team ID, Key ID and a P-256 key that parses.
+  `appleKey` holds: a Team ID and a Key ID of exactly ten A-Z/0-9 characters, and
+  a P-256 key that parses (a PEM whose line breaks are the two characters `\n` is
+  read with real ones). A failed exchange is logged with its cause and the RFC
+  6749 error code (`invalid_client` = Apple refused the minted secret), never key
+  material.
 - **The return is a cross-site POST.** Asking for `name email` requires
   `response_mode=form_post`, so the callback answers POST for this dialect only
   and GET for every other (`posts`). A browser sends no SameSite=Lax cookie on a
   cross-site POST, so this leg's `__Host-hanzo_fed` is SameSite=None. That does not
   weaken it: the binding is the cookie's value hashed into the state row, and a
-  page that makes a browser POST here still lacks that browser's state.
-- **Lax cookies stay behind on that POST**, the MFA remember cookie among them, so
-  an Apple sign-in always asks an enrolled second factor.
+  page that makes a browser POST here still lacks that browser's state. A browser
+  keeps a None cookie from an image or a frame too, so authorize sets it only on
+  a top-level navigation (`topLevelNavigation`) and refuses anything else in place.
+- **The POST hands off to a GET** (`handoff`). `sessions.Open` sets nothing on a
+  cross-site POST (`fromIssuer`), so the POST proves state and binding, burns the
+  state, writes the transaction again under a fresh id with Apple's reply in
+  `FederationState.Reply`, and answers 303 to `callback?state=<id>`. That GET is a
+  top-level navigation: same binding cookie, one minute, single-use, and it reads
+  the reply from the row, never the URL. It exchanges, mints the code and opens
+  the session as Google's GET does, and carries the Lax cookies (MFA remember)
+  the POST could not.
 - **The identity is the id_token** (RS256 under Apple's JWKS): `sub`, `email`
   (possibly a private relay address), `email_verified` as bool or string. The
   `user` form field arrives on the first authorization only and is unsigned; it
