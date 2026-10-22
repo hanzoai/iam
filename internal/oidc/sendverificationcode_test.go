@@ -312,3 +312,103 @@ func TestAmbiguousAddressLeaksNothing(t *testing.T) {
 		}
 	}
 }
+
+// landing answers only a registered redirect URI, and only at the exact origin the
+// request came from.
+func TestLanding(t *testing.T) {
+	app := &schema.Application{RedirectUris: []string{
+		"hanzo://oauth/hanzo",
+		"http://localhost:3000/callback",
+		"https://hanzo.ai/auth/callback",
+		"https://hanzo.ai/second",
+		"https://app.hanzo.ai:8443/cb#stale",
+	}}
+	for _, tc := range []struct{ name, origin, want string }{
+		{"match", "https://hanzo.ai", "https://hanzo.ai/auth/callback"},
+		{"no origin", "", ""},
+		{"null origin", "null", ""},
+		{"unregistered origin", "https://evil.example", ""},
+		{"sibling host", "https://www.hanzo.ai", ""},
+		{"scheme mismatch", "http://hanzo.ai", ""},
+		{"port mismatch", "https://hanzo.ai:8443", ""},
+		{"explicit default port", "https://hanzo.ai:443", ""},
+		{"port match, fragment cut", "https://app.hanzo.ai:8443", "https://app.hanzo.ai:8443/cb"},
+		{"http registered", "http://localhost:3000", "http://localhost:3000/callback"},
+		{"custom scheme never matches", "hanzo://oauth", ""},
+		{"origin with a path", "https://hanzo.ai/", ""},
+		{"origin with userinfo", "https://x@hanzo.ai", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := landing(app, tc.origin); got != tc.want {
+				t.Errorf("landing(%q) = %q, want %q", tc.origin, got, tc.want)
+			}
+		})
+	}
+}
+
+// An email sent from a page at a registered origin carries the link; the same send
+// with no Origin, an unregistered one, or over SMS is today's message exactly.
+func TestSendVerificationCode_Link(t *testing.T) {
+	plain := func(code string) string {
+		return "Your verification code is " + code + ". It expires in 10 minutes. " +
+			"If you did not request it, ignore this message and do not share it with anyone."
+	}
+	for _, tc := range []struct {
+		name, origin, typ, dest string
+		link                    bool
+	}{
+		{"registered origin", "https://hanzo.ai", "email", "alice@hanzo.ai", true},
+		{"no origin", "", "email", "alice@hanzo.ai", false},
+		{"unregistered origin", "https://evil.example", "email", "alice@hanzo.ai", false},
+		{"phone", "https://hanzo.ai", "phone", "+14155550134", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sender := &fakeSender{}
+			bindSender(t, sender)
+			app, db := newServer(t)
+			seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{
+				"hanzo://oauth/hanzo", "https://hanzo.ai/auth/callback#old",
+			}})
+			seedOrg(t, db, "hanzo")
+			seedRichUser(t, db)
+			seedPhoneUser(t, db, "carol", "+14155550134")
+
+			req := multipartReq(PathVerificationCodes, map[string]string{
+				"dest": tc.dest, "type": tc.typ, "applicationId": "admin/conf",
+			})
+			if tc.origin != "" {
+				req.Header.Set("Origin", tc.origin)
+			}
+			resp, raw := do(t, app, req)
+			if env := decode(t, raw); resp.StatusCode != 200 || env["status"] != "ok" {
+				t.Fatalf("status=%d env=%v, want 200 ok", resp.StatusCode, env)
+			}
+			if len(sender.sent) != 1 {
+				t.Fatalf("sender saw %d deliveries, want 1", len(sender.sent))
+			}
+			m := sender.sent[0]
+			rec, err := store.GetLatestVerificationRecord(context.Background(), db, "hanzo", otp.Receiver(tc.dest))
+			if err != nil || rec == nil {
+				t.Fatalf("no record filed: %v", err)
+			}
+			code := rec.Code
+
+			if !tc.link {
+				if m.Body != plain(code) {
+					t.Errorf("body = %q, want the plain message", m.Body)
+				}
+				if tc.typ == "email" && m.Subject != "Your verification code" {
+					t.Errorf("subject = %q", m.Subject)
+				}
+				return
+			}
+			want := "Sign in with this link:\n" +
+				"https://hanzo.ai/auth/callback#code=" + code + "&email=alice%40hanzo.ai\n\n" +
+				"Or enter this code: " + code + "\n\n" +
+				"It expires in 10 minutes. If you did not request it, ignore this message and do not share it with anyone."
+			if m.Subject != "Your sign-in link" || m.Body != want {
+				t.Errorf("sent subject %q body\n%q\nwant\n%q", m.Subject, m.Body, want)
+			}
+		})
+	}
+}
