@@ -5,13 +5,16 @@ package oidc
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/httpx"
+	"github.com/hanzoai/iam/internal/sessions"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -24,29 +27,35 @@ import (
 // second account instead of a link, and after any unlink, re-linking needed that
 // same coincidence, which they cannot arrange from a settings page.
 //
-// It runs the SAME federation transaction a sign-in runs — one begin, one IdP leg,
-// one callback, one burn — and differs in exactly one field: the transaction
+// It runs the SAME federation transaction a sign-in runs — one IdP leg, one
+// callback, one burn — and differs in exactly one field: the transaction
 // carries the caller's Subject, so the callback ATTACHES the verified provider
 // identity to that account instead of resolving one. No second IdP round-trip
 // exists to keep in step with the first.
 //
-// WHY IT IS A POST AND NOT A LINK IN A PAGE. Attaching a provider to a signed-in
-// account is an account takeover if an attacker can cause it: their identity, your
-// account, and afterwards they sign in as you. A top-level GET is exactly what an
-// attacker can cause (a Lax cookie rides a navigation), so INTENT has to be proven
-// by a request their page cannot make — a same-site JSON POST that authenticates
-// as the account it will act on. That is why the callback must never attach to a
-// live session on its own, however convenient that would be.
+// A sign-in method outlives every token, so adding one takes two proofs, one per
+// leg, and neither leg alone attaches anything:
+//
+//   - INTENT, by the POST: a request no other page can make, from the person on
+//     the issuer (a session this request may spend) or from one of the platform's
+//     own applications (PlatformBearer). A top-level GET cannot prove it — a Lax
+//     cookie rides any navigation another page starts — which is why the callback
+//     never attaches to a live session on its own.
+//   - PRESENCE, by the GET: the browser that runs the provider leg is a top-level
+//     navigation holding the person's own session here. The browser binding is set
+//     on that navigation, as a sign-in's is on its authorize navigation, so the
+//     POST's answer carries neither the provider-leg state nor its binding.
 
-// PathLink is the canonical begin-a-link endpoint.
+// PathLink is the link endpoint: POST starts a link, GET carries it into the
+// browser of the person it is for.
 const PathLink = "/v1/iam/link"
 
-// routeLink registers POST /v1/iam/link on the PUBLIC group. Like unlink it
-// SELF-AUTHENTICATES through callerOf (session cookie, else a verified bearer):
-// an oidc handler cannot import authz, and a caller callerOf cannot resolve is
-// refused.
+// routeLink registers both legs of a link on the PUBLIC group. Each
+// SELF-AUTHENTICATES — the POST through linker, the GET through the session the
+// browser holds — because an oidc handler cannot import authz.
 func routeLink(r *zip.Group, db orm.DB) {
 	r.Raw(http.MethodPost, PathLink, link(db))
+	r.Raw(http.MethodGet, PathLink, follow(db))
 }
 
 // linkForm is the request body: which provider to connect, and where to return the
@@ -65,8 +74,10 @@ type linkForm struct {
 }
 
 // link starts connecting another sign-in identity to the account you are already
-// signed in as. It answers with the provider's URL for the browser to follow; when
-// the provider returns, that identity is attached and you come back to returnUri.
+// signed in as. It answers with an address for your browser to open; from there
+// you go to the provider, and when it returns, that identity is attached and you
+// come back to returnUri. Only the browser where you are signed in here can carry
+// a link through.
 //
 // Your account is fixed here, from the credential you are already holding, and is
 // carried server-side for the rest of the round-trip — so nothing that happens at
@@ -78,7 +89,10 @@ func link(db orm.DB) zip.Handler {
 			return httpx.Err(c, "invalid request body")
 		}
 		ctx := c.Context()
-		owner, name, err := callerOf(ctx, c, db)
+		owner, name, err := linker(ctx, c, db)
+		if errors.Is(err, ErrNotPlatform) {
+			return httpx.Fail(c, http.StatusForbidden, err.Error(), "")
+		}
 		if err != nil {
 			return refuseCaller(c, err, "Please login first")
 		}
@@ -122,63 +136,126 @@ func link(db orm.DB) zip.Handler {
 			return httpx.Err(c, "this provider is already connected to your account")
 		}
 
-		st, secret, err := newFederationState(ctx, db, prov, app, owner+"/"+name, f.ReturnUri, nowFunc())
+		st, err := newFederationState(prov, app.ClientId, owner+"/"+name, f.ReturnUri, nowFunc())
 		if err != nil {
 			return httpx.Err(c, "server_error")
 		}
-		callback, err := federationCallbackURL(c)
+		base, err := federationBaseURL(c)
 		if err != nil {
 			return httpx.Fail(c, http.StatusInternalServerError, "server_error", "")
-		}
-		idpURL, err := idpAuthorizeURL(ctx, prov, st, callback)
-		if err != nil {
-			return httpx.Err(c, "the identity provider is unavailable")
 		}
 		if err := persist(ctx, db, st, nowFunc()); err != nil {
 			return httpx.Err(c, "server_error")
 		}
-		setBindCookie(c, secret, prov)
 		// The browser navigates to this; the endpoint does not redirect, because the
 		// caller is a page making a request, not a navigation.
-		return httpx.Ok(c, idpURL)
+		return httpx.Ok(c, base+PathLink+"?"+url.Values{"state": {st.Name}}.Encode())
+	}
+}
+
+// linker is who a link acts for: the person on the issuer, by a session this
+// request may spend, or the account a bearer issued to one of the platform's own
+// applications names (PlatformBearer). A bearer any other application holds starts
+// no link and answers ErrNotPlatform.
+func linker(ctx context.Context, c *zip.Ctx, db orm.DB) (owner, name string, err error) {
+	if bearer := httpx.Bearer(c); bearer != "" {
+		if sc, _ := sessions.Writer(ctx, c.Fiber(), db); sc == nil {
+			if _, _, err := PlatformBearer(ctx, db, bearer); err != nil {
+				return "", "", err
+			}
+		}
+	}
+	return callerOf(ctx, c, db)
+}
+
+// follow continues a link in the browser of the person it is for: the browser
+// opens the address POST /v1/iam/link answered, as a top-level navigation, signed
+// in here as that person, and is sent on to the provider.
+//
+// The address works once. The provider leg runs on a fresh transaction, bound to
+// this browser by a cookie set on this navigation, so that transaction and its
+// binding exist only here.
+func follow(db orm.DB) zip.Handler {
+	return func(c *zip.Ctx) error {
+		ctx := c.Context()
+		now := nowFunc()
+		begun, err := store.GetFederationState(ctx, db, param(c, "state"))
+		if err != nil {
+			return authorizeUserError(c, "internal error")
+		}
+		// Only a transaction link minted that no browser has opened yet: a sign-in's
+		// names no subject, and an opened one carries its binding.
+		if begun == nil || begun.Subject == "" || begun.BindHash != "" {
+			return authorizeUserError(c, "this link is not one we issued — start again")
+		}
+		if !topLevelNavigation(c) || !signedInHere(c, db, begun.Subject) {
+			return authorizeUserError(c, "sign in here as the account you are connecting, then start again")
+		}
+		if _, err := store.BurnFederationState(ctx, db, begun.Name, now); err != nil {
+			if errors.Is(err, store.ErrFederationConsumed) {
+				return authorizeUserError(c, "this link was already used or has expired — start again")
+			}
+			return authorizeUserError(c, "internal error")
+		}
+		prov, err := store.GetProvider(ctx, db, begun.Owner, begun.Provider)
+		if err != nil || prov == nil {
+			return authorizeUserError(c, "the identity provider is unavailable")
+		}
+		st, err := newFederationState(prov, begun.ClientId, begun.Subject, begun.RedirectUri, now)
+		if err != nil {
+			return authorizeUserError(c, "internal error")
+		}
+		secret, err := newOpaqueToken()
+		if err != nil {
+			return authorizeUserError(c, "internal error")
+		}
+		st.BindHash = hashToken(secret)
+		callback, err := federationCallbackURL(c)
+		if err != nil {
+			return authorizeUserError(c, "internal error")
+		}
+		idpURL, err := idpAuthorizeURL(ctx, prov, st, callback)
+		if err != nil {
+			return authorizeUserError(c, "the identity provider is unavailable")
+		}
+		if err := persist(ctx, db, st, now); err != nil {
+			return authorizeUserError(c, "internal error")
+		}
+		setBindCookie(c, secret, prov)
+		return c.Redirect(302, idpURL)
 	}
 }
 
 // newFederationState mints a transaction for a LINK: the same single-use,
-// browser-bound, expiring row a sign-in mints, carrying the caller's subject and
-// the return target in place of an app-leg authorize request. Returns the row and
-// the bind secret to set as the cookie; the row is NOT persisted here, so a
-// discovery failure leaves no orphan.
-func newFederationState(ctx context.Context, db orm.DB, prov *schema.Provider, app *schema.Application, subject, returnUri string, now time.Time) (*schema.FederationState, string, error) {
+// expiring row a sign-in mints, carrying the caller's subject and the return
+// target in place of an app-leg authorize request. It is bound to no browser:
+// follow sets the binding on the transaction the provider leg runs on. The row is
+// NOT persisted here.
+func newFederationState(prov *schema.Provider, clientID, subject, returnUri string, now time.Time) (*schema.FederationState, error) {
 	state, err := newOpaqueToken()
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	verifier, err := newOpaqueToken()
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	nonce, err := newOpaqueToken()
 	if err != nil {
-		return nil, "", err
-	}
-	secret, err := newOpaqueToken()
-	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	return &schema.FederationState{
 		Owner:       providerOwner(prov),
 		Name:        state,
 		CreatedTime: now.UTC().Format(time.RFC3339),
 		Provider:    prov.Name,
-		ClientId:    app.ClientId,
+		ClientId:    clientID,
 		RedirectUri: returnUri,
 		Subject:     subject,
 		IdpVerifier: verifier,
 		IdpNonce:    nonce,
-		BindHash:    hashToken(secret),
 		ExpireIn:    now.Add(fedStateTTL).Unix(),
-	}, secret, nil
+	}, nil
 }
 
 // attach stamps a verified provider subject onto the account the transaction was
