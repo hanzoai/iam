@@ -52,6 +52,9 @@ func init() {
 	zip.Describe("github.com/hanzoai/iam/internal/oidc GET /v1/iam/consent", zip.Doc{
 		Description: "Returns the calling person's own privacy and communication\nchoices. Somebody who has never set them gets the defaults rather than\nnothing, so a consent screen always has something to show — insights on, and\ntraining UNANSWERED, which is the state that means the screen still has to ask.",
 	})
+	zip.Describe("github.com/hanzoai/iam/internal/oidc GET /v1/iam/link", zip.Doc{
+		Description: "Continues a link in the browser of the person it is for: the browser\nopens the address POST /v1/iam/link answered, as a top-level navigation, signed\nin here as that person, and is sent on to the provider.\n\nThe address works once. The provider leg runs on a fresh transaction, bound to\nthis browser by a cookie set on this navigation, so that transaction and its\nbinding exist only here.",
+	})
 	zip.Describe("github.com/hanzoai/iam/internal/oidc GET /v1/iam/linked-accounts", zip.Doc{
 		Description: "Returns the sign-in identities linked to the calling\nperson's account — every provider they can currently sign in with. It is what\na security page lists next to the option to disconnect one.",
 	})
@@ -112,7 +115,7 @@ func init() {
 		},
 	})
 	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/link", zip.Doc{
-		Description: "Starts connecting another sign-in identity to the account you are already\nsigned in as. It answers with the provider's URL for the browser to follow; when\nthe provider returns, that identity is attached and you come back to returnUri.\n\nYour account is fixed here, from the credential you are already holding, and is\ncarried server-side for the rest of the round-trip — so nothing that happens at\nthe provider can point the link at somebody else.",
+		Description: "Starts connecting another sign-in identity to the account you are already\nsigned in as. It answers with an address for your browser to open; from there\nyou go to the provider, and when it returns, that identity is attached and you\ncome back to returnUri. Only the browser where you are signed in here can carry\na link through.\n\nYour account is fixed here, from the credential you are already holding, and is\ncarried server-side for the rest of the round-trip — so nothing that happens at\nthe provider can point the link at somebody else.",
 	})
 	zip.Describe("github.com/hanzoai/iam/internal/oidc POST /v1/iam/login", zip.Doc{
 		Description: "Signs a person in with the credential they typed, and — when the\nrequest is part of an OAuth flow — hands back the one-time code that finishes\nit. A second factor, if the account has one, is asked for and required here.\n\nThe password is compared against a stored one-way hash and is never logged,\nechoed or stored as typed.",

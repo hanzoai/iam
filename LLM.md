@@ -1043,6 +1043,29 @@ any of it: one `proveFactor` verifies a challenge answer for both the password a
 federated resume, and the challenge row carries the factors it was minted OFFERING so
 an answer is checked against that offer rather than recomputed.
 
+## Linking a provider — intent from the issuer or the platform, presence in the browser
+
+A sign-in method outlives every token, so `/v1/iam/link` (`internal/oidc/federation_link.go`)
+takes one proof per leg, and neither leg alone attaches anything:
+
+1. `POST /v1/iam/link` `{provider, clientId, returnUri}` — INTENT. The caller is the
+   person on the issuer (a session this request may spend, `sessions.Writer`) or
+   a bearer `PlatformBearer` accepts: an access token issued to an application
+   init_data.json declares under `admin` (`schema.Application.Platform`;
+   hanzo-console, hanzo-app, hanzo-ai, lux-cloud, … are). Any other application's
+   bearer is 403 `ErrNotPlatform`. It answers `<sign-in origin>/v1/iam/link?state=<t>`
+   and sets no cookie.
+2. `GET /v1/iam/link?state=<t>` — PRESENCE. A top-level navigation from a browser
+   holding that person's session here (`signedInHere`). It spends `t`, mints the
+   provider-leg transaction (fresh state, nonce, PKCE) and sets `__Host-hanzo_fed`
+   on this navigation, as authorize does for a sign-in, then 302s to the provider.
+   The callback refuses `t` itself: it carries no binding.
+
+Callers: `hanzoai/id` `pkgs/auth` `createAccountClient().link()` (hanzo.id
+account → Security) POSTs same-origin with the session cookie plus a hanzo-console
+bearer and navigates to the answer. `@hanzo/iam`, hanzo.ai and `@hanzo/rooms` do
+not call it. Pinned by `TestLink_*`.
+
 ## A wallet is a sign-in method, and the account's DID is derived from `sub`
 
 A person links a wallet once, here, and every app reads it as a claim. Three
