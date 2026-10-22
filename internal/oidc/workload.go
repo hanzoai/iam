@@ -95,6 +95,7 @@ type assertionClaims struct {
 	RepositoryOwner   string `json:"repository_owner"`
 	RepositoryOwnerID string `json:"repository_owner_id"`
 	Repository        string `json:"repository"`
+	RepositoryID      string `json:"repository_id"`
 	Ref               string `json:"ref"`
 }
 
@@ -572,7 +573,7 @@ func repositories() (map[string]repository, error) {
 // written for.
 func repositoryApp(claims *assertionClaims, repos map[string]repository) (string, string, error) {
 	owner, repo := claims.RepositoryOwner, claims.Repository
-	if owner == "" || !strings.HasPrefix(repo, owner+"/") || !strings.HasPrefix(claims.Subject, "repo:"+repo+":") {
+	if owner == "" || !strings.HasPrefix(repo, owner+"/") || !namesRepository(claims) {
 		return "", "", errors.New("the assertion does not name a repository")
 	}
 	for _, key := range []string{repo + "@" + claims.Ref, repo, owner} {
@@ -586,6 +587,27 @@ func repositoryApp(claims *assertionClaims, repos map[string]repository) (string
 		return r.Org, r.Org + "-" + r.App, nil
 	}
 	return "", "", fmt.Errorf("no CI application is configured for the repository %s", repo)
+}
+
+// namesRepository reports whether the run's subject is the repository its claims
+// name, in either spelling GitHub signs: `repo:<owner>/<name>:…`, or the
+// immutable `repo:<owner>@<owner id>/<name>@<repository id>:…`, whose ids must
+// be the ones the token states — the spelling a run of hanzo-inc/app carries.
+func namesRepository(claims *assertionClaims) bool {
+	rest, ok := strings.CutPrefix(claims.Subject, "repo:")
+	if !ok {
+		return false
+	}
+	who, _, ok := strings.Cut(rest, ":")
+	if !ok {
+		return false
+	}
+	if who == claims.Repository {
+		return true
+	}
+	name := strings.TrimPrefix(claims.Repository, claims.RepositoryOwner+"/")
+	return claims.RepositoryOwnerID != "" && claims.RepositoryID != "" &&
+		who == claims.RepositoryOwner+"@"+claims.RepositoryOwnerID+"/"+name+"@"+claims.RepositoryID
 }
 
 // grantsSupported is the grant list discovery advertises. Every entry is

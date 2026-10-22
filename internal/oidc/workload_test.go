@@ -832,6 +832,73 @@ func TestWorkload_refusesAGitHubRunFromAnotherAccount(t *testing.T) {
 	}
 }
 
+// immutableRun signs a run token whose subject is GitHub's immutable spelling,
+// `repo:<owner>@<owner id>/<name>@<repository id>:ref:<ref>`, with sub naming
+// subOwnerID and subRepoID while the claims carry ownerID and repoID.
+func (c *fakeCluster) immutableRun(t *testing.T, kid, repo, ref, ownerID, repoID, subOwnerID, subRepoID string) string {
+	t.Helper()
+	now := nowFunc()
+	owner, name, _ := strings.Cut(repo, "/")
+	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, assertionClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    c.iss,
+			Subject:   "repo:" + owner + "@" + subOwnerID + "/" + name + "@" + subRepoID + ":ref:" + ref,
+			Audience:  jwt.ClaimStrings{audience()},
+			IssuedAt:  jwt.NewNumericDate(now.Add(-time.Minute)),
+			NotBefore: jwt.NewNumericDate(now.Add(-time.Minute)),
+			ExpiresAt: jwt.NewNumericDate(now.Add(5 * time.Minute)),
+		},
+		RepositoryOwner:   owner,
+		RepositoryOwnerID: ownerID,
+		Repository:        repo,
+		RepositoryID:      repoID,
+		Ref:               ref,
+	})
+	tok.Header["kid"] = kid
+	s, err := tok.SignedString(sharedKey(t))
+	if err != nil {
+		t.Fatalf("sign run token: %v", err)
+	}
+	return s
+}
+
+// GitHub signs a run's subject with the account's and the repository's ids
+// beside their names — a hanzo-inc/app run carries
+// `repo:hanzo-inc@308927965/app@1345862086:ref:refs/heads/main` — and a run so
+// spelled speaks for its repository like any other. Ids in the subject that are
+// not the ones the token states name no repository.
+func TestWorkload_aGitHubRunSpelledWithIdsSpeaks(t *testing.T) {
+	gh := newGitHub(t, "gh-key-1")
+	gh.trust(t, nil)
+	trustRepos(t, map[string]repository{"hanzo-inc": {Org: "hanzo", App: "ci", OwnerID: "308927965"}})
+	app, db := newServer(t)
+	serviceApp(t, db, "hanzo-ci")
+
+	const owner, repo = "308927965", "1345862086"
+	status, tok := present(t, app, gh.immutableRun(t, "gh-key-1", "hanzo-inc/app", "refs/heads/main", owner, repo, owner, repo), nil)
+	if status != 200 {
+		t.Fatalf("status = %d; body=%v", status, tok)
+	}
+	claims, err := verifyToken(context.Background(), db, tok["access_token"].(string))
+	if err != nil {
+		t.Fatalf("minted token does not verify: %v", err)
+	}
+	if claims.Owner != "hanzo" || claims.Azp != "hanzo-ci" {
+		t.Errorf("owner/azp = %q/%q, want hanzo/hanzo-ci", claims.Owner, claims.Azp)
+	}
+
+	for _, run := range []string{
+		gh.immutableRun(t, "gh-key-1", "hanzo-inc/app", "refs/heads/main", owner, repo, owner, "7"),  // another repository's id
+		gh.immutableRun(t, "gh-key-1", "hanzo-inc/app", "refs/heads/main", owner, repo, "999", repo), // another account's id
+		gh.immutableRun(t, "gh-key-1", "hanzo-inc/app", "refs/heads/main", owner, "", owner, ""),     // no repository id stated
+	} {
+		status, tok := present(t, app, run, nil)
+		if status != 403 || tok["error"] != "unauthorized_client" {
+			t.Errorf("status/error = %d/%v, want 403 unauthorized_client", status, tok["error"])
+		}
+	}
+}
+
 // A run's token names the audience it was asked for. One asked for another
 // relying party cannot be spent here.
 func TestWorkload_refusesAGitHubRunForAnotherAudience(t *testing.T) {
