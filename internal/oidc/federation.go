@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	policy "github.com/hanzoai/authz"
@@ -76,6 +77,20 @@ const fedStateTTL = 10 * time.Minute
 // handoffTTL bounds the row a form_post reply is handed to a GET on (handoff).
 // The browser follows the 303 at once, so it only has to outlive that hop.
 const handoffTTL = time.Minute
+
+// replyLimits bounds each field of a form_post reply a handoff row holds, in
+// bytes. Apple's code is under a hundred characters, its error a short token, and
+// its user a name and an address. A field past its bound is refused, never cut,
+// since a cut code or profile is a different one.
+var replyLimits = map[string]int{"code": 512, "error": 256, "user": 1024}
+
+// purgeBatch bounds the rows one sweep deletes, so a sweep's cost in the request
+// that runs it is fixed however large a backlog is; the next sweep continues it.
+const purgeBatch = 100
+
+// swept is the unix second this process last swept expired federation
+// transactions (sweep).
+var swept atomic.Int64
 
 // routeFederation registers the IdP callback on the PUBLIC group r, by both of the
 // ways a provider returns: a top-level GET redirect (Google, GitHub), and a
@@ -177,7 +192,7 @@ func beginFederation(c *zip.Ctx, db orm.DB, app *schema.Application, q authorize
 	if err != nil {
 		return authorizeErrorRedirect(c, q, "temporarily_unavailable", "the identity provider is unavailable")
 	}
-	if err := store.PersistFederationState(ctx, db, st); err != nil {
+	if err := persist(ctx, db, st, now); err != nil {
 		return authorizeErrorRedirect(c, q, "server_error", "")
 	}
 	setBindCookie(c, bindSecret, prov)
@@ -197,7 +212,13 @@ func federationCallbackHandler(db orm.DB) zip.Handler {
 		ctx := c.Context()
 		now := nowFunc()
 
-		state := param(c, "state")
+		// A form_post reply is the body of its POST and nothing else (OAuth 2.0 Form
+		// Post Response Mode); a redirect's is its query.
+		read := param
+		if c.Method() == http.MethodPost {
+			read = formOnly
+		}
+		state := read(c, "state")
 		if state == "" {
 			return authorizeUserError(c, "missing state")
 		}
@@ -395,14 +416,47 @@ func handoff(c *zip.Ctx, db orm.DB, st *schema.FederationState, prov *schema.Pro
 	h.Used = false
 	// Every key is named, so the encoding is never empty and an empty Reply always
 	// means a row no POST wrote.
-	h.Reply = url.Values{"code": {param(c, "code")}, "user": {param(c, "user")}, "error": {param(c, "error")}}.Encode()
-	if err := store.PersistFederationState(c.Context(), db, &h); err != nil {
+	reply := url.Values{}
+	for k, limit := range replyLimits {
+		v := formOnly(c, k)
+		if len(v) > limit {
+			return fedErrorRedirect(c, st, "invalid_request", "the identity provider's reply is too large")
+		}
+		reply.Set(k, v)
+	}
+	h.Reply = reply.Encode()
+	if err := persist(c.Context(), db, &h, now); err != nil {
 		return fedFault(c, st, "handoff", err)
 	}
 	// The GET presents the same binding, so the cookie is set again in place of
 	// the clear the burn queued.
 	setBindCookie(c, bind, prov)
 	return c.Redirect(http.StatusSeeOther, joinQuery(callback, url.Values{"state": {id}}))
+}
+
+// persist writes a federation transaction, then sweeps the expired ones. Every
+// writer goes through it, so the rows each one adds are the rows it clears.
+func persist(ctx context.Context, db orm.DB, st *schema.FederationState, now time.Time) error {
+	if err := store.PersistFederationState(ctx, db, st); err != nil {
+		return err
+	}
+	sweep(ctx, db, now)
+	return nil
+}
+
+// sweep deletes up to purgeBatch federation transactions that expired more than
+// fedStateTTL ago, at most once per handoffTTL in this process: nothing else
+// removes one. The grace keeps a recently spent or expired link answering as
+// such, since the callback tells those apart from one never issued. A failure
+// is logged and leaves the rows to the next sweep.
+func sweep(ctx context.Context, db orm.DB, now time.Time) {
+	last := swept.Load()
+	if now.Unix()-last < int64(handoffTTL/time.Second) || !swept.CompareAndSwap(last, now.Unix()) {
+		return
+	}
+	if _, err := store.PurgeFederationStates(ctx, db, now.Add(-fedStateTTL), purgeBatch); err != nil {
+		log.Printf("federation: sweep: %v", err)
+	}
 }
 
 // fedResumeParams is the ORIGINAL iam authorize request, pinned server-side so

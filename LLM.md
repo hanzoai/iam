@@ -1232,7 +1232,14 @@ none. The Provider row keeps the v1 mapping:
   top-level navigation: same binding cookie, one minute, single-use, and it reads
   the reply from the row, never the URL. It exchanges, mints the code and opens
   the session as Google's GET does, and carries the Lax cookies (MFA remember)
-  the POST could not.
+  the POST could not. The POST reads state and reply from its body only, and a
+  `code`, `error` or `user` past 512, 256 or 1024 bytes (`replyLimits`) is
+  refused, never cut.
+- **Federation rows are swept on write.** Begin, link and handoff all write through
+  `persist`, whose `sweep` deletes up to 100 rows that expired more than
+  `fedStateTTL` ago (`store.PurgeFederationStates`), at most once a minute per
+  process. Nothing else deletes a federation row. The grace keeps a spent or
+  expired link answering as such rather than as unknown.
 - **The identity is the id_token** (RS256 under Apple's JWKS): `sub`, `email`
   (possibly a private relay address), `email_verified` as bool or string. The
   `user` form field arrives on the first authorization only and is unsigned; it

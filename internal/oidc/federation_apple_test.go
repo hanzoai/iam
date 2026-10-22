@@ -684,3 +684,108 @@ func TestFederation_AppleExchangeFailureIsLogged(t *testing.T) {
 		}
 	}
 }
+
+// A handoff row holds Apple's reply only within bounds: a field past its bound
+// refuses the reply rather than storing or cutting it, and one at its bound is
+// handed off.
+func TestFederation_AppleReplyBounds(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "webapp", signup: true, redirectURIs: []string{testRedirect}})
+	m := newMockApple(t)
+	seedAppleProvider(t, db, "webapp", m)
+
+	for k, limit := range replyLimits {
+		q, cookie := beginApple(t, app, m)
+		form := url.Values{"state": {q.Get("state")}, "code": {"c"}}
+		form.Set(k, strings.Repeat("a", limit+1))
+		ret, _ := url.Parse(requireRedirect(t, appleReply(t, app, form, cookie), testRedirect))
+		if ret.Query().Get("error") != "invalid_request" {
+			t.Errorf("%s over its bound: %q, want invalid_request", k, ret)
+		}
+	}
+	n, err := orm.TypedQuery[schema.FederationState](db).Count(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := len(replyLimits); n != want {
+		t.Fatalf("%d federation rows, want the %d begin rows and no handoff", n, want)
+	}
+
+	q, cookie := beginApple(t, app, m)
+	user := strings.Repeat("a", replyLimits["user"])
+	handoffOf(t, appleReply(t, app, url.Values{"state": {q.Get("state")}, "code": {"c"}, "user": {user}}, cookie))
+}
+
+// The POST leg reads Apple's reply from its body alone: a state, code or user
+// in the POST's query is not one Apple sent.
+func TestFederation_ApplePostReadsTheBody(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "webapp", signup: true, redirectURIs: []string{testRedirect}})
+	m := newMockApple(t)
+	seedAppleProvider(t, db, "webapp", m)
+
+	q, cookie := beginApple(t, app, m)
+	req := navigate(formReq("POST", PathFederationCallback+"?"+url.Values{"state": {q.Get("state")}}.Encode(), url.Values{"code": {"c"}}))
+	req.Header.Set("Cookie", cookie)
+	if resp, _ := do(t, app, req); resp.StatusCode != 400 {
+		t.Fatalf("a state in the POST's query answered %d %q", resp.StatusCode, resp.Header.Get("Location"))
+	}
+
+	req = navigate(formReq("POST", PathFederationCallback+"?"+url.Values{"code": {"forged"}, "user": {`{"name":{"firstName":"Forged"}}`}}.Encode(),
+		url.Values{"state": {q.Get("state")}, "code": {"apple-code-b"}}))
+	req.Header.Set("Cookie", cookie)
+	post, _ := do(t, app, req)
+	requireRedirect(t, handoffGet(t, app, handoffOf(t, post), cookie), testRedirect+"?code=")
+	m.mu.Lock()
+	redeemed := m.tokenForm.Get("code")
+	m.mu.Unlock()
+	if redeemed != "apple-code-b" {
+		t.Fatalf("redeemed %q, want the code in the body", redeemed)
+	}
+	if u, _ := store.GetUserByConnector(context.Background(), db, "hanzo", "apple", m.sub); u == nil || u.DisplayName == "Forged" {
+		t.Fatalf("the account took its name from the query: %+v", u)
+	}
+}
+
+// A handoff nobody follows is deleted once it has been expired for fedStateTTL,
+// by the sweep the next write runs, with the begin rows of the same age; a live
+// row and one with no expiry stay.
+func TestFederation_ExpiredHandoffIsSwept(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "webapp", signup: true, redirectURIs: []string{testRedirect}})
+	m := newMockApple(t)
+	seedAppleProvider(t, db, "webapp", m)
+	ctx := context.Background()
+	swept.Store(0)
+	t.Cleanup(func() { swept.Store(0) })
+
+	q, cookie := beginApple(t, app, m)
+	id := mustQuery(t, handoffOf(t, appleReply(t, app, url.Values{"state": {q.Get("state")}, "code": {"c"}}, cookie))).Get("state")
+	if err := store.PersistFederationState(ctx, db, &schema.FederationState{Owner: "admin", Name: "lasting", Provider: fedProvApple}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Within the grace the rows stay, so a spent link still says it was spent.
+	start := time.Now()
+	nowFuncSet(t, start.Add(handoffTTL+time.Minute))
+	swept.Store(0)
+	beginApple(t, app, m)
+	if st, _ := store.GetFederationState(ctx, db, id); st == nil {
+		t.Fatal("the handoff was deleted inside its grace")
+	}
+
+	// Past it, the next write's sweep deletes them.
+	nowFuncSet(t, start.Add(2*fedStateTTL+time.Minute))
+	swept.Store(0)
+	live, _ := beginApple(t, app, m)
+	for name, gone := range map[string]string{"handoff": id, "spent begin row": q.Get("state")} {
+		if st, err := store.GetFederationState(ctx, db, gone); err != nil || st != nil {
+			t.Errorf("the expired %s survived the sweep: %v", name, err)
+		}
+	}
+	for name, kept := range map[string]string{"live begin row": live.Get("state"), "row with no expiry": "lasting"} {
+		if st, err := store.GetFederationState(ctx, db, kept); err != nil || st == nil {
+			t.Errorf("the sweep deleted the %s: %v", name, err)
+		}
+	}
+}

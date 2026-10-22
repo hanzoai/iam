@@ -1039,6 +1039,30 @@ func GetFederationState(_ context.Context, db orm.DB, state string) (*schema.Fed
 	return s, err
 }
 
+// PurgeFederationStates deletes up to limit federation transactions that expired
+// before cutoff and reports how many went. Every begin and every form_post
+// handoff writes a row and a burn only marks it used, so without this janitor
+// the table grows without bound. limit bounds one pass's work. A row with no
+// expiry (ExpireIn 0) is never one it deletes.
+func PurgeFederationStates(ctx context.Context, db orm.DB, cutoff time.Time, limit int) (int, error) {
+	stale, err := orm.TypedQuery[schema.FederationState](db).
+		Filter("ExpireIn>", 0).
+		Filter("ExpireIn<", cutoff.Unix()).
+		Limit(limit).
+		GetAll(ctx)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, st := range stale {
+		if err := st.DeleteCtx(ctx); err != nil {
+			return n, err
+		}
+		n++
+	}
+	return n, nil
+}
+
 // ErrFederationConsumed is the ONE opaque refusal for a federation state that is
 // gone, already burned, expired, or that lost a concurrent burn — the single-use
 // guard's "no". Callers collapse it to the same "invalid or expired" answer so a
