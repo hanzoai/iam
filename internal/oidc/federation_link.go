@@ -134,10 +134,10 @@ func link(db orm.DB) zip.Handler {
 		if err != nil {
 			return httpx.Err(c, "the identity provider is unavailable")
 		}
-		if err := store.PersistFederationState(ctx, db, st); err != nil {
+		if err := persist(ctx, db, st, nowFunc()); err != nil {
 			return httpx.Err(c, "server_error")
 		}
-		setBindCookie(c, secret)
+		setBindCookie(c, secret, prov)
 		// The browser navigates to this; the endpoint does not redirect, because the
 		// caller is a page making a request, not a navigation.
 		return httpx.Ok(c, idpURL)

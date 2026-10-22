@@ -92,6 +92,11 @@ func authorizeHandler(db orm.DB) zip.Handler {
 		}
 		ctx := c.Context()
 		q := authorizeParams(c)
+		// A parameter past its bound is refused in place, before anything reads it,
+		// since it is not a request a client makes and echoing it back is no answer.
+		if k := oversize(c); k != "" {
+			return authorizeUserError(c, "invalid_request: "+k+" is too long")
+		}
 
 		// 1. Resolve the client. Without a known client there is no trusted
 		// redirect target, so the error is shown in place — never redirected.
@@ -208,6 +213,28 @@ func authorizeParams(c *zip.Ctx) authorizeRequest {
 		loginHint:           param(c, "login_hint"),
 		signup:              param(c, "signup") == "true",
 	}
+}
+
+// paramLimits bounds each authorize parameter, in bytes. A federation's begin
+// leg stores the request in its transaction and the hosted login carries it in
+// a URL, so each has a bound well past any client's use: a state of 1 KiB, a
+// scope of dozens of names. Past one the request is refused, never cut, since a
+// cut state or nonce no longer matches what the client holds.
+var paramLimits = map[string]int{
+	"response_type": 64, "client_id": 256, "redirect_uri": 2048, "scope": 2048,
+	"state": 1024, "nonce": 512, "code_challenge": 128, "code_challenge_method": 64,
+	"resource": 2048, "response_mode": 64, "provider": 256, "prompt": 256,
+	"login_hint": 512, "signup": 64,
+}
+
+// oversize names an authorize parameter longer than its bound, or "".
+func oversize(c *zip.Ctx) string {
+	for k, limit := range paramLimits {
+		if len(param(c, k)) > limit {
+			return k
+		}
+	}
+	return ""
 }
 
 // hostedLoginTarget is the login URL a validated request is delegated to — the

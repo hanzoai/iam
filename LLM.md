@@ -77,6 +77,8 @@ a shared binary.
 `/v1/iam/oauth/device` + `/v1/iam/oauth/device/info` (RFC 8628; `info` names the
 client a pending `user_code` belongs to, session-gated, code in the BODY because
 a request line reaches access logs) · `/v1/iam/scim/v2/Users`. PKCE `S256` always; `client_id` = `<org>-<app>`.
+Authorize bounds every parameter it reads (`paramLimits`: state 1 KiB, nonce 512 B,
+scope, resource and redirect_uri 2 KiB) and refuses one past its bound in place.
 Brands set `serverUrl`: hanzo→iam.hanzo.ai, lux→lux.id, zoo→zoo.id,
 bootnode→id.bootno.de, pars→pars.id (white-label by domain).
 
@@ -1197,6 +1199,62 @@ spellings of 169.254.169.254, the benchmarking and documentation blocks and 240/
 `TestFederationClientRefusesNonPublicAddresses` holds each. The tests' mock IdPs
 bind 127.0.0.1, so `allowPrivateFederationDial` swaps in a plain client for the
 test's duration; outbound itself has no switch that turns the rule off.
+
+## Sign in with Apple — a secret minted per exchange, and a POST back
+
+`internal/oidc/federation_apple.go`, dialect `apple` in `idpKind`. Fixed endpoints
+under `https://appleid.apple.com` (`/auth/authorize`, `/auth/token`, `/auth/keys`);
+`IssuerUrl` replaces that issuer only for a test's mock. No PKCE: Apple advertises
+none. The Provider row keeps the v1 mapping:
+
+    clientId       Services ID   the OAuth client_id; the secret's sub
+    clientSecret   Team ID       the secret's iss
+    clientId2      Key ID        the secret's kid
+    clientSecret2  the .p8       PKCS#8 PEM, or its base64 body on one line
+
+- **The client secret is minted at each token exchange**: ES256 JWT, `aud` = the
+  issuer as a string, five-minute life. `offerable` shows Apple only when
+  `appleKey` holds: a Team ID and a Key ID of exactly ten A-Z/0-9 characters, and
+  a P-256 key that parses (a PEM whose line breaks are the two characters `\n` is
+  read with real ones). A failed exchange is logged with its cause and the RFC
+  6749 error code (`invalid_client` = Apple refused the minted secret), never key
+  material.
+- **The return is a cross-site POST.** Asking for `name email` requires
+  `response_mode=form_post`, so the callback answers POST for this dialect only
+  and GET for every other (`posts`). A browser sends no SameSite=Lax cookie on a
+  cross-site POST, so this leg's `__Host-hanzo_fed` is SameSite=None. That does not
+  weaken it: the binding is the cookie's value hashed into the state row, and a
+  page that makes a browser POST here still lacks that browser's state. A browser
+  keeps a None cookie from an image or a frame too, so authorize sets it only on
+  a top-level navigation (`topLevelNavigation`) and refuses anything else in place.
+- **The POST hands off to a GET** (`handoff`). `sessions.Open` sets nothing on a
+  cross-site POST (`fromIssuer`), so the POST proves state and binding, burns the
+  state, writes the transaction again under a fresh id with Apple's reply in
+  `FederationState.Reply`, and answers 303 to `callback?state=<id>`. That GET is a
+  top-level navigation: same binding cookie, one minute, single-use, and it reads
+  the reply from the row, never the URL. It exchanges, mints the code and opens
+  the session as Google's GET does, and carries the Lax cookies (MFA remember)
+  the POST could not. The POST reads state and reply from its body only, and a
+  `code`, `error` or `user` past 512, 256 or 1024 bytes (`replyLimits`) is
+  refused, never cut.
+- **Federation rows are swept on write.** Begin, link and handoff all write through
+  `persist`, whose `sweep` takes up to 100 rows that expired more than
+  `fedStateTTL` ago (`store.PurgeFederationStates`), at most once a minute per
+  process. The grace keeps a spent or expired link answering as such rather than
+  as unknown. orm v0.6.44's Delete only marks a row deleted and keeps it, so each
+  row is first rewritten to its key, expiry and Used: the verifier, nonce,
+  binding hash, app request and Apple's reply leave the store, a tombstone per
+  row stays. Removing the rows themselves needs a hard delete in orm. `expireIn`
+  is indexed over live rows, so a sweep reads no tombstone.
+- **The identity is the id_token** (RS256 under Apple's JWKS): `sub`, `email`
+  (possibly a private relay address), `email_verified` as bool or string. The
+  `user` form field arrives on the first authorization only and is unsigned; it
+  supplies the display name and nothing else.
+- **Configuring it.** The Services ID's return URLs are
+  `<sign-in origin>/v1/iam/oauth/callback` for hanzo.id and every `iam-signin`
+  host. The seed creates providers new-only, so a live row's credentials are
+  written with `PUT /v1/iam/providers/admin/provider-apple`. A multi-line PEM
+  substituted into init_data.json breaks its JSON: give the seed the one-line body.
 
 ## CORS — two questions, and the edge answers a third
 

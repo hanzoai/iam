@@ -4,6 +4,7 @@
 package oidc
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/hanzoai/iam/pkg/schema"
@@ -121,5 +122,41 @@ func TestLoginViewDropsUnofferableAndSecrets(t *testing.T) {
 	}
 	if app.Providers[0].Provider.ClientSecret != "GOCSPX-must-not-cross" {
 		t.Error("loginView mutated the source provider's secret")
+	}
+}
+
+// Apple finishes only with its key: the client secret is minted per exchange
+// from the .p8, so a real Services ID beside no key, or a key that does not
+// parse, is a button that dead-ends at the token endpoint.
+func TestOfferableAppleNeedsItsKey(t *testing.T) {
+	key := p8(t, genP256(t))
+	for _, tc := range []struct {
+		name string
+		p    schema.Provider
+		want bool
+	}{
+		{"configured", schema.Provider{Type: "Apple", Category: "OAuth", ClientId: "ai.hanzo.id",
+			ClientSecret: "TEAM123456", ClientId2: "KEY1234567", ClientSecret2: key}, true},
+		{"seeded with nothing set", schema.Provider{Type: "Apple", Category: "OAuth"}, false},
+		{"placeholder client id", schema.Provider{Type: "Apple", Category: "OAuth", ClientId: "placeholder",
+			ClientSecret: "TEAM123456", ClientId2: "KEY1234567", ClientSecret2: key}, false},
+		{"no key", schema.Provider{Type: "Apple", Category: "OAuth", ClientId: "ai.hanzo.id",
+			ClientSecret: "TEAM123456", ClientId2: "KEY1234567"}, false},
+		{"a key that does not parse", schema.Provider{Type: "Apple", Category: "OAuth", ClientId: "ai.hanzo.id",
+			ClientSecret: "TEAM123456", ClientId2: "KEY1234567", ClientSecret2: "not-a-key"}, false},
+		{"no team id", schema.Provider{Type: "Apple", Category: "OAuth", ClientId: "ai.hanzo.id",
+			ClientId2: "KEY1234567", ClientSecret2: key}, false},
+		{"no key id", schema.Provider{Type: "Apple", Category: "OAuth", ClientId: "ai.hanzo.id",
+			ClientSecret: "TEAM123456", ClientSecret2: key}, false},
+		{"placeholder team id", schema.Provider{Type: "Apple", Category: "OAuth", ClientId: "ai.hanzo.id",
+			ClientSecret: "your-team-id", ClientId2: "KEY1234567", ClientSecret2: key}, false},
+		{"placeholder key id", schema.Provider{Type: "Apple", Category: "OAuth", ClientId: "ai.hanzo.id",
+			ClientSecret: "TEAM123456", ClientId2: "KEY_ID", ClientSecret2: key}, false},
+		{"a PEM with escaped line breaks", schema.Provider{Type: "Apple", Category: "OAuth", ClientId: "ai.hanzo.id",
+			ClientSecret: "TEAM123456", ClientId2: "KEY1234567", ClientSecret2: strings.ReplaceAll(strings.TrimSpace(key), "\n", `\n`)}, true},
+	} {
+		if got := offerable(&tc.p); got != tc.want {
+			t.Errorf("%s: offerable = %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }
