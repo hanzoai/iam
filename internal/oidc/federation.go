@@ -444,9 +444,9 @@ func persist(ctx context.Context, db orm.DB, st *schema.FederationState, now tim
 	return nil
 }
 
-// sweep deletes up to purgeBatch federation transactions that expired more than
-// fedStateTTL ago, at most once per handoffTTL in this process: nothing else
-// removes one. The grace keeps a recently spent or expired link answering as
+// sweep clears and deletes up to purgeBatch federation transactions that expired
+// more than fedStateTTL ago (store.PurgeFederationStates), at most once per
+// handoffTTL in this process: nothing else removes one. The grace keeps a recently spent or expired link answering as
 // such, since the callback tells those apart from one never issued. A failure
 // is logged and leaves the rows to the next sweep.
 func sweep(ctx context.Context, db orm.DB, now time.Time) {

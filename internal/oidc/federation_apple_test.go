@@ -789,3 +789,57 @@ func TestFederation_ExpiredHandoffIsSwept(t *testing.T) {
 		}
 	}
 }
+
+// Authorize bounds every parameter it reads, by query or by form body: one past
+// its bound is refused in place and begins nothing, and a client's values at or
+// under the bounds, a 512-byte state among them, begin the sign-in as before.
+func TestAuthorize_BoundsItsParameters(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "webapp", signup: true, redirectURIs: []string{testRedirect}})
+	m := newMockApple(t)
+	seedAppleProvider(t, db, "webapp", m)
+	request := func(set map[string]string) url.Values {
+		v := url.Values{
+			"response_type": {"code"}, "client_id": {"webapp"}, "redirect_uri": {testRedirect},
+			"state": {fedAppState}, "code_challenge": {pkce.Challenge(fedVerifier)}, "code_challenge_method": {"S256"},
+			"provider": {"apple"},
+		}
+		for k, s := range set {
+			v.Set(k, s)
+		}
+		return v
+	}
+	begins := func(name string, resp *http.Response) {
+		t.Helper()
+		if loc := resp.Header.Get("Location"); resp.StatusCode != 302 || !strings.HasPrefix(loc, m.URL+"/auth/authorize?") {
+			t.Errorf("%s: answered %d %q, want the sign-in begun", name, resp.StatusCode, loc)
+		}
+	}
+
+	ordinary := request(map[string]string{"state": strings.Repeat("s", 512), "nonce": strings.Repeat("n", 128)})
+	resp, _ := do(t, app, formReqNoBody("GET", PathAuthorize+"?"+ordinary.Encode()))
+	begins("a 512-byte state", resp)
+	resp, _ = do(t, app, formReq("POST", PathAuthorize, ordinary))
+	begins("a 512-byte state in a form body", resp)
+	at := request(map[string]string{"state": strings.Repeat("s", paramLimits["state"]),
+		"nonce": strings.Repeat("n", paramLimits["nonce"]), "scope": strings.Repeat("o", paramLimits["scope"])})
+	resp, _ = do(t, app, formReqNoBody("GET", PathAuthorize+"?"+at.Encode()))
+	begins("state, nonce and scope at their bounds", resp)
+
+	before, err := orm.TypedQuery[schema.FederationState](db).Count(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k, limit := range paramLimits {
+		over := request(map[string]string{k: strings.Repeat("a", limit+1)})
+		for _, req := range []*http.Request{formReqNoBody("GET", PathAuthorize+"?"+over.Encode()), formReq("POST", PathAuthorize, over)} {
+			resp, body := do(t, app, req)
+			if resp.StatusCode != 400 || !strings.Contains(string(body), k+" is too long") || resp.Header.Get("Set-Cookie") != "" {
+				t.Errorf("%s %s over its bound: %d %q", req.Method, k, resp.StatusCode, body)
+			}
+		}
+	}
+	if after, _ := orm.TypedQuery[schema.FederationState](db).Count(context.Background()); after != before {
+		t.Fatalf("over-bound requests wrote %d federation rows", after-before)
+	}
+}

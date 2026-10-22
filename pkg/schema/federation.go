@@ -77,7 +77,8 @@ type FederationState struct {
 	Reply string `json:"reply,omitempty"`
 
 	// ExpireIn is the unix expiry; Used marks the transaction consumed so a
-	// replayed callback completes nothing.
-	ExpireIn int64 `json:"expireIn"`
+	// replayed callback completes nothing. Indexed, so the sweep of expired rows
+	// (store.PurgeFederationStates) reads those rows and no others.
+	ExpireIn int64 `json:"expireIn" orm:"index"`
 	Used     bool  `json:"used"`
 }

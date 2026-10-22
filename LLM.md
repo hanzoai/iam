@@ -77,6 +77,8 @@ a shared binary.
 `/v1/iam/oauth/device` + `/v1/iam/oauth/device/info` (RFC 8628; `info` names the
 client a pending `user_code` belongs to, session-gated, code in the BODY because
 a request line reaches access logs) · `/v1/iam/scim/v2/Users`. PKCE `S256` always; `client_id` = `<org>-<app>`.
+Authorize bounds every parameter it reads (`paramLimits`: state 1 KiB, nonce 512 B,
+scope, resource and redirect_uri 2 KiB) and refuses one past its bound in place.
 Brands set `serverUrl`: hanzo→iam.hanzo.ai, lux→lux.id, zoo→zoo.id,
 bootnode→id.bootno.de, pars→pars.id (white-label by domain).
 
@@ -1236,10 +1238,14 @@ none. The Provider row keeps the v1 mapping:
   `code`, `error` or `user` past 512, 256 or 1024 bytes (`replyLimits`) is
   refused, never cut.
 - **Federation rows are swept on write.** Begin, link and handoff all write through
-  `persist`, whose `sweep` deletes up to 100 rows that expired more than
+  `persist`, whose `sweep` takes up to 100 rows that expired more than
   `fedStateTTL` ago (`store.PurgeFederationStates`), at most once a minute per
-  process. Nothing else deletes a federation row. The grace keeps a spent or
-  expired link answering as such rather than as unknown.
+  process. The grace keeps a spent or expired link answering as such rather than
+  as unknown. orm v0.6.44's Delete only marks a row deleted and keeps it, so each
+  row is first rewritten to its key, expiry and Used: the verifier, nonce,
+  binding hash, app request and Apple's reply leave the store, a tombstone per
+  row stays. Removing the rows themselves needs a hard delete in orm. `expireIn`
+  is indexed over live rows, so a sweep reads no tombstone.
 - **The identity is the id_token** (RS256 under Apple's JWKS): `sub`, `email`
   (possibly a private relay address), `email_verified` as bool or string. The
   `user` form field arrives on the first authorization only and is unsigned; it

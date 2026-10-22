@@ -1039,11 +1039,18 @@ func GetFederationState(_ context.Context, db orm.DB, state string) (*schema.Fed
 	return s, err
 }
 
-// PurgeFederationStates deletes up to limit federation transactions that expired
-// before cutoff and reports how many went. Every begin and every form_post
-// handoff writes a row and a burn only marks it used, so without this janitor
-// the table grows without bound. limit bounds one pass's work. A row with no
-// expiry (ExpireIn 0) is never one it deletes.
+// PurgeFederationStates clears and deletes up to limit federation transactions
+// that expired before cutoff, and reports how many went. Every begin and every
+// form_post handoff writes a row and a burn only marks it used, so without this
+// janitor the table grows without bound. limit bounds one pass's work. A row with
+// no expiry (ExpireIn 0) is never one it touches.
+//
+// orm's Delete marks a row deleted and keeps it, so each row is first rewritten
+// with nothing but its key, expiry and Used: the verifier, nonce, binding hash,
+// app request and a provider's reply leave the store, and what stays is a
+// tombstone. Used is set so a row left live by a failed delete completes nothing,
+// and the expiry is kept so the next pass takes it again. The expiry index holds
+// live rows only, so a pass reads neither tombstones nor rows still in force.
 func PurgeFederationStates(ctx context.Context, db orm.DB, cutoff time.Time, limit int) (int, error) {
 	stale, err := orm.TypedQuery[schema.FederationState](db).
 		Filter("ExpireIn>", 0).
@@ -1055,6 +1062,10 @@ func PurgeFederationStates(ctx context.Context, db orm.DB, cutoff time.Time, lim
 	}
 	n := 0
 	for _, st := range stale {
+		*st = schema.FederationState{Model: st.Model, Owner: st.Owner, Name: st.Name, ExpireIn: st.ExpireIn, Used: true}
+		if err := st.UpdateCtx(ctx); err != nil {
+			return n, err
+		}
 		if err := st.DeleteCtx(ctx); err != nil {
 			return n, err
 		}
