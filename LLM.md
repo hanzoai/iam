@@ -1198,6 +1198,39 @@ spellings of 169.254.169.254, the benchmarking and documentation blocks and 240/
 bind 127.0.0.1, so `allowPrivateFederationDial` swaps in a plain client for the
 test's duration; outbound itself has no switch that turns the rule off.
 
+## Sign in with Apple — a secret minted per exchange, and a POST back
+
+`internal/oidc/federation_apple.go`, dialect `apple` in `idpKind`. Fixed endpoints
+under `https://appleid.apple.com` (`/auth/authorize`, `/auth/token`, `/auth/keys`);
+`IssuerUrl` replaces that issuer only for a test's mock. No PKCE: Apple advertises
+none. The Provider row keeps the v1 mapping:
+
+    clientId       Services ID   the OAuth client_id; the secret's sub
+    clientSecret   Team ID       the secret's iss
+    clientId2      Key ID        the secret's kid
+    clientSecret2  the .p8       PKCS#8 PEM, or its base64 body on one line
+
+- **The client secret is minted at each token exchange**: ES256 JWT, `aud` = the
+  issuer as a string, five-minute life. `offerable` shows Apple only when
+  `appleKey` holds: Team ID, Key ID and a P-256 key that parses.
+- **The return is a cross-site POST.** Asking for `name email` requires
+  `response_mode=form_post`, so the callback answers POST for this dialect only
+  and GET for every other (`posts`). A browser sends no SameSite=Lax cookie on a
+  cross-site POST, so this leg's `__Host-hanzo_fed` is SameSite=None. That does not
+  weaken it: the binding is the cookie's value hashed into the state row, and a
+  page that makes a browser POST here still lacks that browser's state.
+- **Lax cookies stay behind on that POST**, the MFA remember cookie among them, so
+  an Apple sign-in always asks an enrolled second factor.
+- **The identity is the id_token** (RS256 under Apple's JWKS): `sub`, `email`
+  (possibly a private relay address), `email_verified` as bool or string. The
+  `user` form field arrives on the first authorization only and is unsigned; it
+  supplies the display name and nothing else.
+- **Configuring it.** The Services ID's return URLs are
+  `<sign-in origin>/v1/iam/oauth/callback` for hanzo.id and every `iam-signin`
+  host. The seed creates providers new-only, so a live row's credentials are
+  written with `PUT /v1/iam/providers/admin/provider-apple`. A multi-line PEM
+  substituted into init_data.json breaks its JSON: give the seed the one-line body.
+
 ## CORS — two questions, and the edge answers a third
 
 `internal/cors` decides two things about an `Origin`, and conflating them is a

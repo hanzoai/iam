@@ -137,7 +137,7 @@ func link(db orm.DB) zip.Handler {
 		if err := store.PersistFederationState(ctx, db, st); err != nil {
 			return httpx.Err(c, "server_error")
 		}
-		setBindCookie(c, secret)
+		setBindCookie(c, secret, prov)
 		// The browser navigates to this; the endpoint does not redirect, because the
 		// caller is a page making a request, not a navigation.
 		return httpx.Ok(c, idpURL)

@@ -232,6 +232,10 @@ type offer struct {
 //
 // Web3 is exempt from the dialect check because it never reaches the federation
 // broker at all: it is native challenge/response with no OAuth client.
+//
+// Apple asks one thing more. Its client secret is minted per exchange from the
+// provider's own key, so a client id alone cannot finish: the Team ID, the Key ID
+// and a .p8 that parses must all be there (appleKey).
 func offerable(p *schema.Provider) bool {
 	if p == nil {
 		return false
@@ -247,10 +251,17 @@ func offerable(p *schema.Provider) bool {
 	if id == "" {
 		return false
 	}
-	return !strings.Contains(id, "placeholder") &&
-		!strings.HasPrefix(id, "your-") &&
-		!strings.HasPrefix(id, "xxx") &&
-		!strings.Contains(id, "change")
+	if strings.Contains(id, "placeholder") ||
+		strings.HasPrefix(id, "your-") ||
+		strings.HasPrefix(id, "xxx") ||
+		strings.Contains(id, "change") {
+		return false
+	}
+	if idpKind(p) == "apple" {
+		_, err := appleKey(p)
+		return err == nil
+	}
+	return true
 }
 
 // sendsCodes reports whether a one-time code can reach a person through app. The

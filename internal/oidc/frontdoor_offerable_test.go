@@ -123,3 +123,33 @@ func TestLoginViewDropsUnofferableAndSecrets(t *testing.T) {
 		t.Error("loginView mutated the source provider's secret")
 	}
 }
+
+// Apple finishes only with its key: the client secret is minted per exchange
+// from the .p8, so a real Services ID beside no key, or a key that does not
+// parse, is a button that dead-ends at the token endpoint.
+func TestOfferableAppleNeedsItsKey(t *testing.T) {
+	key := p8(t, genP256(t))
+	for _, tc := range []struct {
+		name string
+		p    schema.Provider
+		want bool
+	}{
+		{"configured", schema.Provider{Type: "Apple", Category: "OAuth", ClientId: "ai.hanzo.id",
+			ClientSecret: "TEAM123456", ClientId2: "KEY1234567", ClientSecret2: key}, true},
+		{"seeded with nothing set", schema.Provider{Type: "Apple", Category: "OAuth"}, false},
+		{"placeholder client id", schema.Provider{Type: "Apple", Category: "OAuth", ClientId: "placeholder",
+			ClientSecret: "TEAM123456", ClientId2: "KEY1234567", ClientSecret2: key}, false},
+		{"no key", schema.Provider{Type: "Apple", Category: "OAuth", ClientId: "ai.hanzo.id",
+			ClientSecret: "TEAM123456", ClientId2: "KEY1234567"}, false},
+		{"a key that does not parse", schema.Provider{Type: "Apple", Category: "OAuth", ClientId: "ai.hanzo.id",
+			ClientSecret: "TEAM123456", ClientId2: "KEY1234567", ClientSecret2: "not-a-key"}, false},
+		{"no team id", schema.Provider{Type: "Apple", Category: "OAuth", ClientId: "ai.hanzo.id",
+			ClientId2: "KEY1234567", ClientSecret2: key}, false},
+		{"no key id", schema.Provider{Type: "Apple", Category: "OAuth", ClientId: "ai.hanzo.id",
+			ClientSecret: "TEAM123456", ClientSecret2: key}, false},
+	} {
+		if got := offerable(&tc.p); got != tc.want {
+			t.Errorf("%s: offerable = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}

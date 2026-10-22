@@ -32,7 +32,7 @@ import (
 )
 
 // The Relying-Party side of federation: iam as an OIDC/OAuth2 CLIENT of an
-// external identity provider. Two dialects, one contract (federatedIdentity):
+// external identity provider. Three dialects, one contract (federatedIdentity):
 //
 //   - OIDC (Google + any provider with an IssuerUrl): OIDC Discovery resolves the
 //     endpoints and JWKS; the end user is authenticated by the id_token, whose
@@ -42,6 +42,8 @@ import (
 //   - GitHub (OAuth2, no id_token): the code is exchanged for an access token,
 //     then the user + verified-email endpoints are read. Only a GitHub-verified,
 //     primary email is treated as verified.
+//   - Apple (federation_apple.go): OIDC with fixed endpoints, a client secret
+//     minted per exchange as an ES256 JWT, and a form_post return.
 //
 // Every outbound call is hardened: a bounded-timeout client that never follows
 // redirects (a 3xx on a token/JWKS endpoint is answered as a failure, not
@@ -95,13 +97,16 @@ const (
 	githubUserEndpoint      = "https://api.github.com/user"
 )
 
-// idpKind classifies a provider into its federation dialect. A provider with an
-// explicit OIDC issuer — or Google — is OIDC; GitHub is OAuth2+userinfo.
-// Anything else is unsupported and fails closed (""), never guessed.
+// idpKind classifies a provider into its federation dialect. GitHub is
+// OAuth2+userinfo and Apple is its own; any other provider with an explicit OIDC
+// issuer — or Google — is OIDC. Anything else is unsupported and fails closed
+// (""), never guessed.
 func idpKind(p *schema.Provider) string {
 	switch {
 	case strings.EqualFold(p.Type, "GitHub"):
 		return "github"
+	case strings.EqualFold(p.Type, "Apple"):
+		return "apple"
 	case strings.EqualFold(p.Type, "Google") || strings.TrimSpace(p.IssuerUrl) != "":
 		return "oidc"
 	default:
@@ -122,6 +127,8 @@ func idpAuthorizeURL(ctx context.Context, p *schema.Provider, st *schema.Federat
 		return oidcAuthorizeURL(cfg, p, st, callback), nil
 	case "github":
 		return githubAuthorizeURL(p, st, callback), nil
+	case "apple":
+		return appleAuthorizeURL(p, st, callback), nil
 	default:
 		return "", fmt.Errorf("federation: provider %q is not a supported federation type", p.Name)
 	}
@@ -129,7 +136,8 @@ func idpAuthorizeURL(ctx context.Context, p *schema.Provider, st *schema.Federat
 
 // idpExchange completes the callback leg: it exchanges the IdP authorization
 // code and returns the VERIFIED identity, or an error if any verification fails.
-func idpExchange(ctx context.Context, p *schema.Provider, st *schema.FederationState, code, callback string, now time.Time) (federatedIdentity, error) {
+// user is the profile Apple posts beside the code; no other dialect sends one.
+func idpExchange(ctx context.Context, p *schema.Provider, st *schema.FederationState, code, user, callback string, now time.Time) (federatedIdentity, error) {
 	switch idpKind(p) {
 	case "oidc":
 		cfg, err := oidcResolve(ctx, p)
@@ -139,6 +147,8 @@ func idpExchange(ctx context.Context, p *schema.Provider, st *schema.FederationS
 		return oidcExchange(ctx, cfg, p, st, code, callback, now)
 	case "github":
 		return githubExchange(ctx, p, st, code, callback)
+	case "apple":
+		return appleExchange(ctx, p, st, code, user, callback, now)
 	default:
 		return federatedIdentity{}, fmt.Errorf("federation: provider %q is not a supported federation type", p.Name)
 	}
