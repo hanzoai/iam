@@ -27,7 +27,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"net/url"
 	"strings"
 	"time"
 
@@ -101,6 +100,10 @@ type Message struct {
 	Subject string
 	// Body is the text the person reads.
 	Body string
+	// HTML is the same message designed for an email client, sent with Body as its
+	// plain-text alternative. Empty for an SMS and for every message worded as text
+	// alone, which is then sent as Body.
+	HTML string
 }
 
 // Sender carries one [Message]. It is the ONE seam between this package and the
@@ -132,25 +135,6 @@ func message(org, channel, to, code string) Message {
 		m.Subject = "Your verification code"
 	}
 	return m
-}
-
-// linked words one sign-in code for one email, with a link beside it. The link is
-// link plus a fragment carrying the address and the code, which the page it opens
-// reads to finish the sign-in; a fragment never reaches a server, so neither lands
-// in a request log. The code is printed as well, for a person who reads the mail
-// on another device. Like [message], it names no brand and renders the expiry from
-// [TTL].
-func linked(org, to, code, link string) Message {
-	fragment := url.Values{"email": {to}, "code": {code}}.Encode()
-	return Message{
-		Org:     org,
-		Channel: Email,
-		To:      to,
-		Subject: "Your sign-in link",
-		Body: fmt.Sprintf("Sign in with this link:\n%s#%s\n\nOr enter this code: %s\n\n"+
-			"It expires in %d minutes. If you did not request it, ignore this message and do not share it with anyone.",
-			link, fragment, code, int(TTL.Minutes())),
-	}
 }
 
 // sender is bound once at boot, before the server accepts a request, and read
@@ -262,21 +246,23 @@ func Receiver(dest string) string {
 // org of its own is sent a code as its application's org, and filing the record
 // there left a code the person held that nothing could spend.
 func Issue(ctx context.Context, db orm.DB, org, dest, remoteAddr string, user *schema.User, now time.Time) error {
-	return issue(ctx, db, PurposeCode, org, dest, remoteAddr, user, now, func(channel, to, code string) Message {
-		return message(org, channel, to, code)
+	return issue(ctx, db, PurposeCode, org, dest, remoteAddr, user, now, func(channel, to, code string) (Message, error) {
+		return message(org, channel, to, code), nil
 	})
 }
 
-// IssueLink is [Issue] for an email that also carries a sign-in link. link is a URI
-// the caller has matched to the application, with no fragment; the message appends
-// one naming the address and the code ([linked]). An empty link, or a destination
-// that is not an email, is worded exactly as [Issue] words it.
-func IssueLink(ctx context.Context, db orm.DB, org, dest, remoteAddr string, user *schema.User, now time.Time, link string) error {
-	return issue(ctx, db, PurposeCode, org, dest, remoteAddr, user, now, func(channel, to, code string) Message {
+// IssueLink is [Issue] for a sign-in that can carry a link: an email to dest is
+// the designed sign-in mail ([signin]), from org as its reader knows it, with the
+// link and the code. link is a URI the caller has matched to the application, with
+// no fragment; the mail appends one naming the address and the code. An empty
+// link, or a destination that is not an email, is worded exactly as [Issue] words
+// it.
+func IssueLink(ctx context.Context, db orm.DB, org *schema.Organization, dest, remoteAddr string, user *schema.User, now time.Time, link string) error {
+	return issue(ctx, db, PurposeCode, org.Name, dest, remoteAddr, user, now, func(channel, to, code string) (Message, error) {
 		if link == "" || channel != Email {
-			return message(org, channel, to, code)
+			return message(org.Name, channel, to, code), nil
 		}
-		return linked(org, to, code, link)
+		return signin(org, to, code, link)
 	})
 }
 
@@ -302,7 +288,7 @@ func IssueJoin(ctx context.Context, db orm.DB, sender, joining string, user *sch
 	if user == nil {
 		return errors.New("otp: a join code is sent to an account")
 	}
-	return issue(ctx, db, PurposeJoin, sender, user.Email, "", user, now, func(channel, to, code string) Message {
+	return issue(ctx, db, PurposeJoin, sender, user.Email, "", user, now, func(channel, to, code string) (Message, error) {
 		return Message{
 			Org:     sender,
 			Channel: channel,
@@ -312,7 +298,7 @@ func IssueJoin(ctx context.Context, db orm.DB, sender, joining string, user *sch
 				"It only confirms this email address for joining; it does not sign anyone in. "+
 				"If you did not ask to join, ignore this message and do not share the code.",
 				joining, code, int(TTL.Minutes())),
-		}
+		}, nil
 	})
 }
 
@@ -320,7 +306,7 @@ func IssueJoin(ctx context.Context, db orm.DB, sender, joining string, user *sch
 // replacement of an outstanding code both apply within the purpose, so a join code
 // neither waits on nor cancels a sign-in code. word composes the message from the
 // channel and address the record was filed with.
-func issue(ctx context.Context, db orm.DB, purpose, org, dest, remoteAddr string, user *schema.User, now time.Time, word func(channel, to, code string) Message) error {
+func issue(ctx context.Context, db orm.DB, purpose, org, dest, remoteAddr string, user *schema.User, now time.Time, word func(channel, to, code string) (Message, error)) error {
 	if sender == nil {
 		return ErrNoDelivery
 	}
@@ -373,7 +359,11 @@ func issue(ctx context.Context, db orm.DB, purpose, org, dest, remoteAddr string
 	// was filed and the code that goes out must be one channel and one address, so
 	// they read the one place those were decided. The normalized number is also the
 	// E.164-shaped one a carrier wants.
-	return sender.Send(ctx, word(rec.Type, rec.Receiver, code))
+	m, err := word(rec.Type, rec.Receiver, code)
+	if err != nil {
+		return err
+	}
+	return sender.Send(ctx, m)
 }
 
 // Consume verifies code against the latest live record for receiver and SPENDS the

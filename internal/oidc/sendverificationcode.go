@@ -39,8 +39,10 @@ import (
 // CAPTCHA verification is likewise not enforced — iam models no captcha provider —
 // so the code is issued once the destination and application validate.
 //
-// An email also carries a sign-in link when the request's Origin is the origin of
-// one of the application's redirect URIs ([landing]); otherwise it is the code alone.
+// An email is the designed sign-in mail, a link beside the code and from the
+// application's org as its reader knows it (otp.IssueLink), when the request's
+// Origin is the origin of one of the application's redirect URIs ([landing]);
+// otherwise it is the code alone.
 func sendVerificationCode(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
@@ -127,7 +129,7 @@ func sendVerificationCode(db orm.DB) zip.Handler {
 			return httpx.Err(c, "unsupported verification type: "+typ)
 		}
 
-		if err := otp.IssueLink(ctx, db, org.Name, dest, fc.IP(), user, nowFunc(), uri); err != nil {
+		if err := otp.IssueLink(ctx, db, org, dest, fc.IP(), user, nowFunc(), uri); err != nil {
 			// Report the real outcome. Answering ok because the code was minted would be
 			// the same lie one layer down: the send is what the caller asked for.
 			if errors.Is(err, otp.ErrNoDelivery) || errors.Is(err, otp.ErrTooSoon) {

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="x-apple-disable-message-reformatting">
+<meta name="format-detection" content="telephone=no, date=no, address=no, email=no, url=no">
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
+<title>{{.Headline}}</title>
+<style>
+:root { color-scheme: light dark; supported-color-schemes: light dark; }
+body { margin: 0; padding: 0; width: 100%; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+table { border-collapse: collapse; mso-table-lspace: 0; mso-table-rspace: 0; }
+img { border: 0; outline: none; text-decoration: none; -ms-interpolation-mode: bicubic; }
+a { text-decoration: none; }
+@media (prefers-color-scheme: dark) {
+  .page { background-color: #000000 !important; }
+  .ink { color: #fafafa !important; }
+  .quiet { color: #a1a1aa !important; }
+  .quiet a { color: #a1a1aa !important; }
+  .rule { border-color: #27272a !important; }
+  .button { background-color: #fafafa !important; }
+  .button a { color: #0a0a0a !important; }
+  .code { background-color: #18181b !important; border-color: #27272a !important; color: #fafafa !important; }
+}
+[data-ogsb] .page { background-color: #000000 !important; }
+[data-ogsc] .ink { color: #fafafa !important; }
+[data-ogsc] .quiet { color: #a1a1aa !important; }
+[data-ogsb] .button { background-color: #fafafa !important; }
+[data-ogsc] .button a { color: #0a0a0a !important; }
+[data-ogsb] .code { background-color: #18181b !important; }
+[data-ogsc] .code { color: #fafafa !important; }
+@media only screen and (max-width: 520px) {
+  .sheet { padding: 32px 20px !important; }
+  .code { font-size: 28px !important; letter-spacing: 6px !important; }
+}
+</style>
+</head>
+<body class="page" style="margin:0;padding:0;background-color:#ffffff;">
+<div style="display:none;max-height:0;max-width:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#ffffff;opacity:0;">{{.Preheader}}&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;</div>
+<table role="presentation" class="page" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#ffffff;">
+<tr>
+<td align="center" class="sheet" style="padding:48px 24px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:440px;">
+{{- if .Mark}}
+<tr>
+<td style="padding:0 0 32px 0;">
+<a href="{{.Site}}" target="_blank"><img src="{{.Mark}}" width="44" height="44" alt="{{.Brand}}" style="display:block;width:44px;height:44px;border:0;border-radius:11px;"></a>
+</td>
+</tr>
+{{- end}}
+<tr>
+<td class="ink" style="padding:0 0 28px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:26px;line-height:32px;font-weight:600;letter-spacing:-0.01em;color:#0a0a0a;">
+{{.Headline}}
+</td>
+</tr>
+<tr>
+<td style="padding:0 0 32px 0;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td class="button" bgcolor="#0a0a0a" style="border-radius:10px;background-color:#0a0a0a;">
+<a href="{{.Link}}" target="_blank" style="display:inline-block;padding:14px 36px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;line-height:20px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:10px;">Sign in</a>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+<tr>
+<td class="quiet" style="padding:0 0 12px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#52525b;">
+Or enter this code:
+</td>
+</tr>
+<tr>
+<td style="padding:0 0 32px 0;">
+<div class="code" style="padding:16px 0 16px 8px;text-align:center;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;font-size:32px;line-height:40px;font-weight:600;letter-spacing:8px;color:#0a0a0a;background-color:#f4f4f5;border:1px solid #e4e4e7;border-radius:12px;">{{.Code}}</div>
+</td>
+</tr>
+<tr>
+<td class="quiet" style="padding:0 0 8px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:22px;color:#52525b;">
+This link and code expire in {{.Minutes}} minutes. Don't share them with anyone.
+</td>
+</tr>
+<tr>
+<td class="quiet" style="padding:0 0 32px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:22px;color:#52525b;">
+If you didn't request this, you can ignore this email.
+</td>
+</tr>
+{{- if .Site}}
+<tr>
+<td class="rule quiet" style="padding:24px 0 0 0;border-top:1px solid #e4e4e7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#71717a;">
+{{if .Brand}}{{.Brand}} · {{end}}<a href="{{.Site}}" target="_blank" style="color:#71717a;text-decoration:none;">{{.Host}}</a>
+</td>
+</tr>
+{{- end}}
+</table>
+</td>
+</tr>
+</table>
+</body>
+</html>
