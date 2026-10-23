@@ -346,6 +346,18 @@ func TestLanding(t *testing.T) {
 	}
 }
 
+// seedBrand files the hanzo org as the seed declares it (init_data.json): its name
+// as a person knows it and its site, which the sign-in mail is from.
+func seedBrand(t *testing.T, db orm.DB) {
+	t.Helper()
+	o := orm.New[schema.Organization](db)
+	o.Owner, o.Name, o.DisplayName, o.WebsiteUrl = "admin", "hanzo", "Hanzo", "https://hanzo.ai"
+	o.SetId("admin/hanzo")
+	if err := o.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed org: %v", err)
+	}
+}
+
 // An email sent from a page at a registered origin carries the link; the same send
 // with no Origin, an unregistered one, or over SMS is today's message exactly.
 func TestSendVerificationCode_Link(t *testing.T) {
@@ -369,7 +381,7 @@ func TestSendVerificationCode_Link(t *testing.T) {
 			seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{
 				"hanzo://oauth/hanzo", "https://hanzo.ai/auth/callback#old",
 			}})
-			seedOrg(t, db, "hanzo")
+			seedBrand(t, db)
 			seedRichUser(t, db)
 			seedPhoneUser(t, db, "carol", "+14155550134")
 
@@ -394,20 +406,27 @@ func TestSendVerificationCode_Link(t *testing.T) {
 			code := rec.Code
 
 			if !tc.link {
-				if m.Body != plain(code) {
-					t.Errorf("body = %q, want the plain message", m.Body)
+				if m.Body != plain(code) || m.HTML != "" {
+					t.Errorf("body = %q html = %q, want the plain message alone", m.Body, m.HTML)
 				}
 				if tc.typ == "email" && m.Subject != "Your verification code" {
 					t.Errorf("subject = %q", m.Subject)
 				}
 				return
 			}
-			want := "Sign in with this link:\n" +
-				"https://hanzo.ai/auth/callback#code=" + code + "&email=alice%40hanzo.ai\n\n" +
+			// The designed sign-in mail, from the application's org by its own name.
+			link := "https://hanzo.ai/auth/callback#code=" + code + "&email=alice%40hanzo.ai"
+			want := "Sign in to Hanzo\n\n" +
+				"Open this link to sign in:\n" + link + "\n\n" +
 				"Or enter this code: " + code + "\n\n" +
-				"It expires in 10 minutes. If you did not request it, ignore this message and do not share it with anyone."
-			if m.Subject != "Your sign-in link" || m.Body != want {
+				"This link and code expire in 10 minutes. Don't share them with anyone.\n" +
+				"If you didn't request this, you can ignore this email."
+			if m.Subject != "Your Hanzo sign-in link" || m.Body != want {
 				t.Errorf("sent subject %q body\n%q\nwant\n%q", m.Subject, m.Body, want)
+			}
+			if !strings.Contains(m.HTML, `href="`+strings.ReplaceAll(link, "&", "&amp;")+`"`) || !strings.Contains(m.HTML, ">"+code+"</div>") ||
+				!strings.Contains(m.HTML, `src="https://hanzo.ai/email/mark.png"`) {
+				t.Errorf("html does not carry the link and the code:\n%s", m.HTML)
 			}
 		})
 	}

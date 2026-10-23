@@ -262,23 +262,6 @@ func TestMessageWording(t *testing.T) {
 	}
 }
 
-func TestLinkedWording(t *testing.T) {
-	m := linked("hanzo", "ada+x@example.com", "123456", "https://hanzo.ai/auth/callback")
-	if m.Org != "hanzo" || m.Channel != Email || m.To != "ada+x@example.com" {
-		t.Errorf("addressed %+v", m)
-	}
-	if m.Subject != "Your sign-in link" {
-		t.Errorf("subject = %q", m.Subject)
-	}
-	want := "Sign in with this link:\n" +
-		"https://hanzo.ai/auth/callback#code=123456&email=ada%2Bx%40example.com\n\n" +
-		"Or enter this code: 123456\n\n" +
-		"It expires in 10 minutes. If you did not request it, ignore this message and do not share it with anyone."
-	if m.Body != want {
-		t.Errorf("body =\n%q\nwant\n%q", m.Body, want)
-	}
-}
-
 // IssueLink words a link only into an email, and only when it has one; every other
 // case is the message Issue sends.
 func TestIssueLinkWording(t *testing.T) {
@@ -295,7 +278,7 @@ func TestIssueLinkWording(t *testing.T) {
 			db := openDB(t)
 			c := &capture{}
 			bind(t, c)
-			if err := IssueLink(context.Background(), db, "hanzo", tc.dest, "", nil, time.Now(), tc.link); err != nil {
+			if err := IssueLink(context.Background(), db, hanzo, tc.dest, "", nil, time.Now(), tc.link); err != nil {
 				t.Fatalf("issue: %v", err)
 			}
 			if len(c.sent) != 1 {
@@ -305,7 +288,10 @@ func TestIssueLinkWording(t *testing.T) {
 			code := sixDigits.FindString(got.Body)
 			want := message("hanzo", Channel(tc.dest), Receiver(tc.dest), code)
 			if tc.linked {
-				want = linked("hanzo", tc.dest, code, tc.link)
+				var err error
+				if want, err = signin(hanzo, tc.dest, code, tc.link); err != nil {
+					t.Fatal(err)
+				}
 			}
 			if got != want {
 				t.Errorf("sent %+v\nwant %+v", got, want)

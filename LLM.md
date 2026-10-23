@@ -1007,12 +1007,35 @@ answered "the code is incorrect or has expired".
 `POST /v1/iam/verification-codes` type=email reads the request's `Origin` and
 `landing` (sendverificationcode.go) picks the first of the application's
 `RedirectUris` whose scheme+host+port equals it exactly, fragment cut. Then
-`otp.IssueLink` words the mail "Your sign-in link":
-`<uri>#code=<code>&email=<addr>` plus the code itself. No Origin, no match, SMS,
-and every other `Issue` caller send the plain `message`, unchanged. Only a
-registered URI can be named, so a forged Origin picks among the app's own
-callbacks; Host, Referer and X-Forwarded-* are never read. hanzo.ai needs
-`https://hanzo.ai/auth/callback` registered on its app for the link to appear.
+`otp.IssueLink` sends the designed sign-in mail (`internal/otp/signin.go` +
+`signin.html`): subject "Your <org> sign-in link", the code in the preheader, a
+Sign in button to `<uri>#code=<code>&email=<addr>`, the code large in mono, the
+expiry from `TTL`. `Message.HTML` carries the page and `Message.Body` the same
+words as plain text, sent as its multipart alternative (cloud's notify:
+`client.Send.Text`, hanzoai/notify `Alternative`). No Origin, no match, SMS,
+and every other `Issue` caller send the plain `message`, unchanged and with no
+HTML. Only a registered URI can be named, so a forged Origin picks among the
+app's own callbacks; Host, Referer and X-Forwarded-* are never read. hanzo.ai
+needs `https://hanzo.ai/auth/callback` registered on its app for the link to
+appear (it is, on hanzo-app).
+
+- **The brand is the org row**, never code: the name is `DisplayName`, the site
+  `WebsiteUrl` (an https origin, path dropped; anything else gives no mark and no
+  footer link), the mark `<site>/email/mark.png` (`otp.MarkPath`), a 132px opaque
+  PNG an email client can show. hanzo.ai serves it (hanzo-inc/app
+  `public/email/mark.png`, `scripts/email-mark.mjs`); a site that serves none
+  shows the name as the image's alt text. hanzo-app's org is `hanzo`, so a code
+  from hanzo.ai says Hanzo and never another brand.
+- **Monochrome, light and dark.** Inline light styles (any client), a
+  `prefers-color-scheme: dark` block and Outlook's `[data-ogsc]`/`[data-ogsb]`
+  overrides; the mark is an opaque tile, so a client that inverts the page but
+  never an image still shows it.
+- **Pinned whole**: `internal/otp/testdata/signin.html` is the mail as sent;
+  `go test ./internal/otp -run Snapshot -update` rewrites it, and the diff is the
+  review of a design change.
+- No WebOTP line (`@hanzo.ai #123456`): that format is read from an SMS only.
+  The page's field says `autocomplete="one-time-code"`, which is what fills an
+  emailed code where a browser can (Safari, from Mail).
 
 ## Sign-up by code — the code proves the address, the click creates the account
 
