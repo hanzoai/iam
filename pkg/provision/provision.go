@@ -264,6 +264,9 @@ type App struct {
 	// whatever the app already has.
 	ExpireInHours        float64 `yaml:"expireInHours"`
 	RefreshExpireInHours float64 `yaml:"refreshExpireInHours"`
+	// Shared / IsShared declares that this application serves EVERY organization.
+	Shared   *bool `yaml:"shared"`
+	IsShared *bool `yaml:"isShared"`
 }
 
 // Client is the derived, serialized registration — the body of an upsert call.
@@ -301,6 +304,7 @@ type Client struct {
 	// for code sign-in on a deployment that cannot send one still advertises only
 	// what it can finish.
 	EnableCodeSignin *bool `json:"enableCodeSignin,omitempty"`
+	IsShared         *bool `json:"isShared,omitempty"`
 }
 
 // App types. A document that names anything else is rejected at Derive rather
@@ -478,6 +482,11 @@ func deriveApp(org Org, a App) (Client, error) {
 		return Client{}, err
 	}
 
+	shared := a.IsShared
+	if shared == nil {
+		shared = a.Shared
+	}
+
 	c := Client{
 		Organization:         org.Name,
 		Name:                 id,
@@ -490,6 +499,7 @@ func deriveApp(org Org, a App) (Client, error) {
 		ExpireInHours:        stated(a.ExpireInHours),
 		RefreshExpireInHours: stated(a.RefreshExpireInHours),
 		EnableCodeSignin:     a.CodeSignin,
+		IsShared:             shared,
 	}
 	if c.RedirectUris == nil && a.Type != TypeService {
 		return Client{}, fmt.Errorf("provision: app %s declares no hosts and type %q needs a redirect", id, a.Type)

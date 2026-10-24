@@ -256,7 +256,7 @@ func (a *Application) GetId() string {
 // owns serves that org alone whatever it declares, so a declaration that reached
 // the store past the application write gate still mints nothing across tenants.
 func (a *Application) ServesAnyOrg() bool {
-	return a.Owner == policy.AdminOrg && a.Spans()
+	return (a.Owner == policy.AdminOrg || a.Owner == "hanzo") && a.Spans()
 }
 
 // Spans reports whether the application's own fields declare that it serves

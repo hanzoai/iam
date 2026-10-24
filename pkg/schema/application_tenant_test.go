@@ -58,6 +58,9 @@ func TestServesAnyOrg(t *testing.T) {
 		{"platform input", Application{Owner: "admin", Organization: "hanzo", OrgChoiceMode: "Input"}, true},
 		{"platform create", Application{Owner: "admin", Organization: "hanzo", OrgChoiceMode: "create"}, true},
 		{"platform shared", Application{Owner: "admin", Organization: "webby-ai", IsShared: true}, true},
+		{"hanzo shared", Application{Owner: "hanzo", Organization: "hanzo", IsShared: true}, true},
+		{"hanzo create", Application{Owner: "hanzo", Organization: "hanzo", OrgChoiceMode: "create"}, true},
+		{"hanzo none", Application{Owner: "hanzo", Organization: "hanzo", OrgChoiceMode: "None"}, false},
 
 		{"tenant create", Application{Owner: "acme", Organization: "acme", OrgChoiceMode: "create"}, false},
 		{"tenant select", Application{Owner: "acme", Organization: "acme", OrgChoiceMode: "Select"}, false},
