@@ -358,8 +358,9 @@ func seedBrand(t *testing.T, db orm.DB) {
 	}
 }
 
-// An email sent from a page at a registered origin carries the link; the same send
-// with no Origin, an unregistered one, or over SMS is today's message exactly.
+// An email sent from a page at a registered origin carries the link; the same email
+// with no Origin or an unregistered one is the code mail (the plain wording beside
+// the designed code alone, with no link), and an SMS is the plain message exactly.
 func TestSendVerificationCode_Link(t *testing.T) {
 	plain := func(code string) string {
 		return "Your verification code is " + code + ". It expires in 10 minutes. " +
@@ -406,11 +407,20 @@ func TestSendVerificationCode_Link(t *testing.T) {
 			code := rec.Code
 
 			if !tc.link {
-				if m.Body != plain(code) || m.HTML != "" {
-					t.Errorf("body = %q html = %q, want the plain message alone", m.Body, m.HTML)
+				if m.Body != plain(code) {
+					t.Errorf("body = %q, want the plain wording", m.Body)
 				}
-				if tc.typ == "email" && m.Subject != "Your verification code" {
+				if tc.typ != "email" {
+					if m.HTML != "" || m.Subject != "" {
+						t.Errorf("sms subject = %q html = %q, want neither", m.Subject, m.HTML)
+					}
+					return
+				}
+				if m.Subject != "Your Hanzo verification code" {
 					t.Errorf("subject = %q", m.Subject)
+				}
+				if !strings.Contains(m.HTML, ">"+code+"</div>") || strings.Contains(m.HTML, "#code=") || strings.Contains(m.HTML, ">Sign in</a>") {
+					t.Errorf("html is not the code mail without a link:\n%s", m.HTML)
 				}
 				return
 			}
