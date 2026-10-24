@@ -43,9 +43,28 @@ type mail struct {
 	Mark      string // the site's mark, or "" with no site
 	Headline  string
 	Preheader string // the line an inbox shows beside the subject
-	Link      string // the link with its fragment
+	Link      string // the link with its fragment, or "" for the code alone
 	Code      string
 	Minutes   int
+}
+
+// brand fills d's name, site and mark from org's row.
+func (d *mail) brand(org *schema.Organization) {
+	d.Brand = strings.TrimSpace(org.DisplayName)
+	if u := site(org.WebsiteUrl); u != nil {
+		d.Site = u.String()
+		d.Host = u.Host
+		d.Mark = d.Site + MarkPath
+	}
+}
+
+// draw renders d as the sign-in page.
+func (d mail) draw() (string, error) {
+	var page strings.Builder
+	if err := signinPage.Execute(&page, d); err != nil {
+		return "", fmt.Errorf("otp: draw the sign-in mail: %w", err)
+	}
+	return page.String(), nil
 }
 
 // signin words one sign-in code for one email, from org, with link beside it. The
@@ -56,17 +75,12 @@ type mail struct {
 func signin(org *schema.Organization, to, code, link string) (Message, error) {
 	fragment := url.Values{"email": {to}, "code": {code}}.Encode()
 	d := mail{
-		Brand:     strings.TrimSpace(org.DisplayName),
 		Link:      link + "#" + fragment,
 		Code:      code,
 		Minutes:   int(TTL.Minutes()),
 		Preheader: "Your sign-in code is " + code + ".",
 	}
-	if u := site(org.WebsiteUrl); u != nil {
-		d.Site = u.String()
-		d.Host = u.Host
-		d.Mark = d.Site + MarkPath
-	}
+	d.brand(org)
 	subject := "Your sign-in link"
 	d.Headline = "Sign in"
 	if d.Brand != "" {
@@ -74,9 +88,9 @@ func signin(org *schema.Organization, to, code, link string) (Message, error) {
 		d.Headline = "Sign in to " + d.Brand
 	}
 
-	var page strings.Builder
-	if err := signinPage.Execute(&page, d); err != nil {
-		return Message{}, fmt.Errorf("otp: draw the sign-in mail: %w", err)
+	html, err := d.draw()
+	if err != nil {
+		return Message{}, err
 	}
 	return Message{
 		Org:     org.Name,
@@ -87,8 +101,29 @@ func signin(org *schema.Organization, to, code, link string) (Message, error) {
 			"This link and code expire in %d minutes. Don't share them with anyone.\n"+
 			"If you didn't request this, you can ignore this email.",
 			d.Headline, d.Link, code, d.Minutes),
-		HTML: page.String(),
+		HTML: html,
 	}, nil
+}
+
+// verification words one code for one email where no link can go — a second
+// factor, or a sign-in asked for from a page that is none of the application's —
+// as the sign-in mail without its link, from org. The plain wording beside it is
+// [message]'s, word for word, so the text part, an SMS and this mail say one thing.
+func verification(org *schema.Organization, to, code string) (Message, error) {
+	m := message(org.Name, Email, to, code)
+	d := mail{Code: code, Minutes: int(TTL.Minutes()), Preheader: "Your verification code is " + code + "."}
+	d.brand(org)
+	d.Headline = "Your verification code"
+	if d.Brand != "" {
+		d.Headline = "Your " + d.Brand + " verification code"
+	}
+	html, err := d.draw()
+	if err != nil {
+		return Message{}, err
+	}
+	m.Subject = d.Headline
+	m.HTML = html
+	return m, nil
 }
 
 // site is the org's WebsiteUrl as an origin the mail may link to and load its mark

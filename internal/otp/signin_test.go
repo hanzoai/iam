@@ -138,3 +138,77 @@ func TestSigninSnapshot(t *testing.T) {
 		t.Errorf("the sign-in mail differs from %s; if the change is meant, rerun with -update and review the diff", path)
 	}
 }
+
+// The code mail is the sign-in mail without its link: the same page, the code in
+// its box, and the plain wording beside it exactly as [message] words it.
+func TestCodeMailWording(t *testing.T) {
+	m, err := verification(hanzo, "ada@example.com", "123456")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Org != "hanzo" || m.Channel != Email || m.To != "ada@example.com" {
+		t.Errorf("addressed %+v", m)
+	}
+	if m.Subject != "Your Hanzo verification code" {
+		t.Errorf("subject = %q", m.Subject)
+	}
+	if want := message("hanzo", Email, "ada@example.com", "123456").Body; m.Body != want {
+		t.Errorf("body =\n%q\nwant the plain wording\n%q", m.Body, want)
+	}
+	for _, part := range []string{
+		`<title>Your Hanzo verification code</title>`,
+		`Your verification code is 123456.`, // the preheader
+		`<img src="https://hanzo.ai/email/mark.png" width="44" height="44" alt="Hanzo"`,
+		`>123456</div>`,
+		`This code expires in 10 minutes. Don't share it with anyone.`,
+		`If you didn't request this, you can ignore this email.`,
+		`Hanzo · <a href="https://hanzo.ai"`,
+		`@media (prefers-color-scheme: dark)`,
+	} {
+		if !strings.Contains(m.HTML, part) {
+			t.Errorf("html is missing %q", part)
+		}
+	}
+	for _, link := range []string{`>Sign in</a>`, `Or enter this code`, `This link`, `#code=`} {
+		if strings.Contains(m.HTML, link) {
+			t.Errorf("a code mail carries the link's %q", link)
+		}
+	}
+}
+
+// An org with no name and no site is sent a code mail that names nobody and loads
+// nothing, as its sign-in mail would be.
+func TestCodeMailBare(t *testing.T) {
+	m, err := verification(&schema.Organization{Name: "bare"}, "ada@example.com", "123456")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Subject != "Your verification code" || !strings.Contains(m.HTML, "<title>Your verification code</title>") {
+		t.Errorf("subject %q", m.Subject)
+	}
+	if strings.Contains(m.HTML, "<img") || strings.Contains(strings.ToLower(m.HTML), "hanzo") {
+		t.Errorf("a bare org's mail names or loads something:\n%s", m.HTML)
+	}
+}
+
+// The code mail as it is sent, pinned whole beside the sign-in mail. Open
+// testdata/code.html in a browser to see it.
+func TestCodeMailSnapshot(t *testing.T) {
+	m, err := verification(hanzo, "z@hanzo.ai", "525019")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join("testdata", "code.html")
+	if *update {
+		if err := os.WriteFile(path, []byte(m.HTML), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read the snapshot (go test ./internal/otp -run Snapshot -update writes it): %v", err)
+	}
+	if m.HTML != string(want) {
+		t.Errorf("the code mail differs from %s; if the change is meant, rerun with -update and review the diff", path)
+	}
+}

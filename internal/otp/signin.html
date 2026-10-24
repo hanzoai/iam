@@ -55,6 +55,7 @@ a { text-decoration: none; }
 {{.Headline}}
 </td>
 </tr>
+{{- if .Link}}
 <tr>
 <td style="padding:0 0 32px 0;">
 <table role="presentation" cellpadding="0" cellspacing="0" border="0">
@@ -71,6 +72,7 @@ a { text-decoration: none; }
 Or enter this code:
 </td>
 </tr>
+{{- end}}
 <tr>
 <td style="padding:0 0 32px 0;">
 <div class="code" style="padding:16px 0 16px 8px;text-align:center;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;font-size:32px;line-height:40px;font-weight:600;letter-spacing:8px;color:#0a0a0a;background-color:#f4f4f5;border:1px solid #e4e4e7;border-radius:12px;">{{.Code}}</div>
@@ -78,7 +80,7 @@ Or enter this code:
 </tr>
 <tr>
 <td class="quiet" style="padding:0 0 8px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:22px;color:#52525b;">
-This link and code expire in {{.Minutes}} minutes. Don't share them with anyone.
+{{if .Link}}This link and code expire in {{.Minutes}} minutes. Don't share them with anyone.{{else}}This code expires in {{.Minutes}} minutes. Don't share it with anyone.{{end}}
 </td>
 </tr>
 <tr>

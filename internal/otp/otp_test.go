@@ -262,8 +262,8 @@ func TestMessageWording(t *testing.T) {
 	}
 }
 
-// IssueLink words a link only into an email, and only when it has one; every other
-// case is the message Issue sends.
+// IssueLink words a link only into an email, and only when it has one; an email
+// without one is the code mail, and a number is the plain message.
 func TestIssueLinkWording(t *testing.T) {
 	const link = "https://hanzo.ai/auth/callback"
 	for _, tc := range []struct {
@@ -287,6 +287,12 @@ func TestIssueLinkWording(t *testing.T) {
 			got := c.sent[0]
 			code := sixDigits.FindString(got.Body)
 			want := message("hanzo", Channel(tc.dest), Receiver(tc.dest), code)
+			if Channel(tc.dest) == Email {
+				var err error
+				if want, err = verification(hanzo, tc.dest, code); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if tc.linked {
 				var err error
 				if want, err = signin(hanzo, tc.dest, code, tc.link); err != nil {
@@ -301,5 +307,49 @@ func TestIssueLinkWording(t *testing.T) {
 				t.Fatalf("filed record %+v (err %v) does not hold the delivered code %q", rec, err, code)
 			}
 		})
+	}
+}
+
+// Issue sends an email as the designed code mail, from the org's own row: a second
+// factor and a code asked for anywhere a link cannot go read like the sign-in mail.
+// A number is the plain message, and an org with no row is still designed, naming
+// nobody.
+func TestIssueDesignsTheEmail(t *testing.T) {
+	db := openDB(t)
+	o := orm.New[schema.Organization](db)
+	o.Owner, o.Name, o.DisplayName, o.WebsiteUrl = "admin", "hanzo", "Hanzo", "https://hanzo.ai"
+	o.SetId("admin/hanzo")
+	if err := o.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed org: %v", err)
+	}
+	for _, tc := range []struct{ org, dest string }{
+		{"hanzo", "ada@example.com"},
+		{"nowhere", "bob@example.com"},
+		{"hanzo", "+14155550134"},
+	} {
+		c := &capture{}
+		bind(t, c)
+		if err := Issue(context.Background(), db, tc.org, tc.dest, "", nil, time.Now()); err != nil {
+			t.Fatalf("%s %s: issue: %v", tc.org, tc.dest, err)
+		}
+		if len(c.sent) != 1 {
+			t.Fatalf("%s %s: sent %d messages, want 1", tc.org, tc.dest, len(c.sent))
+		}
+		got := c.sent[0]
+		code := sixDigits.FindString(got.Body)
+		want := message(tc.org, Channel(tc.dest), Receiver(tc.dest), code)
+		if Channel(tc.dest) == Email {
+			org := &schema.Organization{Name: tc.org}
+			if tc.org == "hanzo" {
+				org = hanzo
+			}
+			var err error
+			if want, err = verification(org, tc.dest, code); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if got != want {
+			t.Errorf("%s %s: sent %+v\nwant %+v", tc.org, tc.dest, got, want)
+		}
 	}
 }

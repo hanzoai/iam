@@ -245,22 +245,35 @@ func Receiver(dest string) string {
 // account it is for, which is where [Consume] reads it: an account founded into an
 // org of its own is sent a code as its application's org, and filing the record
 // there left a code the person held that nothing could spend.
+//
+// An email is the designed code mail ([verification]) from org's row; an org with
+// no row is still sent it, naming nobody. A number is the plain [message].
 func Issue(ctx context.Context, db orm.DB, org, dest, remoteAddr string, user *schema.User, now time.Time) error {
 	return issue(ctx, db, PurposeCode, org, dest, remoteAddr, user, now, func(channel, to, code string) (Message, error) {
-		return message(org, channel, to, code), nil
+		if channel != Email {
+			return message(org, channel, to, code), nil
+		}
+		row, err := store.GetOrganizationByName(ctx, db, org)
+		if err != nil || row == nil {
+			row = &schema.Organization{Name: org}
+		}
+		return verification(row, to, code)
 	})
 }
 
 // IssueLink is [Issue] for a sign-in that can carry a link: an email to dest is
 // the designed sign-in mail ([signin]), from org as its reader knows it, with the
 // link and the code. link is a URI the caller has matched to the application, with
-// no fragment; the mail appends one naming the address and the code. An empty
-// link, or a destination that is not an email, is worded exactly as [Issue] words
-// it.
+// no fragment; the mail appends one naming the address and the code. An email
+// with an empty link is the code mail ([verification]), and a destination that is
+// not an email is the plain [message].
 func IssueLink(ctx context.Context, db orm.DB, org *schema.Organization, dest, remoteAddr string, user *schema.User, now time.Time, link string) error {
 	return issue(ctx, db, PurposeCode, org.Name, dest, remoteAddr, user, now, func(channel, to, code string) (Message, error) {
-		if link == "" || channel != Email {
+		switch {
+		case channel != Email:
 			return message(org.Name, channel, to, code), nil
+		case link == "":
+			return verification(org, to, code)
 		}
 		return signin(org, to, code, link)
 	})
