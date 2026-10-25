@@ -224,7 +224,7 @@ var paramLimits = map[string]int{
 	"response_type": 64, "client_id": 256, "redirect_uri": 2048, "scope": 2048,
 	"state": 1024, "nonce": 512, "code_challenge": 128, "code_challenge_method": 64,
 	"resource": 2048, "response_mode": 64, "provider": 256, "prompt": 256,
-	"login_hint": 512, "signup": 64,
+	"login_hint": 512, "signup": 64, "id_token_hint": 2048, "idp_nonce": 512,
 }
 
 // oversize names an authorize parameter longer than its bound, or "".

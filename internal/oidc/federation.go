@@ -182,13 +182,22 @@ func beginFederation(c *zip.Ctx, db orm.DB, app *schema.Application, q authorize
 		ExpireIn:            now.Add(fedStateTTL).Unix(),
 	}
 
+	// If the relying party already obtained a fresh signed id_token from the IdP
+	// (e.g. Google One-Tap), verify it directly against the provider's JWKS and
+	// complete the sign-in without a redundant browser hop to the IdP login page.
+	if idTokenHint := param(c, "id_token_hint"); idTokenHint != "" && idpKind(prov) == "oidc" && topLevelNavigation(c) {
+		if identity, err := oidcVerifyDirectIDToken(ctx, prov, idTokenHint, param(c, "idp_nonce"), now); err == nil && identity.subject != "" {
+			return completeFederationSignIn(c, db, app, prov, st, identity, now)
+		}
+	}
+
 	// Build the IdP authorize URL BEFORE persisting so a discovery/config failure
 	// never leaves an orphaned transaction row.
 	callback, err := federationCallbackURL(c)
 	if err != nil {
 		return authorizeErrorRedirect(c, q, "server_error", "")
 	}
-	idpURL, err := idpAuthorizeURL(ctx, prov, st, callback)
+	idpURL, err := idpAuthorizeURL(ctx, prov, st, callback, q.loginHint)
 	if err != nil {
 		return authorizeErrorRedirect(c, q, "temporarily_unavailable", "the identity provider is unavailable")
 	}
@@ -341,52 +350,57 @@ func federationCallbackHandler(db orm.DB) zip.Handler {
 			return fedAttachRedirect(c, db, st, prov, identity)
 		}
 
-		user, err := linkOrProvision(ctx, db, app, prov, identity)
-		if err != nil {
-			return fedResolveErrorRedirect(c, st, err)
-		}
-		if user.IsForbidden || user.IsDeleted {
-			return fedErrorRedirect(c, st, "access_denied", "the account is not permitted")
-		}
-
-		// The resume parameters — the ORIGINAL authorize request — pinned so the mint
-		// (now, or after a second factor) uses exactly these and nothing a later
-		// request could supply.
-		p := fedResumeParams{
-			ClientId:            st.ClientId,
-			RedirectUri:         st.RedirectUri,
-			AppState:            st.AppState,
-			Scope:               st.Scope,
-			AppNonce:            st.AppNonce,
-			CodeChallenge:       st.CodeChallenge,
-			CodeChallengeMethod: st.CodeChallengeMethod,
-			Resource:            st.Resource,
-		}
-
-		// Second-factor gate: a federated login must NOT skip the factor a password
-		// login would demand (the MFA gate, mfa_gate.go). If the resolved user owes a
-		// factor, mint NOTHING here — park the resume, bound to the user and these
-		// pinned params, and send the browser to the hosted 2FA page.
-		org, err := store.GetOrganizationByName(ctx, db, user.Owner)
-		if err != nil {
-			return fedFault(c, st, "organization "+user.Owner+" of "+user.Owner+"/"+user.Name, err)
-		}
-		if factor.Prompt(org, user) {
-			// The organization requires a factor this federated user has not enrolled;
-			// a federated login cannot enroll one inline, so it fails closed.
-			return fedErrorRedirect(c, st, "access_denied", "two-factor authentication must be set up before signing in")
-		}
-		if factor.Enabled(user) && !remembered(c, user, now) {
-			return federationChallenge(c, db, st, user, p, org, now)
-		}
-
-		// No second factor owed — complete exactly as before, through the one mint.
-		loc, err := federationMint(c, db, app, user, p, now)
-		if err != nil {
-			return fedMintErrorRedirect(c, st, err)
-		}
-		return c.Redirect(302, loc)
+		return completeFederationSignIn(c, db, app, prov, st, identity, now)
 	}
+}
+
+func completeFederationSignIn(c *zip.Ctx, db orm.DB, app *schema.Application, prov *schema.Provider, st *schema.FederationState, identity federatedIdentity, now time.Time) error {
+	ctx := c.Context()
+	user, err := linkOrProvision(ctx, db, app, prov, identity)
+	if err != nil {
+		return fedResolveErrorRedirect(c, st, err)
+	}
+	if user.IsForbidden || user.IsDeleted {
+		return fedErrorRedirect(c, st, "access_denied", "the account is not permitted")
+	}
+
+	// The resume parameters — the ORIGINAL authorize request — pinned so the mint
+	// (now, or after a second factor) uses exactly these and nothing a later
+	// request could supply.
+	p := fedResumeParams{
+		ClientId:            st.ClientId,
+		RedirectUri:         st.RedirectUri,
+		AppState:            st.AppState,
+		Scope:               st.Scope,
+		AppNonce:            st.AppNonce,
+		CodeChallenge:       st.CodeChallenge,
+		CodeChallengeMethod: st.CodeChallengeMethod,
+		Resource:            st.Resource,
+	}
+
+	// Second-factor gate: a federated login must NOT skip the factor a password
+	// login would demand (the MFA gate, mfa_gate.go). If the resolved user owes a
+	// factor, mint NOTHING here — park the resume, bound to the user and these
+	// pinned params, and send the browser to the hosted 2FA page.
+	org, err := store.GetOrganizationByName(ctx, db, user.Owner)
+	if err != nil {
+		return fedFault(c, st, "organization "+user.Owner+" of "+user.Owner+"/"+user.Name, err)
+	}
+	if factor.Prompt(org, user) {
+		// The organization requires a factor this federated user has not enrolled;
+		// a federated login cannot enroll one inline, so it fails closed.
+		return fedErrorRedirect(c, st, "access_denied", "two-factor authentication must be set up before signing in")
+	}
+	if factor.Enabled(user) && !remembered(c, user, now) {
+		return federationChallenge(c, db, st, user, p, org, now)
+	}
+
+	// No second factor owed — complete exactly as before, through the one mint.
+	loc, err := federationMint(c, db, app, user, p, now)
+	if err != nil {
+		return fedMintErrorRedirect(c, st, err)
+	}
+	return c.Redirect(302, loc)
 }
 
 // handoff answers a form_post reply with a 303 to a same-origin GET of the

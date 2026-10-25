@@ -214,7 +214,7 @@ func follow(db orm.DB) zip.Handler {
 		if err != nil {
 			return authorizeUserError(c, "internal error")
 		}
-		idpURL, err := idpAuthorizeURL(ctx, prov, st, callback)
+		idpURL, err := idpAuthorizeURL(ctx, prov, st, callback, "")
 		if err != nil {
 			return authorizeUserError(c, "the identity provider is unavailable")
 		}
