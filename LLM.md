@@ -1171,6 +1171,20 @@ not attach an attacker's wallet to a signed-in victim. `(chain, address)` is
 globally unique, checked in the same transaction as the bind, so one wallet is
 one identity and a wallet already spoken for is refused rather than moved.
 
+**Creating an account is capped** (`internal/wallet/cap.go`). A wallet is a free
+key, so one script could mint accounts without end. `Cap` bounds the accounts
+sign-up CREATES per client address and per network (IPv4 /24, IPv6 /64) in a
+window: default 10 and 50 per 24h, set by `IAM_WALLET_CAP_IP`,
+`IAM_WALLET_CAP_SUBNET` (`0` = off) and `IAM_WALLET_CAP_WINDOW` (Go duration);
+an unreadable value keeps the default. A wallet on file and a link to a held
+account are never counted. The client is `httpx.Client`, the one rule IAM
+counts by (CF-Connecting-IP, else the last X-Forwarded-For hop; the identifier
+throttle reads it too). The ledger is `schema.ActionWalletSignup` audit rows
+(ClientIp = address, Object = network), counted and written in the account's
+transaction, so a refusal writes nothing and concurrent creations cannot share
+one count. Refusal: 429, `Retry-After`, code `wallet_signup_capped`, data
+`{cap: "ip"|"subnet", limit, window, retryAfter}` (seconds).
+
 **Unlinking** is `POST /v1/iam/unlink` with
 `{"providerType":"wallet","chain":…,"address":…,"user":{"owner":…,"name":…}}` —
 the same endpoint, the same policy (holder or SuperAdmin; not an org admin), and

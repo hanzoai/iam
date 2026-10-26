@@ -126,21 +126,10 @@ func admit(client netip.Addr, now time.Time) bool {
 	return true
 }
 
-// client is who is asking: the address the edge saw connect, else the last
-// forwarded hop, which the nearest proxy wrote. An IPv6 client holds a /64, so it
-// is counted as one. Anything that is not an address is the zero client, which
-// every such request shares.
+// client is who is asking (httpx.Client). An IPv6 client holds a /64, so it is
+// counted as one.
 func (in *identifierBody) client() netip.Addr {
-	raw := strings.TrimSpace(in.Connecting)
-	if raw == "" {
-		hops := strings.Split(in.Forwarded, ",")
-		raw = strings.TrimSpace(hops[len(hops)-1])
-	}
-	ip, err := netip.ParseAddr(raw)
-	if err != nil {
-		return netip.Addr{}
-	}
-	ip = ip.Unmap()
+	ip := httpx.Client(in.Connecting, in.Forwarded)
 	if ip.Is6() {
 		ip = netip.PrefixFrom(ip, 64).Masked().Addr()
 	}

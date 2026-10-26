@@ -53,7 +53,7 @@ func Append(ctx context.Context, db orm.DB, log *schema.AuditLog) error {
 
 // Recorded counts the audit rows for action written at or after since whose
 // fields equal the values given as name, value pairs. The fields are ones the
-// AuditLog query dimensions name — Organization, User — or Object.
+// AuditLog query dimensions name — Organization, User — or Object and ClientIp.
 func Recorded(ctx context.Context, db orm.DB, action string, since time.Time, fields ...string) (int, error) {
 	q := orm.TypedQuery[schema.AuditLog](db).
 		Filter("Action=", action).

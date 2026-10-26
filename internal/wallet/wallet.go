@@ -21,9 +21,11 @@ package wallet
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -54,9 +56,16 @@ const (
 // the authz Guard): a wallet holder has no token until this flow gives them one,
 // so membership in the public group is what makes the two endpoints reachable
 // without a bearer.
+//
+// The Cap on the accounts sign-up creates is read here, once, from the
+// deployment's IAM_WALLET_CAP_* variables.
 func Route(r *zip.Group, db orm.DB) {
+	limit, err := capFrom(os.Getenv)
+	if err != nil {
+		log.Print(err)
+	}
 	r.Raw(http.MethodGet, PathNonce, nonce(db))
-	r.Raw(http.MethodPost, PathVerify, check(db))
+	r.Raw(http.MethodPost, PathVerify, check(db, limit))
 }
 
 // challenge is the LoginChallenge the client feeds to connector.signLogin().
@@ -171,7 +180,13 @@ const (
 //
 // This IS the login — it answers exactly as a password sign-in does, so the rest
 // of your flow does not branch on how somebody arrived.
-func check(db orm.DB) zip.Handler {
+//
+// A wallet no account holds yet creates one, and one address or one network
+// creates only so many in a window, a day by default. Past that the answer is
+// 429 with Retry-After and code wallet_signup_capped; data names the bound ("ip"
+// or "subnet"), its limit, and its window in seconds. A wallet already on file
+// is never counted.
+func check(db orm.DB, limit Cap) zip.Handler {
 	return func(c *zip.Ctx) error {
 		var f proof
 		if err := c.Bind(&f); err != nil {
@@ -221,7 +236,13 @@ func check(db orm.DB) zip.Handler {
 			App:     app,
 			Org:     org,
 			Session: session(c, db),
+			Client:  httpx.Client(c.Header("CF-Connecting-IP"), c.Header("X-Forwarded-For")),
+			Cap:     limit,
 		}, time.Now().UTC())
+		var refused *capped
+		if errors.As(err, &refused) {
+			return refuse(c, refused)
+		}
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
