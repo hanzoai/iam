@@ -1112,8 +1112,17 @@ read from the SIGNED MESSAGE (never the body, or a forged body could desync the
 two), the challenge is BURNED atomically before any cryptography (so a captured
 proof cannot be replayed even when its signature is perfect), the burned row's
 `domain` and `chain` are re-checked, and only then is the signature verified.
-The domain is `c.Host()` at both ends — the true routed brand host, never
-`X-Forwarded-Host` — because the whole anti-phishing binding rides on it.
+The domain is `site()` at both ends: the asking page's origin when the nonce
+names a `clientId` whose redirect URIs register that origin (`oidc.Landing`, the
+one rule the emailed link uses), else `c.Host()` — the true routed brand host,
+never `X-Forwarded-Host` — because the whole anti-phishing binding rides on it.
+So hanzo.ai asking IAM at api.hanzo.ai gets a challenge for `hanzo.ai`, and the
+wallet's own domain check passes. Verify accepts the burned row's domain when it
+equals either the request's site or its Host (a same-origin GET carries no
+Origin), and `VerifyProof` always expects the burned row's. A forged Origin can
+only pick among the app's own origins. Every mint sweeps expired challenges, at
+most `batch` rows once per `ttl` per process (`sweep`); the nonce `address` is
+bounded by `maxAddress` on both legs.
 Identity is the address the VERIFIER recovered, canonicalized (EVM lowercased;
 base58/bech32/SS58 trimmed only, because they are case-sensitive), never the one
 the client claimed.

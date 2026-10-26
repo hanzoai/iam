@@ -313,7 +313,7 @@ func TestAmbiguousAddressLeaksNothing(t *testing.T) {
 	}
 }
 
-// landing answers only a registered redirect URI, and only at the exact origin the
+// Landing answers only a registered redirect URI, and only at the exact origin the
 // request came from.
 func TestLanding(t *testing.T) {
 	app := &schema.Application{RedirectUris: []string{
@@ -339,8 +339,8 @@ func TestLanding(t *testing.T) {
 		{"origin with userinfo", "https://x@hanzo.ai", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := landing(app, tc.origin); got != tc.want {
-				t.Errorf("landing(%q) = %q, want %q", tc.origin, got, tc.want)
+			if got := Landing(app, tc.origin); got != tc.want {
+				t.Errorf("Landing(%q) = %q, want %q", tc.origin, got, tc.want)
 			}
 		})
 	}

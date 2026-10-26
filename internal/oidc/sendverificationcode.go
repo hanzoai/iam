@@ -41,7 +41,7 @@ import (
 //
 // An email is the designed sign-in mail, a link beside the code and from the
 // application's org as its reader knows it (otp.IssueLink), when the request's
-// Origin is the origin of one of the application's redirect URIs ([landing]);
+// Origin is the origin of one of the application's redirect URIs ([Landing]);
 // otherwise it is the code alone.
 func sendVerificationCode(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
@@ -92,7 +92,7 @@ func sendVerificationCode(db orm.DB) zip.Handler {
 			if !isEmailValid(dest) {
 				return httpx.Err(c, "email is invalid")
 			}
-			uri = landing(app, c.Header("Origin"))
+			uri = Landing(app, c.Header("Origin"))
 			// An ambiguous address is treated as NO USER, not reported. This endpoint
 			// is unauthenticated too, so echoing the resolver would tell a stranger
 			// which addresses exist — and the endpoint below already handles a nil
@@ -141,16 +141,20 @@ func sendVerificationCode(db orm.DB) zip.Handler {
 	}
 }
 
-// landing is the URI an emailed sign-in link opens: the first of the application's
-// RedirectUris, in its own order, whose origin is exactly origin (scheme, host and
-// port), with any fragment cut off. origin is the request's Origin header and must
-// be a serialized http or https origin. No Origin, a malformed one, or one no
-// registered URI is at answers "", and the email carries no link.
+// Landing is the application's registered URI at the origin of the page that
+// asked: the first of its RedirectUris, in its own order, whose origin is exactly
+// origin (scheme, host and port), with any fragment cut off. origin is the
+// request's Origin header and must be a serialized http or https origin. No
+// Origin, a malformed one, or one no registered URI is at answers "".
+//
+// It is the one rule for "is this page one of the application's own": an emailed
+// sign-in link opens the URI it returns, and a wallet challenge names the page's
+// site only when it returns one (internal/wallet site).
 //
 // Only a registered URI is ever returned, so a forged Origin can at most choose
 // among the application's own callbacks. Host, Referer and X-Forwarded-* are never
 // read: the Origin header is the one statement of which page asked.
-func landing(app *schema.Application, origin string) string {
+func Landing(app *schema.Application, origin string) string {
 	o, err := url.Parse(origin)
 	if err != nil || (o.Scheme != "http" && o.Scheme != "https") || o.Host == "" || o.Scheme+"://"+o.Host != origin {
 		return ""

@@ -6,6 +6,8 @@ package wallet
 import (
 	"context"
 	"errors"
+	"log"
+	"sync/atomic"
 	"time"
 
 	"github.com/hanzoai/orm"
@@ -34,14 +36,41 @@ var errChallenge = errors.New("web3: nonce invalid, already used, or expired")
 // id is the orm key of a challenge: the nonce is the row name.
 func id(nonce string) string { return owner + "/" + nonce }
 
-// mint persists a fresh challenge.
+// mint persists a fresh challenge, then sweeps the expired ones. It is the only
+// writer, so the rows it adds are the rows it clears.
 func mint(ctx context.Context, db orm.DB, ch *schema.Challenge) error {
 	row := orm.New[schema.Challenge](db)
 	model := row.Model
 	*row = *ch
 	row.Model = model
 	row.SetId(id(ch.Name))
-	return row.CreateCtx(ctx)
+	if err := row.CreateCtx(ctx); err != nil {
+		return err
+	}
+	if now, err := time.Parse(time.RFC3339, ch.CreatedTime); err == nil {
+		sweep(ctx, db, now)
+	}
+	return nil
+}
+
+// batch bounds the rows one sweep deletes, so its cost in the request that runs
+// it is fixed however large a backlog is; the next sweep continues it.
+const batch = 100
+
+// swept is the unix second this process last swept expired challenges.
+var swept atomic.Int64
+
+// sweep deletes up to batch expired challenges (Purge), at most once per ttl in
+// this process: nothing else removes one. A failure is logged and leaves the rows
+// to the next sweep.
+func sweep(ctx context.Context, db orm.DB, now time.Time) {
+	last := swept.Load()
+	if now.Unix()-last < int64(ttl/time.Second) || !swept.CompareAndSwap(last, now.Unix()) {
+		return
+	}
+	if _, err := Purge(ctx, db, now, batch); err != nil {
+		log.Printf("wallet: sweep: %v", err)
+	}
 }
 
 // burn atomically consumes a challenge, returning the row iff it existed, was
@@ -88,12 +117,13 @@ func burn(ctx context.Context, db orm.DB, nonce string, now time.Time) (*schema.
 	return out, nil
 }
 
-// Purge deletes every expired challenge and reports how many went. Every
-// anonymous nonce GET writes a row, so without this janitor the challenge store
-// grows without bound. Ports v1's PurgeExpiredWeb3Nonces.
-func Purge(ctx context.Context, db orm.DB, now time.Time) (int, error) {
+// Purge deletes up to limit expired challenges and reports how many went. Every
+// anonymous nonce GET writes a row, so without this janitor (sweep) the challenge
+// store grows without bound. Ports v1's PurgeExpiredWeb3Nonces.
+func Purge(ctx context.Context, db orm.DB, now time.Time, limit int) (int, error) {
 	stale, err := orm.TypedQuery[schema.Challenge](db).
 		Filter("ExpireTime<", now.UTC().Format(time.RFC3339)).
+		Limit(limit).
 		GetAll(ctx)
 	if err != nil {
 		return 0, err

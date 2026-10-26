@@ -50,10 +50,15 @@ var (
 // The proof itself IS the SDK's own value — the seven attacker-controlled fields
 // are never re-declared here, so Go and TypeScript verify the identical value.
 type login struct {
-	// Domain is the brand host from the header-immune c.Host(), re-checked against
-	// the burned challenge. Never client-supplied (X-Forwarded-Host is ignored):
-	// the anti-phishing binding rides on it.
+	// Domain is what site() names for this request: the page's origin when the
+	// application registers it, else Host. Host is the header-immune c.Host() the
+	// request arrived on (X-Forwarded-Host is ignored). The burned challenge must
+	// name one of the two. Host stays acceptable beside a registered Origin
+	// because a browser sends no Origin on a same-origin GET, so a page that
+	// reaches IAM through its own host mints a Host-bound challenge and redeems it
+	// with a POST that does carry Origin.
 	Domain string
+	Host   string
 	Proof  wc.Proof
 	Method string // "signup" (default) | "login"
 
@@ -89,7 +94,7 @@ func supported(chain wc.Chain) bool {
 //  2. BURN the nonce atomically, BEFORE any crypto, so a captured proof can
 //     never be replayed even when verification would succeed.
 //  3. Re-check the burned row's domain and chain: the nonce is pinned to the
-//     host it was minted against and the chain it was minted for.
+//     site it was minted for (site) and the chain it was minted for.
 //  4. VerifyProof — address binding, domain, nonce, time window, and the
 //     per-chain cryptographic check, all in the shared SDK.
 //  5. Resolve (chain, VERIFIED address) -> wallet -> user. Identity is the
@@ -115,8 +120,8 @@ func verify(ctx context.Context, db orm.DB, in login, now time.Time) (signin, er
 		return signin{}, err
 	}
 
-	// 3. The challenge pins the host and the chain.
-	if ch.Domain != in.Domain {
+	// 3. The challenge pins the site and the chain.
+	if ch.Domain != in.Domain && ch.Domain != in.Host {
 		return signin{}, errDomain
 	}
 	// Without this the chain label is decorative: a nonce minted for chain A
