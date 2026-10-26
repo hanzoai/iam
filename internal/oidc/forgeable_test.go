@@ -119,6 +119,7 @@ func TestCookieWrites_AllAskTheSameRule(t *testing.T) {
 	for _, w := range []struct{ method, path, body string }{
 		{"PUT", PathAccount, `{"displayName":"Mallory"}`},
 		{"PUT", PathPassword, `{"oldPassword":"pw","password":"N3w-passw0rd-long"}`},
+		{"PUT", PathAddress, `{"clientId":"conf","address":"+14155550134","code":"123456"}`},
 		{"PUT", PathTerms, `{"terms":"t2","aup":"a2"}`},
 		{"PUT", PathConsent, `{"insights":true}`},
 		{"POST", PathPreferences, `{"theme":"dark"}`},

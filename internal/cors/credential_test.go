@@ -26,6 +26,7 @@ import (
 	ormdb "github.com/hanzoai/orm/db"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/oidc"
 	"github.com/hanzoai/iam/pkg/schema"
 )
 
@@ -75,6 +76,7 @@ type probe struct {
 	status      int
 	origin      string // Access-Control-Allow-Origin
 	credentials string // Access-Control-Allow-Credentials
+	methods     string // Access-Control-Allow-Methods
 	vary        string
 }
 
@@ -136,6 +138,7 @@ func harness(t *testing.T, listed consoles) func(method, path, origin string) pr
 			status:      res.StatusCode,
 			origin:      res.Header.Get("Access-Control-Allow-Origin"),
 			credentials: res.Header.Get("Access-Control-Allow-Credentials"),
+			methods:     res.Header.Get("Access-Control-Allow-Methods"),
 			vary:        res.Header.Get("Vary"),
 		}
 	}
@@ -567,5 +570,26 @@ func TestCookieSurfaceIsExactlyTheShippedSDKsCredentialedSites(t *testing.T) {
 		if browserPaths[p] == cookie {
 			t.Errorf("%s must NOT admit the cookie: it answers a READ, which is the disclosure this closes", p)
 		}
+	}
+}
+
+// A console adds a sign-in address with the bearer it holds. The preflight for
+// that PUT names the method, and the path never admits the cookie — not even for
+// a listed console, because it is [bearer]: the write proves itself in the
+// request, and an origin nobody registered is told nothing.
+func TestTheAddressWriteIsABearerPut(t *testing.T) {
+	if browserPaths[oidc.PathAddress] != bearer {
+		t.Fatalf("%s = %v, want bearer", oidc.PathAddress, browserPaths[oidc.PathAddress])
+	}
+	do := harness(t, consoles{ours: true})
+	for _, origin := range []string{ours, theirs} {
+		pre := do(http.MethodOptions, oidc.PathAddress, origin)
+		if pre.origin != origin || pre.credentials != "" || !strings.Contains(pre.methods, http.MethodPut) {
+			t.Errorf("preflight from %s: allow-origin=%q credentials=%q methods=%q, want the origin, no credentials, PUT",
+				origin, pre.origin, pre.credentials, pre.methods)
+		}
+	}
+	if pre := do(http.MethodOptions, oidc.PathAddress, hostile); pre.origin != "" || pre.methods != "" {
+		t.Errorf("an unregistered origin was answered: allow-origin=%q methods=%q", pre.origin, pre.methods)
 	}
 }

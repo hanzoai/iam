@@ -147,13 +147,17 @@ var browserPaths = map[string]credential{
 	// ORIGIN may read the answer; authz decides WHO. Same shape as userinfo
 	// above, which is already open and already Bearer-protected.
 	"/v1/iam/account": bearer,
+	// Adding a sign-in address to that same account. The write proves itself
+	// twice in the request — the caller's bearer and the code sent to the address
+	// — so the ambient cookie is never admitted cross-origin.
+	oidc.PathAddress: bearer,
 
 	// What a first-party console does on the user's OWN behalf: read the orgs it
 	// may act in to render a switcher, create one, invite someone to it. Both
 	// writes are Guard-authorized against the caller's principal, so the browser
 	// can only do what that user could already do.
 	//
-	// This list is keyed by PATH and advertises GET and POST together, so an
+	// This list is keyed by PATH and advertises GET, POST and PUT together, so an
 	// entry opens the whole address. That is why the user collection is NOT here:
 	// a console reads people through its own backend, and listing /v1/iam/users
 	// to open a read would open creating one in the same line.
@@ -414,7 +418,10 @@ func allow(db orm.DB, listed consoles) zip.Handler {
 				c.SetHeader("Access-Control-Allow-Credentials", "true")
 			}
 			c.SetHeader("Access-Control-Allow-Headers", "Authorization, Content-Type")
-			c.SetHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			// PUT for the self-service writes a console makes with its bearer
+			// (/v1/iam/account, /v1/iam/address). A method opens nothing a path does
+			// not: the credential mode above is per path, and the handler decides who.
+			c.SetHeader("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
 			c.SetHeader("Access-Control-Max-Age", "600")
 		}
 

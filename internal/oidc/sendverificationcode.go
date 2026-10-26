@@ -125,6 +125,16 @@ func sendVerificationCode(db orm.DB) zip.Handler {
 			if user, err = store.GetUserByPhone(ctx, db, org.Name, dest); err != nil {
 				return httpx.Err(c, err.Error())
 			}
+			// The registration reach, for the reason the email arm has it: an account
+			// founded into an org of its own holds its number there, and the sign-in
+			// that authenticates the same number reaches it (resolveLoginUser). Two
+			// registrations carrying one number are refused rather than handed a code
+			// filed for nobody, in words that do not say why.
+			if user == nil {
+				if user, err = store.GetSignupByPhone(ctx, db, org.Name, dest); err != nil {
+					return httpx.Err(c, "verification code cannot be sent")
+				}
+			}
 		default:
 			return httpx.Err(c, "unsupported verification type: "+typ)
 		}

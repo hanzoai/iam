@@ -441,7 +441,10 @@ func (f loginForm) mint() Mint {
 // registered, by the address they registered with, ambiguity refused, reserved
 // orgs unreachable. An identifier that is not an address reaches them by the
 // username they kept ([store.SignupByName]), under the same scope; a name two of
-// them hold reaches nobody. Every application of the org reaches the same
+// them hold reaches nobody. A phone-shaped identifier no name matched reaches them
+// by the number on file ([store.GetSignupByPhone]) — after the names, so a name
+// still wins its own row exactly as it does in resolveInOrg, and a number two of
+// them hold is ErrPhoneAmbiguous. Every application of the org reaches the same
 // accounts, so a person who registered at hanzo.ai signs in at the console and the
 // CLI, and a code-proved password reset — whose body names the org and no
 // application — finds them too.
@@ -459,7 +462,10 @@ func resolveLoginUser(ctx context.Context, db orm.DB, org, identifier string, me
 		return user, err
 	}
 	if !strings.Contains(identifier, "@") {
-		return resolveName(ctx, db, org, identifier, members)
+		if user, err = resolveName(ctx, db, org, identifier, members); err != nil || user != nil || !store.LooksLikePhone(identifier) {
+			return user, err
+		}
+		return store.GetSignupByPhone(ctx, db, org, identifier)
 	}
 	if user, err = store.GetSignupByEmail(ctx, db, org, identifier); err != nil || user != nil || !members {
 		return user, err

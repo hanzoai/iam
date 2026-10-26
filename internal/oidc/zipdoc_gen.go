@@ -195,6 +195,15 @@ func init() {
 			"Response.code": "Code is a STABLE machine-readable reason, where the human `msg` is\ndeliberately generic. `msg` is prose for a person and several distinct causes\nlegitimately share one sentence; a caller that must BRANCH on the cause — or\ntell its own user which of them happened — cannot parse prose. Optional, so\nevery existing envelope is byte-identical and no SDK changes.",
 		},
 	})
+	zip.Describe("github.com/hanzoai/iam/internal/oidc PUT /v1/iam/address", zip.Doc{
+		Description: "Adds an email address or a phone number to the calling\nperson's own account, so they can sign in with it — by a code sent there, or\nto recover a password.\n\nFirst ask POST /v1/iam/verification-codes to send a code to the new address,\nwith the applicationId of the application you sign in at, then send that\napplication's clientId, the address and the code here. Only the caller's own\naccount is written; the request names nobody.\n\nIt adds and never replaces: an account that already has an email keeps it, and\nasking again with the same address answers ok. An address another account at\nthat application already signs in with is refused with the same words a wrong\ncode gets.",
+		Fields: map[string]string{
+			"Response.code":        "Code is a STABLE machine-readable reason, where the human `msg` is\ndeliberately generic. `msg` is prose for a person and several distinct causes\nlegitimately share one sentence; a caller that must BRANCH on the cause — or\ntell its own user which of them happened — cannot parse prose. Optional, so\nevery existing envelope is byte-identical and no SDK changes.",
+			"addressBody.address":  "Address is the email address or phone number being added.",
+			"addressBody.clientId": "ClientId is the application the address will sign in at — the one whose\napplicationId the code was sent under.",
+			"addressBody.code":     "Code is the one-time code sent to Address.",
+		},
+	})
 	zip.Describe("github.com/hanzoai/iam/internal/oidc PUT /v1/iam/consent", zip.Doc{
 		Description: "Records the calling person's privacy and communication\nchoices. Only their own — there is no way to set consent for somebody else.\n\nSend only the answers you are changing. A question you leave out keeps the\nanswer it already had, so a screen that saves one switch never revokes the\nother, and two screens saving at once do not undo each other.\n\nAn answer this version does not recognize is refused here rather than stored,\nso nothing is ever persisted for a later reader to have to interpret.",
 	})

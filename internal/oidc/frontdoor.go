@@ -79,6 +79,10 @@ func routeFrontDoor(r *zip.Group, db orm.DB) {
 	// reset is followed by an ordinary sign-in.
 	r.Put(PathPassword, putPasswordHandler(db),
 		zip.WithStatus(200, 400, 403), zip.WithTags("auth"))
+	// The one self-service write of a sign-in address: added, never replaced, and
+	// only once a code sent to it proved it. Self-scoped like the password above.
+	r.Put(PathAddress, putAddressHandler(db),
+		zip.WithStatus(200, 400, 403, 409), zip.WithTags("auth"))
 	// A platform operator stepping into an organization, and back out. Both
 	// re-scope the credential the caller presents and neither reads one, so they
 	// self-authenticate on that token exactly as the minters above do.
@@ -189,8 +193,13 @@ func authMethods(db orm.DB) zip.TypedHandler[offer, httpx.Answer] {
 			// right options instead of hardcoding a list that drifts from the
 			// verifier. Additive: `web3` stays the boolean every client reads.
 			"web3Chains": names,
-			"oauth":      oauth,
-			"signup":     app.EnableSignUp,
+			// A signed-in person can add an email address or a phone number to their
+			// account (PUT /v1/iam/address) exactly when a code can be sent to it: the
+			// route proves the address with one, so the flag is the sender's, and a
+			// screen draws the form only where it can finish.
+			"address": otp.DeliveryConfigured(),
+			"oauth":   oauth,
+			"signup":  app.EnableSignUp,
 		}), nil
 	}
 }

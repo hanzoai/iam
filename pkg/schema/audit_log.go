@@ -96,6 +96,10 @@ const (
 	// acts, the run it is for and its lifetime. Refusals too, filed under the org
 	// asked for, so a tenant reads every attempt to act in it.
 	ActionDelegate = "delegate"
+	// A person adding a sign-in address — an email or a phone, proved by a code
+	// sent to it — to their own account (PUT /v1/iam/address). Object names the
+	// field and the application, never the address or the code.
+	ActionAddress = "address"
 )
 
 // PlatformWritten reports whether action names a record the platform writes
@@ -110,7 +114,7 @@ func PlatformWritten(action string) bool {
 		ActionAssumeOrg, ActionReleaseOrg, ActionListOrgs, ActionSuperAdmin, ActionWorkloadToken,
 		ActionInviteSend, ActionInviteAccept, ActionInviteRefused, ActionInviteSignupRefused,
 		ActionInviteCodeSent, ActionMembershipGrant, ActionMembershipRevoke, ActionImpersonate,
-		ActionDelegate:
+		ActionDelegate, ActionAddress:
 		return true
 	}
 	return false
