@@ -630,6 +630,46 @@ func GetUserByPhone(ctx context.Context, db orm.DB, owner, phone string) (*schem
 	}
 }
 
+// GetSignupByPhone is [GetSignupByEmail] for the other address a code reaches: an
+// account registered in org — a row whose [schema.User.SignupApplication] names an
+// application of org — carrying phone.
+//
+// It exists for the same reason. An account a founding application registered
+// works in an org of its own, so [GetUserByPhone] scoped to the application's org
+// finds nobody, and a code texted to that account's own number was filed for
+// nobody and signed nobody in. The reach is the same one the address has: org's
+// registrations only, reserved orgs never, seeded and imported rows (no
+// SignupApplication) never.
+//
+// phone is normalized here, as [GetUserByPhone] normalizes it. Ambiguity FAILS
+// CLOSED with [ErrPhoneAmbiguous]: two registrations carrying one number name
+// nobody.
+func GetSignupByPhone(ctx context.Context, db orm.DB, org, phone string) (*schema.User, error) {
+	phone = NormalizePhone(phone)
+	if org == "" || phone == "" {
+		return nil, nil
+	}
+	us, err := orm.TypedQuery[schema.User](db).
+		Filter("Phone=", phone).Filter("SignupApplication!=", "").GetAll(ctx)
+	if err == orm.ErrNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if us, err = registeredIn(ctx, db, org, us); err != nil {
+		return nil, err
+	}
+	switch len(us) {
+	case 0:
+		return nil, nil
+	case 1:
+		return us[0], nil
+	default:
+		return nil, ErrPhoneAmbiguous
+	}
+}
+
 // GetTokenByCode resolves a token row by its authorization code. Returns
 // (nil, nil) when no row carries the code.
 func GetTokenByCode(_ context.Context, db orm.DB, code string) (*schema.Token, error) {

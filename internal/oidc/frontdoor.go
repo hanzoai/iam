@@ -79,6 +79,10 @@ func routeFrontDoor(r *zip.Group, db orm.DB) {
 	// reset is followed by an ordinary sign-in.
 	r.Put(PathPassword, putPasswordHandler(db),
 		zip.WithStatus(200, 400, 403), zip.WithTags("auth"))
+	// The one self-service write of a sign-in address: added, never replaced, and
+	// only once a code sent to it proved it. Self-scoped like the password above.
+	r.Put(PathAddress, putAddressHandler(db),
+		zip.WithStatus(200, 400, 403, 409), zip.WithTags("auth"))
 	// A platform operator stepping into an organization, and back out. Both
 	// re-scope the credential the caller presents and neither reads one, so they
 	// self-authenticate on that token exactly as the minters above do.

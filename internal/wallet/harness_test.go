@@ -345,9 +345,9 @@ func challenges(t *testing.T, db orm.DB) []*schema.Challenge {
 
 // --- a real bearer, for the one branch that honors a session ---
 
-// bearer seeds a signing cert + a user, and returns a token the authz Guard's
-// verifier accepts for that user.
-func bearer(t *testing.T, db orm.DB, a *schema.Application, org, name string) (*schema.User, string) {
+// seedCert seeds the platform signing cert — what signs a token and keys a
+// session — and returns its key.
+func seedCert(t *testing.T, db orm.DB) *rsa.PrivateKey {
 	t.Helper()
 	k, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -363,6 +363,14 @@ func bearer(t *testing.T, db orm.DB, a *schema.Application, org, name string) (*
 	if err := c.CreateCtx(tctx()); err != nil {
 		t.Fatalf("seed cert: %v", err)
 	}
+	return k
+}
+
+// bearer seeds a signing cert + a user, and returns a token the authz Guard's
+// verifier accepts for that user.
+func bearer(t *testing.T, db orm.DB, a *schema.Application, org, name string) (*schema.User, string) {
+	t.Helper()
+	k := seedCert(t, db)
 
 	u := orm.New[schema.User](db)
 	u.Owner = org

@@ -234,7 +234,38 @@ credential act that is only safe once the NEW address has proved it can receive
 one — and **`properties`**, because the consent record nests inside it
 (`PreferencesKey`), so a profile write reaching it would let anyone answer the
 data-sharing questions on their own behalf. `avatar` is `schema.AvatarRef`: one
-rule for how a subject appears, person or organization.
+rule for how a subject appears, person or organization. An address is added by
+`PUT /v1/iam/address`, below.
+
+## `PUT /v1/iam/address` — a sign-in address, added once a code proved it
+
+`{clientId, address, code}` → `{owner, name, email, phone}`. How an account that
+began with no address (a wallet, an agent's headless signup at a founding app) is
+later signed in to as the SAME account by email or text. Code: `internal/oidc/address.go`;
+tests `TestAddress*`, wallet end to end `TestWalletAccountAddsAPhoneAndSignsInByIt`.
+
+- The caller is `callerFrom` (cookie or bearer, never one someone acts through);
+  a machine is 403. The application must sign them in: they live in its org or it
+  registered them (`store.RegisteredIn`), else 403.
+- The proof is the code `POST /v1/iam/verification-codes` filed for NOBODY under the
+  app's org (`applicationId admin/<app>`), spent by `otp.Prove`.
+- It ADDS, never replaces: the same value again is ok with no code; a different
+  one is 409. Replacing a login address is a separate owner decision.
+- An address any OTHER account would be resolved by at that app
+  (`resolveLoginUser`, ambiguity included) is refused BEFORE the code is read,
+  with the wrong-code words, so no caller learns who holds an address.
+- Email lands normalized and `EmailVerified`; a phone `store.NormalizePhone`d.
+  `schema.ActionAddress` (PlatformWritten) is written in the same transaction,
+  object `{client, field}`, never the address or the code.
+- CORS: `[bearer]`, and the preflight now advertises PUT for every browser path.
+
+**The phone reach.** A founded account works in an org of its own, so the app's
+org held its number nowhere: a texted code was filed for nobody. `store.GetSignupByPhone`
+is `GetSignupByEmail` for numbers; the SMS send falls back to it after the in-org
+lookup (two registrations on one number: refused, nothing minted), and
+`resolveLoginUser` asks it for a phone-shaped identifier after the in-org and name
+reaches miss, so code sign-in and a code reset find the account.
+`/v1/iam/auth/identifier` still takes email only.
 
 ## `lastSigninTime` had no writer, which is worse than having no column
 
