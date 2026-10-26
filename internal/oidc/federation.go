@@ -185,9 +185,18 @@ func beginFederation(c *zip.Ctx, db orm.DB, app *schema.Application, q authorize
 	// If the relying party already obtained a fresh signed id_token from the IdP
 	// (e.g. Google One-Tap), verify it directly against the provider's JWKS and
 	// complete the sign-in without a redundant browser hop to the IdP login page.
-	if idTokenHint := param(c, "id_token_hint"); idTokenHint != "" && idpKind(prov) == "oidc" && topLevelNavigation(c) {
-		if identity, err := oidcVerifyDirectIDToken(ctx, prov, idTokenHint, param(c, "idp_nonce"), now); err == nil && identity.subject != "" {
-			return completeFederationSignIn(c, db, app, prov, st, identity, now)
+	if idTokenHint := param(c, "id_token_hint"); idTokenHint != "" && idpKind(prov) == "oidc" {
+		switch {
+		case !topLevelNavigation(c):
+			log.Printf("federation: direct id_token not used: provider=%s client=%s reason=not-a-navigation dest=%s", prov.Name, q.clientID, c.Header("Sec-Fetch-Dest"))
+		default:
+			identity, err := oidcVerifyDirectIDToken(ctx, prov, idTokenHint, param(c, "idp_nonce"), now)
+			if err == nil {
+				return completeFederationSignIn(c, db, app, prov, st, identity, now)
+			}
+			// The person is sent on to the IdP, who asks them to choose an account:
+			// the reason is the only record that it was not asked for. Never the token.
+			log.Printf("federation: direct id_token rejected: provider=%s client=%s reason=%s", prov.Name, q.clientID, directReason(err))
 		}
 	}
 

@@ -245,6 +245,48 @@ func oidcAuthorizeURL(cfg oidcConfig, p *schema.Provider, st *schema.FederationS
 	return joinQuery(cfg.authURL, v)
 }
 
+// Why a directly-presented id_token (Google One-Tap) was not taken. Each is a
+// fall-through to the IdP's own sign-in, so each is named in the log by directReason.
+var (
+	errDirectToken   = errors.New("federation: direct id_token verification failed")
+	errDirectNonce   = errors.New("federation: direct id_token nonce mismatch")
+	errDirectStale   = errors.New("federation: direct id_token is not fresh")
+	errDirectSubject = errors.New("federation: direct id_token has no subject")
+)
+
+// directReason names why a direct id_token was rejected, in a word a log line can
+// carry. It never includes the token or a claim.
+func directReason(err error) string {
+	switch {
+	case errors.Is(err, errDirectNonce):
+		return "nonce-mismatch"
+	case errors.Is(err, errDirectStale):
+		return "stale-or-future-iat"
+	case errors.Is(err, errDirectSubject):
+		return "no-subject"
+	case errors.Is(err, jwt.ErrTokenExpired):
+		return "expired"
+	case errors.Is(err, jwt.ErrTokenInvalidAudience):
+		return "audience"
+	case errors.Is(err, jwt.ErrTokenInvalidIssuer):
+		return "issuer"
+	case errors.Is(err, jwt.ErrTokenSignatureInvalid):
+		return "signature"
+	case errors.Is(err, jwt.ErrTokenUnverifiable):
+		return "unverifiable-key"
+	case errors.Is(err, jwt.ErrTokenMalformed):
+		return "malformed"
+	case errors.Is(err, jwt.ErrTokenNotValidYet):
+		return "not-valid-yet"
+	case errors.Is(err, jwt.ErrTokenRequiredClaimMissing):
+		return "missing-claim"
+	case errors.Is(err, errDirectToken):
+		return "invalid"
+	default:
+		return "provider-unreachable"
+	}
+}
+
 // oidcVerifyDirectIDToken verifies a directly-presented IdP id_token (e.g. from
 // Google One-Tap) against the provider's discovered JWKS, issuer, client_id
 // audience, expiry, and freshness.
@@ -262,18 +304,18 @@ func oidcVerifyDirectIDToken(ctx context.Context, p *schema.Provider, idToken, n
 		jwt.WithTimeFunc(func() time.Time { return now }),
 	)
 	if err != nil || !tok.Valid {
-		return federatedIdentity{}, fmt.Errorf("federation: direct id_token verification failed")
+		return federatedIdentity{}, fmt.Errorf("%w: %w", errDirectToken, err)
 	}
 	if nonce != "" || claims.Nonce != "" {
 		if subtle.ConstantTimeCompare([]byte(claims.Nonce), []byte(nonce)) != 1 {
-			return federatedIdentity{}, errors.New("federation: direct id_token nonce mismatch")
+			return federatedIdentity{}, errDirectNonce
 		}
 	}
 	if claims.IssuedAt == nil || now.Sub(claims.IssuedAt.Time) > 5*time.Minute || claims.IssuedAt.Time.Sub(now) > time.Minute {
-		return federatedIdentity{}, errors.New("federation: direct id_token is not fresh")
+		return federatedIdentity{}, errDirectStale
 	}
 	if strings.TrimSpace(claims.Subject) == "" {
-		return federatedIdentity{}, errors.New("federation: direct id_token has no subject")
+		return federatedIdentity{}, errDirectSubject
 	}
 	return federatedIdentity{
 		subject:       claims.Subject,
