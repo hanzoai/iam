@@ -76,20 +76,26 @@ type challenge struct {
 
 // nonce starts a wallet sign-in: it returns a one-time challenge for the wallet
 // to sign. The challenge is good once and is tied to the site that asked for it,
-// so a signature collected elsewhere cannot be replayed here.
+// so a signature collected elsewhere cannot be replayed here. Pass your
+// application's clientId and, from a page at one of its registered redirect
+// origins, the challenge names that page's site, which is what the wallet shows
+// the person.
 func nonce(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		chain := wc.Chain(trim(c.Query("chain")))
 		if !supported(chain) {
 			return httpx.Err(c, "web3: unsupported chain: "+string(chain))
 		}
-		// The domain is the brand login host the request arrived on, read through
-		// the header-immune c.Host() (zip has no trusted-proxy knob, so a client
-		// X-Forwarded-Host is ignored) — NEVER client-supplied. The whole
-		// anti-phishing binding the wallet signs (the EIP-4361/CAIP-122 `domain`)
-		// rides on this, so it MUST be the true routed brand host, never a
-		// spoofable header. It is the SAME accessor the OIDC issuer resolver uses.
-		domain := trim(c.Host())
+		address := c.Query("address")
+		if len(address) > maxAddress {
+			return httpx.Err(c, "web3: oversized address")
+		}
+		ctx := c.Context()
+		app, err := store.GetApplicationByClientId(ctx, db, trim(c.Query("clientId")))
+		if err != nil {
+			return httpx.Err(c, err.Error())
+		}
+		domain, uri := site(c, app)
 		if domain == "" {
 			return httpx.Err(c, "web3: empty domain")
 		}
@@ -100,11 +106,11 @@ func nonce(db orm.DB) zip.Handler {
 		}
 		now := time.Now().UTC()
 		expire := now.Add(ttl)
-		if err := mint(c.Context(), db, &schema.Challenge{
+		if err := mint(ctx, db, &schema.Challenge{
 			Owner:       owner,
 			Name:        n,
 			Chain:       string(chain),
-			Address:     trim(c.Query("address")),
+			Address:     trim(address),
 			Domain:      domain,
 			CreatedTime: stamp(now),
 			ExpireTime:  stamp(expire),
@@ -113,7 +119,7 @@ func nonce(db orm.DB) zip.Handler {
 		}
 		return httpx.Ok(c, challenge{
 			Domain:         domain,
-			URI:            "https://" + domain + "/login",
+			URI:            uri,
 			Statement:      statement,
 			Nonce:          n,
 			IssuedAt:       stamp(now),
@@ -196,12 +202,12 @@ func check(db orm.DB) zip.Handler {
 			return httpx.Err(c, "web3: organization not found")
 		}
 
+		// The same site() as the mint, re-derived here and re-checked against the
+		// burned challenge, so a challenge redeems only where it could be minted.
+		domain, _ := site(c, app)
 		in, err := verify(ctx, db, login{
-			// Same header-immune c.Host() as the mint: verify re-derives the domain
-			// from the true routed brand host and re-checks it against the burned
-			// challenge, so a spoofed X-Forwarded-Host can neither steer the binding
-			// nor slip a cross-host redemption past the domain check.
-			Domain: trim(c.Host()),
+			Domain: domain,
+			Host:   trim(c.Host()),
 			Proof: wc.Proof{
 				Chain:     chain,
 				Scheme:    wc.SignatureScheme(f.Scheme),
@@ -311,6 +317,41 @@ func session(c *zip.Ctx, db orm.DB) *schema.User {
 		return nil
 	}
 	return user
+}
+
+// site is the domain and URI a wallet challenge names for this request, and the
+// one rule both legs read: the nonce mints with it and verify expects it.
+//
+// It is the origin of the page that asked when that origin is one of app's own
+// (oidc.Landing: the scheme, host and port of a registered redirect URI, matched
+// exactly), so a person signing in on hanzo.ai through IAM at api.hanzo.ai signs
+// for hanzo.ai, and a wallet that compares the EIP-4361 domain with the page
+// finds them equal. With no application, or an Origin it does not register, it
+// is the host the request arrived on, read through the header-immune c.Host()
+// (zip has no trusted-proxy knob, so X-Forwarded-Host is ignored). Referer is
+// never read.
+//
+// Origin decides it only among app's registered origins. A browser sets Origin
+// and page script cannot change it. A client outside a browser can send any
+// Origin, but the only values that move the answer are origins the application
+// already registers, so a forger obtains a challenge naming a site the
+// application owns: what every browser on that site obtains, and nothing a
+// direct call to that host's IAM would not give. What keeps a captured signature
+// from signing anyone in is unchanged: the single-use burn, the burned row's
+// domain re-checked at verify, and the wallet's own comparison of the domain with
+// the page asking. The same-site check that gates linking a wallet to a
+// signed-in caller (same) still compares Origin with c.Host() and never reads
+// this.
+func site(c *zip.Ctx, app *schema.Application) (domain, uri string) {
+	if app != nil {
+		origin := c.Header("Origin")
+		if oidc.Landing(app, origin) != "" {
+			_, host, _ := strings.Cut(origin, "://")
+			return host, origin + "/login"
+		}
+	}
+	host := trim(c.Host())
+	return host, "https://" + host + "/login"
 }
 
 // same reports whether the request is same-site: the Origin (else Referer) host

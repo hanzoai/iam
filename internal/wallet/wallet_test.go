@@ -4,6 +4,7 @@
 package wallet
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -157,14 +158,41 @@ func TestPurge(t *testing.T) {
 		t.Fatalf("challenges = %d, want 1", n)
 	}
 	// Not yet expired: nothing to reclaim.
-	if n, err := Purge(tctx(), db, time.Now().UTC()); err != nil || n != 0 {
+	if n, err := Purge(tctx(), db, time.Now().UTC(), batch); err != nil || n != 0 {
 		t.Fatalf("Purge early = %d, %v; want 0, nil", n, err)
 	}
-	if n, err := Purge(tctx(), db, time.Now().UTC().Add(2*ttl)); err != nil || n != 1 {
+	if n, err := Purge(tctx(), db, time.Now().UTC().Add(2*ttl), batch); err != nil || n != 1 {
 		t.Fatalf("Purge = %d, %v; want 1, nil", n, err)
 	}
 	if n := len(challenges(t, db)); n != 0 {
 		t.Fatalf("challenges after purge = %d, want 0", n)
+	}
+}
+
+// The nonce mint is the janitor's trigger: a mint a ttl after the last sweep
+// reclaims what expired, at most batch rows a pass, and a mint inside the ttl
+// sweeps nothing.
+func TestMintSweeps(t *testing.T) {
+	_, db := newServer(t)
+	ctx := tctx()
+	start := time.Now().UTC()
+	put := func(name string, at time.Time) {
+		t.Helper()
+		if err := mint(ctx, db, &schema.Challenge{Owner: owner, Name: name, Chain: "evm", Domain: "hanzo.id", CreatedTime: stamp(at), ExpireTime: stamp(at.Add(ttl))}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	swept.Store(start.Unix())
+	t.Cleanup(func() { swept.Store(0) })
+	for i := range batch + 1 {
+		put(fmt.Sprintf("old%03d", i), start)
+	}
+	if n := len(challenges(t, db)); n != batch+1 {
+		t.Fatalf("inside the ttl: challenges = %d, want %d (no sweep)", n, batch+1)
+	}
+	put("new", start.Add(2*ttl))
+	if n := len(challenges(t, db)); n != 2 {
+		t.Fatalf("after a sweep: challenges = %d, want 2 (one old past the batch, and new)", n)
 	}
 }
 

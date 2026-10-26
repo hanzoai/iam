@@ -15,8 +15,9 @@ import "github.com/hanzoai/orm"
 // tenant is known, so the challenge store is global, not org-scoped. Name IS the
 // nonce string, so (Owner, Name) is the natural key the burn locks.
 //
-// Domain is the request-derived brand host the wallet signed against, re-checked
-// against this row at verify. The whole phishing defense rides on that binding,
+// Domain is the site the wallet signed for — the asking page's origin when its
+// application registers it, else the brand host (internal/wallet site) —
+// re-checked against this row at verify. The whole phishing defense rides on that binding,
 // which is why the host is stored at mint rather than re-derived from the client
 // at verify.
 type Challenge struct {
