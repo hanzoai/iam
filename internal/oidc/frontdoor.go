@@ -193,8 +193,13 @@ func authMethods(db orm.DB) zip.TypedHandler[offer, httpx.Answer] {
 			// right options instead of hardcoding a list that drifts from the
 			// verifier. Additive: `web3` stays the boolean every client reads.
 			"web3Chains": names,
-			"oauth":      oauth,
-			"signup":     app.EnableSignUp,
+			// A signed-in person can add an email address or a phone number to their
+			// account (PUT /v1/iam/address) exactly when a code can be sent to it: the
+			// route proves the address with one, so the flag is the sender's, and a
+			// screen draws the form only where it can finish.
+			"address": otp.DeliveryConfigured(),
+			"oauth":   oauth,
+			"signup":  app.EnableSignUp,
 		}), nil
 	}
 }

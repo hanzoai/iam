@@ -257,6 +257,12 @@ tests `TestAddress*`, wallet end to end `TestWalletAccountAddsAPhoneAndSignsInBy
 - Email lands normalized and `EmailVerified`; a phone `store.NormalizePhone`d.
   `schema.ActionAddress` (PlatformWritten) is written in the same transaction,
   object `{client, field}`, never the address or the code.
+- `GET /v1/iam/auth/methods` says `address: true` exactly when a sender is bound
+  (`otp.DeliveryConfigured`), because the add is proved by a code: a screen draws
+  the form only where it can finish, and `@hanzo/iam` 0.21.37 reads it as
+  `methods().address`. `code` says a code can be sent, by either channel; whether
+  the org's notify holds a text credential is notify's fact (KMS
+  `orgs/<org>/notify/twilio/{account-sid,auth-token,from-number}`), not IAM's.
 - CORS: `[bearer]`, and the preflight now advertises PUT for every browser path.
 
 **The phone reach.** A founded account works in an org of its own, so the app's

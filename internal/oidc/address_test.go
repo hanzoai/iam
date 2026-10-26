@@ -455,3 +455,27 @@ func TestAddressRefusals(t *testing.T) {
 		t.Fatalf("a refusal wrote an address: phone=%q email=%q", got.Phone, got.Email)
 	}
 }
+
+// The sign-in screen is told a person can add an address only where a code can be
+// sent to it, because the add is proved by one. With no sender the route could not
+// be finished, so the descriptor must not offer it.
+func TestMethodsSaysWhetherAnAddressCanBeAdded(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "addr", secret: "s3cret", redirectURIs: []string{testRedirect}})
+
+	flag := func() any {
+		t.Helper()
+		_, body := do(t, app, formReqNoBody("GET", PathAuthMethods+"?clientId=addr"))
+		data, _ := decode(t, body)["data"].(map[string]any)
+		return data["address"]
+	}
+
+	bindSender(t, nil)
+	if got := flag(); got != false {
+		t.Errorf("address = %v with no sender bound, want false", got)
+	}
+	bindSender(t, &fakeSender{})
+	if got := flag(); got != true {
+		t.Errorf("address = %v with a sender bound, want true", got)
+	}
+}
