@@ -128,6 +128,10 @@ type holder struct {
 	// Key is the key's name within Org — which credential this is, so a resource
 	// server can count and limit each key on its own.
 	Key string `json:"key,omitempty"`
+	// KeyOrg is the org the key is filed in, when ?org= moved the holder to
+	// another Org: Key names a row there. Absent when the key acts where it is
+	// filed, which is every answer to a request that selected no org.
+	KeyOrg string `json:"keyOrg,omitempty"`
 }
 
 // who answers which account a SECRET key belongs to — what a gateway of yours calls
@@ -160,6 +164,19 @@ func who(db orm.DB) zip.Handler {
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
+		// ?org= is the org the caller selected for this request. The key acts there
+		// only if its holder does (store.HolderIn); otherwise key_org_not_open,
+		// never a silent fall back to the key's own org, which billed the wrong
+		// tenant (hanzo-inc/cloud#429).
+		if sel := strings.TrimSpace(c.Query("org")); sel != "" {
+			h, err = store.HolderIn(ctx, db, h, sel)
+			if errors.Is(err, orm.ErrNotFound) {
+				return httpx.ErrCode(c, "the entity does not exist", string(store.Reason(err)))
+			}
+			if err != nil {
+				return httpx.Err(c, err.Error())
+			}
+		}
 		u := h.User
 		// IsAdmin describes the holder in the key's org: their home flag at home,
 		// their membership role elsewhere.
@@ -181,6 +198,7 @@ func who(db orm.DB) zip.Handler {
 			BillingAccount: billing,
 			Scope:          h.Scope,
 			Key:            h.Key,
+			KeyOrg:         h.KeyOrg,
 		})
 	}
 }

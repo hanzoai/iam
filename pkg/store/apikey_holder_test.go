@@ -136,3 +136,75 @@ func TestAnotherOrgsMachineIsAPlainMemberOfABrandOrg(t *testing.T) {
 		t.Fatal("a machine acts in its own org and in no brand org it merely belongs to")
 	}
 }
+
+// A key selects an org per request exactly where a member's key filed there would
+// act: its holder's home or an org-wide membership. Anything else is refused as
+// KeyOrgNotOpen, and the key's own name and limit travel with it unchanged
+// (hanzo-inc/cloud#429).
+func TestHolderInActsOnlyWhereTheHolderDoes(t *testing.T) {
+	ctx := context.Background()
+	db := memDB(t)
+	seedKeyUser(t, db, "acme", "alice", "alice@acme.test", "")
+	seedKey(t, db, "acme", "default", "acme/alice", "pk-live-ALICE", "sk-live-ALICE")
+	seedKeyUser(t, db, "other", "olga", "olga@other.test", "")
+	if _, err := EnsureMembership(ctx, db, "acme/alice", "team", RoleMember); err != nil {
+		t.Fatal(err)
+	}
+	h, err := HolderByAccessKey(ctx, db, "sk-live-ALICE")
+	if err != nil || h.Org != "acme" {
+		t.Fatalf("home key: %+v %v", h, err)
+	}
+
+	in, err := HolderIn(ctx, db, h, "team")
+	if err != nil || in.Org != "team" || in.Role != RoleMember || in.Key != "default" || in.KeyOrg != "acme" || in.Scope != h.Scope {
+		t.Fatalf("selected a membership: %+v %v, want Org team, Role member, Key default filed in acme", in, err)
+	}
+	if same, err := HolderIn(ctx, db, h, "acme"); err != nil || same.Org != "acme" || same.KeyOrg != "" {
+		t.Fatalf("selecting the key's own org: %+v %v, want it unchanged", same, err)
+	}
+	if same, err := HolderIn(ctx, db, h, ""); err != nil || same.Org != "acme" {
+		t.Fatalf("selecting nothing: %+v %v, want it unchanged", same, err)
+	}
+	for _, org := range []string{"other", "nosuch", "admin"} {
+		if got, err := HolderIn(ctx, db, h, org); got.User != nil || Reason(err) != KeyOrgNotOpen {
+			t.Fatalf("selected %q: %+v %v, want refused as %s", org, got, err, KeyOrgNotOpen)
+		}
+	}
+
+	// A member's key may select its holder's home, which it acts in by right.
+	seedKey(t, db, "team", "alice-k", "acme/alice", "pk-live-TEAM", "sk-live-TEAM")
+	m, err := HolderByAccessKey(ctx, db, "sk-live-TEAM")
+	if err != nil || m.Org != "team" {
+		t.Fatalf("member key: %+v %v", m, err)
+	}
+	if home, err := HolderIn(ctx, db, m, "acme"); err != nil || home.Org != "acme" || home.KeyOrg != "team" || home.Key != "alice-k" {
+		t.Fatalf("member key selecting home: %+v %v", home, err)
+	}
+
+	// Removing the membership ends the selection on the next call.
+	if _, err := DeleteMembership(ctx, db, "acme/alice", "team"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := HolderIn(ctx, db, h, "team"); got.User != nil || Reason(err) != KeyOrgNotOpen {
+		t.Fatalf("after removal: %+v %v, want refused as %s", got, err, KeyOrgNotOpen)
+	}
+}
+
+// A plain member of an org the platform runs selects none of it, as their key
+// filed there would act in none of it.
+func TestHolderInRefusesABrandOrgToAPlainMember(t *testing.T) {
+	ctx := context.Background()
+	db := memDB(t)
+	seedKeyUser(t, db, "acme", "alice", "alice@acme.test", "")
+	seedKey(t, db, "acme", "default", "acme/alice", "pk-live-ALICE", "sk-live-ALICE")
+	if _, err := EnsureMembership(ctx, db, "acme/alice", "hanzo", RoleMember); err != nil {
+		t.Fatal(err)
+	}
+	h, err := HolderByAccessKey(ctx, db, "sk-live-ALICE")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := HolderIn(ctx, db, h, "hanzo"); got.User != nil || Reason(err) != KeyOrgNotOpen {
+		t.Fatalf("plain member selecting hanzo: %+v %v, want refused as %s", got, err, KeyOrgNotOpen)
+	}
+}
