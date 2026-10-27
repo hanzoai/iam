@@ -102,6 +102,11 @@ const (
 	// of its plain members — a customer who landed in a brand org shares none of its
 	// data — so no key of theirs acts in it. Its admins' keys and its machines' do.
 	KeyNotTenant KeyFailure = "key_not_tenant"
+	// KeyOrgNotOpen: the key resolved, and the caller asked it to act in ANOTHER
+	// org (HolderIn) that its holder may not act in — no membership there, a plain
+	// member of an org the platform runs, a reserved org, or a directory. The key
+	// itself is fine; only that selection is refused.
+	KeyOrgNotOpen KeyFailure = "key_org_not_open"
 )
 
 // KeyError is an orm.ErrNotFound that ALSO says why. It Unwraps to orm.ErrNotFound
@@ -197,6 +202,55 @@ type Holder struct {
 	// Key is the key row's Name within Org: which credential the request arrived
 	// on, so a resource server can apply that key's own policy.
 	Key string
+	// KeyOrg is the org the key row is filed in, set only when HolderIn moved the
+	// holder to another Org. Key names a row there, not in Org, so a resource
+	// server addressing the key's own policy reads KeyOrg/Key.
+	KeyOrg string
+}
+
+// HolderIn is h acting in org instead of the org its key is filed in — what a
+// caller asks for when it selects an org per request (hanzo-inc/cloud#429) rather
+// than minting a key in each org. It admits exactly the orgs a member's key filed
+// there would act in (holderOwningKey's rule): the holder's home, or an org-wide
+// membership, either one their standing there acts in (Acts). Anything else is
+// KeyOrgNotOpen. It reads the membership on every call, so removing the member
+// ends the selection on the next request, as it ends a member's key.
+//
+// The key's own limit (Scope) and its name travel unchanged: a selection moves
+// where the holder acts and who pays, never what the credential may reach.
+func HolderIn(ctx context.Context, db orm.DB, h Holder, org string) (Holder, error) {
+	org = strings.TrimSpace(org)
+	if org == "" || org == h.Org {
+		return h, nil
+	}
+	u := h.User
+	if u == nil {
+		return Holder{}, notFound(KeyOrgNotOpen)
+	}
+	role := ""
+	if org == u.Owner {
+		role = HomeRole(u)
+	} else {
+		if !memberKeyOrgs(u.Owner, org) {
+			return Holder{}, notFound(KeyOrgNotOpen)
+		}
+		m, err := MembershipIn(ctx, db, u.Owner+"/"+u.Name, org, "", "")
+		if err != nil {
+			return Holder{}, err
+		}
+		if m == nil {
+			return Holder{}, notFound(KeyOrgNotOpen)
+		}
+		role = m.Role
+	}
+	if !Acts(org, u, role) {
+		return Holder{}, notFound(KeyOrgNotOpen)
+	}
+	keyOrg := h.KeyOrg
+	if keyOrg == "" {
+		keyOrg = h.Org
+	}
+	return Holder{User: u, Org: org, Scope: h.Scope, Role: role, Key: h.Key, KeyOrg: keyOrg}, nil
 }
 
 // HolderByAccessKey is UserAndScopeByAccessKey with the org the key acts in and
