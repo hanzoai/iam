@@ -100,6 +100,10 @@ const (
 	// sent to it — to their own account (PUT /v1/iam/address). Object names the
 	// field and the application, never the address or the code.
 	ActionAddress = "address"
+	// A wallet sign-up that created an account, filed under the application's
+	// org with the client address (ClientIp) and its network (Object). It is the
+	// ledger the wallet creation cap counts.
+	ActionWalletSignup = "wallet-signup"
 )
 
 // PlatformWritten reports whether action names a record the platform writes
@@ -114,7 +118,7 @@ func PlatformWritten(action string) bool {
 		ActionAssumeOrg, ActionReleaseOrg, ActionListOrgs, ActionSuperAdmin, ActionWorkloadToken,
 		ActionInviteSend, ActionInviteAccept, ActionInviteRefused, ActionInviteSignupRefused,
 		ActionInviteCodeSent, ActionMembershipGrant, ActionMembershipRevoke, ActionImpersonate,
-		ActionDelegate, ActionAddress:
+		ActionDelegate, ActionAddress, ActionWalletSignup:
 		return true
 	}
 	return false

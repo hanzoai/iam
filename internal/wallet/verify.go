@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -68,6 +69,11 @@ type login struct {
 	// Session is a caller who is already authenticated AND same-site — the one
 	// branch carrying ambient authority. nil when anonymous or cross-site.
 	Session *schema.User
+
+	// Client is who is asking (httpx.Client), and Cap the bound on the accounts
+	// it may create. Neither is read unless this proof would create one.
+	Client netip.Addr
+	Cap    Cap
 }
 
 // supported reports whether a chain family is one this build knows. Per-chain
@@ -151,8 +157,8 @@ func verify(ctx context.Context, db orm.DB, in login, now time.Time) (signin, er
 
 // resolve turns a verified (chain, address) into the user it signs in as:
 // an existing link logs that user in; no link + a same-site session links the
-// wallet to that identity; no link + signup logs a fresh wallet user in. Only
-// the last two BIND, and only those report a bound wallet.
+// wallet to that identity; no link + signup logs a fresh wallet user in, as the
+// Cap allows. Only the last two BIND, and only those report a bound wallet.
 func resolve(ctx context.Context, db orm.DB, in login, address string, now time.Time) (signin, error) {
 	chain := string(in.Proof.Chain)
 
@@ -206,7 +212,15 @@ func resolve(ctx context.Context, db orm.DB, in login, address string, now time.
 				// cannot distinguish the two (no authority oracle).
 				return errNoSignup
 			default:
+				// A creation, so the Cap is asked first and the ledger row is
+				// written with the account: a refused one writes nothing.
+				if err := admit(ctx, tx, in.Cap, in.Client, now); err != nil {
+					return err
+				}
 				if user, err = provision(ctx, tx, in, address, now); err != nil {
+					return err
+				}
+				if err := file(ctx, tx, in, user); err != nil {
 					return err
 				}
 			}

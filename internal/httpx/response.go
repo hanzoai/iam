@@ -11,6 +11,7 @@ package httpx
 import (
 	"crypto/subtle"
 	"encoding/base64"
+	"net/netip"
 	"os"
 	"strings"
 
@@ -182,6 +183,24 @@ func ClientIP(c *zip.Ctx) string {
 		return f
 	}
 	return c.Fiber().IP()
+}
+
+// Client is who is asking, for a decision that counts requests by it: the
+// address the edge saw connect (CF-Connecting-IP), else the last
+// X-Forwarded-For hop, which the nearest proxy wrote. Hops before it are the
+// client's own words and are never read. Anything that is not an address is
+// the zero Addr, which every such request shares.
+func Client(connecting, forwarded string) netip.Addr {
+	raw := strings.TrimSpace(connecting)
+	if raw == "" {
+		hops := strings.Split(forwarded, ",")
+		raw = strings.TrimSpace(hops[len(hops)-1])
+	}
+	ip, err := netip.ParseAddr(raw)
+	if err != nil {
+		return netip.Addr{}
+	}
+	return ip.Unmap()
 }
 
 // Bearer returns the token from an `Authorization: Bearer <token>` header, or "".
