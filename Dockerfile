@@ -2,7 +2,8 @@
 # Multi-stage Go build → scratch, for both architectures. Pure-Go (CGO_ENABLED=0);
 # hanzoai/sqlite uses the modernc engine so no cgo/musl toolchain is needed.
 
-FROM --platform=$BUILDPLATFORM golang:1.26.8@sha256:3aff6657219a4d9c14e27fb1d8976c49c29fddb70ba835014f477e1c70636647 AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.1@sha256:162be5298a40ed317005c8339c6de4d10d3eef336d66dc8e9259b03ab9d3a6d2 AS build
+ENV GOTOOLCHAIN=auto
 WORKDIR /src
 
 # Cache the module graph before copying the source. Every module iam requires,
@@ -93,6 +94,9 @@ COPY --from=build /etc/group.iam /etc/group
 COPY --from=build --chown=1000:1000 /emptydata /data
 
 COPY --from=build --chown=1000:1000 /out/iam /iam
+# The credential-init ABI invokes /cloud secret token. It is the same native
+# IAM binary and SDK, with no second authentication implementation.
+COPY --from=build --chown=1000:1000 /out/iam /cloud
 
 USER 1000:1000
 WORKDIR /
