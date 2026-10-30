@@ -167,6 +167,12 @@ func Discovery(c *zip.Ctx) error {
 	if err != nil {
 		return c.JSON(503, map[string]string{"error": "temporarily_unavailable", "error_description": "this server has no issuer configured"})
 	}
+	// The document is fixed per host: the issuer comes from the trusted request
+	// host (part of every cache key), and nothing in it rotates — keys rotate in
+	// the JWKS, which keeps its own shorter lifetime. A sign-in page fetches this
+	// when a provider button is pressed, so a cached copy takes a round trip off
+	// every press.
+	c.SetHeader("Cache-Control", "public, max-age=3600")
 	return c.JSON(200, map[string]any{
 		"issuer":                        iss,
 		"authorization_endpoint":        iss + PathAuthorize,

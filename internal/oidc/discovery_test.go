@@ -53,6 +53,22 @@ func TestDiscovery_ShapeAtBothPaths(t *testing.T) {
 	}
 }
 
+// Discovery is cacheable for an hour at both paths: a sign-in page reads it on
+// every provider press, and nothing in it changes for a host.
+func TestDiscovery_CacheableAtBothPaths(t *testing.T) {
+	app, _ := newServer(t)
+
+	for _, path := range []string{PathDiscovery, PathDiscoveryV1} {
+		resp, _ := do(t, app, formReqNoBody("GET", path))
+		if resp.StatusCode != 200 {
+			t.Fatalf("%s: status %d", path, resp.StatusCode)
+		}
+		if cc := resp.Header.Get("Cache-Control"); cc != "public, max-age=3600" {
+			t.Errorf("%s: Cache-Control = %q, want public, max-age=3600", path, cc)
+		}
+	}
+}
+
 // The issuer NEVER follows X-Forwarded-Host: it is resolved from the TRUSTED
 // request host (zip.Ctx.Host(), which ignores X-Forwarded-Host) through the pinned
 // issuer resolver, so a client-supplied X-Forwarded-Host cannot steer `iss`. Here
