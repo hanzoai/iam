@@ -268,7 +268,7 @@ tests `TestAddress*`, wallet end to end `TestWalletAccountAddsAPhoneAndSignsInBy
 **The phone reach.** A founded account works in an org of its own, so the app's
 org held its number nowhere: a texted code was filed for nobody. `store.GetSignupByPhone`
 is `GetSignupByEmail` for numbers; the SMS send falls back to it after the in-org
-lookup (two registrations on one number: refused, nothing minted), and
+lookup (two registrations on one number: nobody, nothing minted, answered as any number nobody holds), and
 `resolveLoginUser` asks it for a phone-shaped identifier after the in-org and name
 reaches miss, so code sign-in and a code reset find the account.
 `/v1/iam/auth/identifier` still takes email only.
@@ -1073,6 +1073,48 @@ appear (it is, on hanzo-app).
 - No WebOTP line (`@hanzo.ai #123456`): that format is read from an SMS only.
   The page's field says `autocomplete="one-time-code"`, which is what fills an
   emailed code where a browser can (Safari, from Mail).
+
+## A texted code: who is texted, where, and how many
+
+A text costs the org's carrier money and the number is whatever a stranger types,
+so `POST /v1/iam/verification-codes` type=phone (`textCode` → `otp.Text`) texts a
+number ONLY when an account the application signs in holds it (`phoneHolder`:
+`GetUserByPhone` in the org, then `GetSignupByPhone`; two holders = nobody), or
+when the request's BEARER is a person in or registered at that application with no
+number yet, adding one (`adding`; a code filed for nobody, spent by
+`PUT /v1/iam/address`). A session cookie cannot say it there: the endpoint takes a
+form, which any page can post. Anything else is charged, answered `ok`, and texted
+nothing — the same status, headers and body as a texted number, because the answer
+is decided by the number and the ledger before an account is read, and the carrier
+is not waited for (`detach`; a failure is logged with the number cut out).
+
+- **Where** (`otp.Textable`): an international number (+ and country code; a
+  national one names no country and is refused), valid, of a kind that receives
+  texts (mobile, mobile-or-fixed, VoIP: never premium, toll free, shared cost,
+  personal-number, landline), in a country `IAM_TEXT_REGIONS` names (ISO codes;
+  `*` all; unset = US and territories, CA, GB, EU 27, IS, LI, NO, CH, AU, NZ; a
+  value it cannot read keeps the default). Classified by `nyaruka/phonenumbers`,
+  so +1 876 is Jamaica, not the US. 400 `text_region`.
+- **How many** (constants beside `ResendInterval` in internal/otp/otp.go, charged
+  in one transaction with the row, a refusal writes nothing; 429 `text_limited` +
+  Retry-After): per number 30 s and `PerNumber` 10/day (open requests only); per
+  client `PerClient` 30/hour (IPv4 address or IPv6 /64, `httpx.Peer`); per
+  application `PerApp` 1,000 texts/day; `PerDay` 5,000 texts/day; `Ceiling` 50,000
+  requests/day. Asks count texted or not; the money bounds count texts sent.
+- **Every** text is charged: `otp.Issue` (a second factor, its enrolment) checks
+  `Textable` and the client/day/ceiling bounds too; `IssueLink` and `IssueJoin`
+  refuse a number (`errUncharged`).
+- **Ledger** `schema.Text` (kind `texts`): org, time, application, keyed digests
+  of the number and client (HMAC keyed from the platform signing cert, so a copy of
+  the store cannot reverse them), sent, factor, consent. `consent=true|on` on the
+  form records the SMS opt-in on that row. No route reads or writes it.
+- **Guessing**: five wrong answers spend a code (`MaxAttempts`), a new code waits
+  30 s and the number gets 10 a day, so a stranger has 50 guesses a day.
+- **SIM swap**: a texted code is not the whole sign-in of an account whose only
+  second factor is SMS and which has a password or an email (`nothingToAsk`,
+  `two_step_required`); sign in the other way and the text is asked after. An
+  account whose number is its only way in still signs in by the code. An emailed
+  code on an email-only-factor account is unchanged.
 
 ## Sign-up by code — the code proves the address, the click creates the account
 

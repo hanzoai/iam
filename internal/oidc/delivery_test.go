@@ -5,7 +5,10 @@ package oidc
 import (
 	"context"
 	"errors"
+	"slices"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/hanzoai/iam/internal/otp"
 	"github.com/hanzoai/iam/pkg/schema"
@@ -14,14 +17,46 @@ import (
 // fakeSender records what it was asked to deliver and fails on demand. It keeps the
 // whole Message, because the code now travels inside the worded body — where a person
 // reads it, and the only place a test can learn it from either (see codeIn).
+//
+// A texted code asked for by the open endpoint is handed over after the answer
+// (otp.Text), from another goroutine, so a test reads those through await.
 type fakeSender struct {
+	mu   sync.Mutex
 	err  error
 	sent []otp.Message
 }
 
 func (f *fakeSender) Send(_ context.Context, m otp.Message) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.sent = append(f.sent, m)
 	return f.err
+}
+
+// count is how many messages were handed over so far.
+func (f *fakeSender) count() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.sent)
+}
+
+// await waits until n messages were handed over and returns them, failing after a
+// few seconds.
+func (f *fakeSender) await(t *testing.T, n int) []otp.Message {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		f.mu.Lock()
+		got := slices.Clone(f.sent)
+		f.mu.Unlock()
+		if len(got) >= n {
+			return got
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d message(s) handed over, want %d", len(got), n)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 // bindSender installs s for the duration of one test and unbinds after, so these

@@ -203,6 +203,17 @@ func Client(connecting, forwarded string) netip.Addr {
 	return ip.Unmap()
 }
 
+// Peer is [Client] for a raw handler, as text: who is asking, read off the
+// request's own CF-Connecting-IP and X-Forwarded-For, or "" when they name no
+// address.
+func Peer(c *zip.Ctx) string {
+	ip := Client(c.Header("CF-Connecting-IP"), c.Header("X-Forwarded-For"))
+	if !ip.IsValid() {
+		return ""
+	}
+	return ip.String()
+}
+
 // Bearer returns the token from an `Authorization: Bearer <token>` header, or "".
 func Bearer(c *zip.Ctx) string { return token(c.Header("Authorization")) }
 

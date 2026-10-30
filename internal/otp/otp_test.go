@@ -78,6 +78,7 @@ func TestOneNumberIsOneReceiverHoweverItIsTyped(t *testing.T) {
 	db := openDB(t)
 	r := &recorder{}
 	bind(t, r)
+	signing(t, db)
 	now := time.Now()
 
 	carol := account(t, db, "hanzo", "carol", "", "+14155550134")
@@ -263,7 +264,7 @@ func TestMessageWording(t *testing.T) {
 }
 
 // IssueLink words a link only into an email, and only when it has one; an email
-// without one is the code mail, and a number is the plain message.
+// without one is the code mail. A number is not its to send (TestIssueLinkTextsNothing).
 func TestIssueLinkWording(t *testing.T) {
 	const link = "https://hanzo.ai/auth/callback"
 	for _, tc := range []struct {
@@ -272,7 +273,6 @@ func TestIssueLinkWording(t *testing.T) {
 	}{
 		{"email with link", "ada@example.com", link, true},
 		{"email without link", "ada@example.com", "", false},
-		{"phone with link", "+14155550134", link, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db := openDB(t)
@@ -310,12 +310,31 @@ func TestIssueLinkWording(t *testing.T) {
 	}
 }
 
+// IssueLink mails. A number handed to it is refused and nothing is minted or sent:
+// every text goes through a send that charges it to the texting budgets.
+func TestIssueLinkTextsNothing(t *testing.T) {
+	db := openDB(t)
+	c := &capture{}
+	bind(t, c)
+	signing(t, db)
+	if err := IssueLink(context.Background(), db, hanzo, "+14155550134", "", nil, time.Now(), "https://hanzo.ai/auth/callback"); err != errUncharged {
+		t.Fatalf("IssueLink to a number = %v, want %v", err, errUncharged)
+	}
+	if len(c.sent) != 0 {
+		t.Fatalf("%d messages sent", len(c.sent))
+	}
+	if rec, _ := store.GetLatestVerificationRecord(context.Background(), db, "hanzo", "+14155550134"); rec != nil {
+		t.Fatalf("a code was minted: %+v", rec)
+	}
+}
+
 // Issue sends an email as the designed code mail, from the org's own row: a second
 // factor and a code asked for anywhere a link cannot go read like the sign-in mail.
 // A number is the plain message, and an org with no row is still designed, naming
 // nobody.
 func TestIssueDesignsTheEmail(t *testing.T) {
 	db := openDB(t)
+	signing(t, db)
 	o := orm.New[schema.Organization](db)
 	o.Owner, o.Name, o.DisplayName, o.WebsiteUrl = "admin", "hanzo", "Hanzo", "https://hanzo.ai"
 	o.SetId("admin/hanzo")

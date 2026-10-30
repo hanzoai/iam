@@ -4,8 +4,12 @@
 package oidc
 
 import (
+	"context"
 	"errors"
+	"math"
+	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/hanzoai/orm"
@@ -43,6 +47,16 @@ import (
 // application's org as its reader knows it (otp.IssueLink), when the request's
 // Origin is the origin of one of the application's redirect URIs ([Landing]);
 // otherwise it is the code alone.
+//
+// A phone number is texted ONLY when an account the application signs in holds
+// it, or when the signed-in person asking (a bearer) is adding it to their own
+// account (PUT /v1/iam/address). Any other number is texted nothing and answered
+// exactly as a texted one is: the same status, the same body, and no carrier wait
+// in either (otp.Text). Every request for a text is charged to the texting
+// budgets (otp.PerNumber and beside it), and an exhausted one is 429 with
+// Retry-After. A number outside the countries the deployment texts
+// (IAM_TEXT_REGIONS) is refused before anything else. `consent` true records
+// that the person ticked the SMS consent.
 func sendVerificationCode(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
@@ -82,9 +96,9 @@ func sendVerificationCode(db orm.DB) zip.Handler {
 
 		// Validate the destination by type and resolve the account it belongs to. The
 		// resolved account is what BINDS the code — otp.Consume refuses a record minted
-		// for anybody else — so this is credential material, not metadata. A number is
-		// accepted as typed: otp.Receiver files it under its digits, so the punctuation
-		// somebody used here cannot decide whether the code verifies later.
+		// for anybody else — so this is credential material, not metadata. A number
+		// goes its own way (textCode), because whether to text it at all turns on that
+		// account and the answer must not.
 		var user *schema.User
 		var uri string
 		switch typ {
@@ -117,24 +131,7 @@ func sendVerificationCode(db orm.DB) zip.Handler {
 				}
 			}
 		case otp.Phone:
-			// GetUserByPhone normalizes its argument and refuses to pick between two rows
-			// carrying one number (ErrPhoneAmbiguous). Returned, not swallowed: a code we
-			// cannot attribute to one account must not be minted, because the binding is
-			// what makes it a credential. Without resolving here the SMS arm filed records
-			// that named nobody and could therefore be spent by nobody.
-			if user, err = store.GetUserByPhone(ctx, db, org.Name, dest); err != nil {
-				return httpx.Err(c, err.Error())
-			}
-			// The registration reach, for the reason the email arm has it: an account
-			// founded into an org of its own holds its number there, and the sign-in
-			// that authenticates the same number reaches it (resolveLoginUser). Two
-			// registrations carrying one number are refused rather than handed a code
-			// filed for nobody, in words that do not say why.
-			if user == nil {
-				if user, err = store.GetSignupByPhone(ctx, db, org.Name, dest); err != nil {
-					return httpx.Err(c, "verification code cannot be sent")
-				}
-			}
+			return textCode(c, db, app, org, dest)
 		default:
 			return httpx.Err(c, "unsupported verification type: "+typ)
 		}
@@ -178,4 +175,122 @@ func Landing(app *schema.Application, origin string) string {
 		return uri
 	}
 	return ""
+}
+
+// The stable reasons a texted code is refused with.
+const (
+	// CodeTextLimited is a texting budget exhausted (otp.Spent): 429 with
+	// Retry-After.
+	CodeTextLimited = "text_limited"
+	// CodeTextRegion is a number codes may not be texted to (otp.ErrRegion).
+	CodeTextRegion = "text_region"
+)
+
+// textCode answers the phone arm of POST /v1/iam/verification-codes.
+//
+// Everything that decides the answer is a fact about the NUMBER and the ledger —
+// may it be texted at all, and have the budgets room — and otp.Text decides it
+// before anything about an account is read into it. Who holds the number decides
+// only whether a text goes out, which the answer does not say:
+//
+//   - an account the application signs in holds it ([phoneHolder]), and the code
+//     is bound to that account, so it signs in that account and nobody else;
+//   - or the request carries the bearer of a person adding the number to their own
+//     account ([adding]), and the code is filed for nobody, which is what
+//     PUT /v1/iam/address spends;
+//   - anything else is charged like the rest, answered ok, and texted nothing.
+//
+// Both reaches of the lookup run every time, and the bearer is read whenever one
+// is presented, before the number is looked up, so the work done does not turn on
+// the holder either.
+func textCode(c *zip.Ctx, db orm.DB, app *schema.Application, org *schema.Organization, dest string) error {
+	ctx := c.Context()
+	if !store.LooksLikePhone(dest) {
+		return httpx.Err(c, "phone number is invalid")
+	}
+	add := adding(ctx, c, db, app)
+	holder, err := phoneHolder(ctx, db, org.Name, dest)
+	if err != nil {
+		return httpx.Err(c, "verification code cannot be sent")
+	}
+	ask := otp.Ask{
+		App:     app.Owner + "/" + app.Name,
+		Client:  httpx.Peer(c),
+		Consent: consented(c.Fiber().FormValue("consent")),
+	}
+	err = otp.Text(ctx, db, org.Name, dest, ask, holder, holder != nil || add, nowFunc())
+	var spent *otp.Spent
+	switch {
+	case err == nil:
+		return httpx.Ok(c, nil)
+	case errors.As(err, &spent):
+		c.SetHeader("Retry-After", strconv.FormatInt(int64(math.Ceil(spent.Retry.Seconds())), 10))
+		return httpx.Fail(c, http.StatusTooManyRequests, spent.Error(), CodeTextLimited)
+	case errors.Is(err, otp.ErrRegion):
+		return httpx.ErrCode(c, err.Error(), CodeTextRegion)
+	case errors.Is(err, otp.ErrNoDelivery), errors.Is(err, otp.ErrTooSoon):
+		return httpx.Err(c, err.Error())
+	}
+	return httpx.Err(c, "verification code cannot be sent")
+}
+
+// phoneHolder is the account sign-in at org reaches by a number: one that lives in
+// org and carries it, else one org registered that carries it
+// (store.GetSignupByPhone), the two reaches resolveLoginUser has for a number. A
+// number two accounts carry names nobody, as sign-in refuses it. Both reaches are
+// asked every time.
+func phoneHolder(ctx context.Context, db orm.DB, org, dest string) (*schema.User, error) {
+	in, err := store.GetUserByPhone(ctx, db, org, dest)
+	shared := errors.Is(err, store.ErrPhoneAmbiguous)
+	if err != nil && !shared {
+		return nil, err
+	}
+	registered, err := store.GetSignupByPhone(ctx, db, org, dest)
+	if err != nil && !errors.Is(err, store.ErrPhoneAmbiguous) {
+		return nil, err
+	}
+	switch {
+	case shared:
+		return nil, nil
+	case in != nil:
+		return in, nil
+	}
+	return registered, nil
+}
+
+// adding reports whether the request is a signed-in person adding a number to
+// their own account at app: the one case a number nobody holds is texted.
+//
+// The person is the holder of the request's bearer (callerFrom). A session cookie
+// cannot say it here, because this endpoint takes a form, which any page can post
+// (sessions.Forgeable). The application must sign them in, as PUT /v1/iam/address
+// requires, and the account must hold no number yet, since that write adds a
+// number and never replaces one.
+func adding(ctx context.Context, c *zip.Ctx, db orm.DB, app *schema.Application) bool {
+	bearer := httpx.Bearer(c)
+	if bearer == "" {
+		return false
+	}
+	owner, name, err := callerFrom(ctx, db, asker{Method: http.MethodPost, Bearer: bearer})
+	if err != nil {
+		return false
+	}
+	user, err := store.GetUserByName(ctx, db, owner, name)
+	if err != nil || user == nil || user.Machine() || user.IsForbidden || user.IsDeleted || store.NormalizePhone(user.Phone) != "" {
+		return false
+	}
+	if user.Owner == app.Organization {
+		return true
+	}
+	reached, err := store.RegisteredIn(ctx, db, app.Organization, user)
+	return err == nil && reached
+}
+
+// consented reads the form's consent flag: true, 1 or on.
+func consented(v string) bool {
+	if strings.EqualFold(strings.TrimSpace(v), "on") {
+		return true
+	}
+	ok, _ := strconv.ParseBool(strings.TrimSpace(v))
+	return ok
 }

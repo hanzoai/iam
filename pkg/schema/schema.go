@@ -34,6 +34,7 @@ func Kinds() []string {
 		"invitations", "verifications", "projects", "workspaces",
 		"federation_states", "challenges", "wallets", "login_challenges",
 		"memberships", "teams", "tombstones", "sightings",
+		"texts",
 	}
 }
 
@@ -62,4 +63,5 @@ func init() {
 	orm.Register[Membership]("memberships")
 	orm.Register[Team]("teams")
 	orm.Register[Sighting]("sightings")
+	orm.Register[Text]("texts")
 }

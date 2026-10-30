@@ -109,6 +109,13 @@ func Gate(c *zip.Ctx, db orm.DB, user *schema.User, org *schema.Organization, ve
 //     is not a factor that can be waived.
 //   - the first credential already WAS the account's only factor — an emailed code
 //     answering an email-only account. Nothing further is owed, so the caller mints.
+//     Not for a TEXTED code when the account has another way in (a password, or an
+//     email address a code can reach): a texted code is the one first credential a
+//     SIM swap or a ported number hands to someone else, and an account that
+//     enrolled its phone as a SECOND factor beside a password did so to need both.
+//     That sign-in is refused with CodeTwoStep, so the person signs in the other
+//     way and is asked for the texted code after it. An account whose number is
+//     its only way in signs in with the code, as before.
 //
 // Reports the same (gated, err) the gate does, so the third case can hand the sign-in
 // back rather than answering it. Returning "gated, no answer written" here left the
@@ -122,8 +129,15 @@ func nothingToAsk(c *zip.Ctx, user *schema.User, verificationType string) (bool,
 			return true, httpx.Err(c, "a second factor is required and none of yours can be used right now")
 		}
 	}
+	if verificationType == factor.SMS && (user.PasswordHash != "" || user.Email != "") {
+		return true, httpx.ErrCode(c, "this account uses two-step verification: sign in with your password or email, then enter the code we text you", CodeTwoStep)
+	}
 	return false, nil
 }
+
+// CodeTwoStep is a texted code refused as the whole sign-in of an account that
+// enrolled its phone as a second factor beside another way in (nothingToAsk).
+const CodeTwoStep = "two_step_required"
 
 // allowList is the factors a challenge may be answered with: held by the account,
 // not the one the caller just used, and ANSWERABLE — a delivered factor with no
@@ -195,7 +209,7 @@ func deliver(c *zip.Ctx, db orm.DB, user *schema.User, allow []*schema.MfaProps,
 		return allow
 	}
 	dest := factor.Destination(user, target)
-	if err := otp.Issue(c.Context(), db, user.Owner, dest, c.Fiber().IP(), user, now); err == nil {
+	if err := otp.Issue(c.Context(), db, user.Owner, dest, httpx.Peer(c), user, now); err == nil {
 		return allow
 	}
 	kept := make([]*schema.MfaProps, 0, len(allow))

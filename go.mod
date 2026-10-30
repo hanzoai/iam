@@ -34,6 +34,7 @@ require (
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/luxfi/crypto v1.20.2
 	github.com/luxwallet/connect/go v0.1.4
+	github.com/nyaruka/phonenumbers v1.8.1
 	github.com/pquerna/otp v1.5.0
 	github.com/spf13/cobra v1.10.2
 	github.com/valyala/fasthttp v1.72.0

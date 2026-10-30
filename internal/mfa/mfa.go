@@ -50,6 +50,7 @@ import (
 	"github.com/hanzoai/orm"
 
 	"github.com/hanzoai/iam/internal/authz"
+	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/mfa/factor"
 	"github.com/hanzoai/iam/internal/otp"
 	"github.com/hanzoai/iam/internal/principal"
@@ -184,7 +185,7 @@ func initiate(db orm.DB) zip.Handler {
 		if dest == "" {
 			return c.JSON(200, errResp("add a "+addressWord(mfaType)+" to your account first"))
 		}
-		if err := otp.Issue(c.Context(), db, owner, dest, c.Fiber().IP(), u, nowFunc()); err != nil {
+		if err := otp.Issue(c.Context(), db, owner, dest, httpx.Peer(c), u, nowFunc()); err != nil {
 			return c.JSON(200, errResp("the code could not be sent: "+err.Error()))
 		}
 		return c.JSON(200, okData(map[string]any{"mfaType": mfaType}))

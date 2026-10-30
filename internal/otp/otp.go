@@ -191,6 +191,53 @@ var ErrTooSoon = errors.New("a verification code was just sent; wait a moment be
 // carries it, so no counter is added anywhere.
 const ResendInterval = 30 * time.Second
 
+// What a texted code may cost, every bound in one place. A text costs the org's
+// carrier account money on every send, and a number is chosen by whoever asks, so
+// an open endpoint that texts anything a stranger types is a way to spend that
+// money for them (SMS pumping: premium-rate and international ranges that pay
+// the attacker per message). [Text] and [Issue] charge every texted code to
+// these, in one transaction with the row that records it (schema.Text); a refusal
+// writes nothing. Exhausted is a *[Spent]: 429, with the wait.
+//
+// Two kinds of bound, counted differently, so that no answer depends on whether
+// an account holds the number (an open request for a number nobody holds is
+// charged exactly like one that is texted, and texts nothing):
+//
+//   - ASKS: every admitted request, texted or not. [ResendInterval] and
+//     PerNumber pace one number; PerClient one client; Ceiling the deployment.
+//   - SENDS: texts that went out. PerApp and PerDay are the money: the most a
+//     day of abuse can cost is PerDay texts at the dearest rate the allowed
+//     countries ([EnvRegions]) charge.
+//
+// A bound is checked against the state of the ledger, never against what this
+// request will turn out to be, so a request for a number nobody holds is refused
+// whenever one for a held number would be.
+const (
+	// PerNumber is the codes an open request may ask for to one number in a
+	// day (a second factor's code, asked by its signed-in holder, is not
+	// counted). A person asks once or twice; ten survives a bad signal. It is
+	// also what bounds guessing: each code takes [MaxAttempts] wrong answers,
+	// so a stranger gets at most PerNumber*MaxAttempts = 50 guesses a day at a
+	// million-code space, about 1 in 20,000.
+	PerNumber = 10
+	// PerClient is the texted codes one client asks for in an hour: an IPv4
+	// address, or an IPv6 /64 (which one subscriber holds whole). Thirty leaves
+	// room for a carrier NAT or an office behind one address.
+	PerClient = 30
+	// PerApp is the texts one application sends in a day. It sizes the cost a
+	// single surface can run up, about a hundred times hanzo.ai's expected
+	// phone sign-ins.
+	PerApp = 1_000
+	// PerDay is the texts the whole deployment sends in a day, every
+	// application and every second factor together: the circuit breaker on
+	// the carrier bill.
+	PerDay = 5_000
+	// Ceiling is the requests for a texted code the deployment admits in a
+	// day, texted or not. It bounds the ledger a flood of numbers nobody holds
+	// can write, since those cost no text and so no money bound holds them.
+	Ceiling = 50_000
+)
+
 // Receiver is the ONE spelling a code is filed and found under.
 //
 // A phone number is punctuated differently everywhere it is typed — "+1 (415)
@@ -248,7 +295,22 @@ func Receiver(dest string) string {
 //
 // An email is the designed code mail ([verification]) from org's row; an org with
 // no row is still sent it, naming nobody. A number is the plain [message].
+//
+// It is the send for an account that has already proved who it is — the second
+// factor a sign-in owes, a factor being enrolled — so the address is the
+// account's own. remoteAddr is the asking client (httpx.Client). A number is
+// texted only when [Textable] admits it and the budgets have room: [PerClient],
+// [PerDay] and [Ceiling] (no application asks, so [PerApp] is not charged, and
+// [PerNumber] counts open requests only). The send waits for the carrier, so a
+// factor whose code did not go out is not offered. An open request for a code to
+// a number somebody typed is [Text].
 func Issue(ctx context.Context, db orm.DB, org, dest, remoteAddr string, user *schema.User, now time.Time) error {
+	charge := func() error {
+		if err := Textable(dest); err != nil {
+			return err
+		}
+		return admit(ctx, db, org, Receiver(dest), Ask{Client: remoteAddr}, true, true, now)
+	}
 	return issue(ctx, db, PurposeCode, org, dest, remoteAddr, user, now, func(channel, to, code string) (Message, error) {
 		if channel != Email {
 			return message(org, channel, to, code), nil
@@ -258,25 +320,21 @@ func Issue(ctx context.Context, db orm.DB, org, dest, remoteAddr string, user *s
 			row = &schema.Organization{Name: org}
 		}
 		return verification(row, to, code)
-	})
+	}, charge, carry)
 }
 
-// IssueLink is [Issue] for a sign-in that can carry a link: an email to dest is
-// the designed sign-in mail ([signin]), from org as its reader knows it, with the
-// link and the code. link is a URI the caller has matched to the application, with
-// no fragment; the mail appends one naming the address and the code. An email
-// with an empty link is the code mail ([verification]), and a destination that is
-// not an email is the plain [message].
+// IssueLink is [Issue] for an emailed sign-in that can carry a link: the designed
+// sign-in mail ([signin]), from org as its reader knows it, with the link and the
+// code. link is a URI the caller has matched to the application, with no
+// fragment; the mail appends one naming the address and the code. An empty link
+// is the code mail ([verification]). It mails only: a number is [Text]'s.
 func IssueLink(ctx context.Context, db orm.DB, org *schema.Organization, dest, remoteAddr string, user *schema.User, now time.Time, link string) error {
-	return issue(ctx, db, PurposeCode, org.Name, dest, remoteAddr, user, now, func(channel, to, code string) (Message, error) {
-		switch {
-		case channel != Email:
-			return message(org.Name, channel, to, code), nil
-		case link == "":
+	return issue(ctx, db, PurposeCode, org.Name, dest, remoteAddr, user, now, func(_, to, code string) (Message, error) {
+		if link == "" {
 			return verification(org, to, code)
 		}
 		return signin(org, to, code, link)
-	})
+	}, nil, carry)
 }
 
 // The purposes a code is minted for (schema.VerificationRecord.Purpose). A code
@@ -312,16 +370,28 @@ func IssueJoin(ctx context.Context, db orm.DB, sender, joining string, user *sch
 				"If you did not ask to join, ignore this message and do not share the code.",
 				joining, code, int(TTL.Minutes())),
 		}, nil
-	})
+	}, nil, carry)
 }
+
+// errUncharged refuses a number reaching a send that charges no budget for it.
+var errUncharged = errors.New("otp: a number is texted by Text or Issue, which charge it")
 
 // issue is the one path a code is minted by. The resend interval and the
 // replacement of an outstanding code both apply within the purpose, so a join code
 // neither waits on nor cancels a sign-in code. word composes the message from the
 // channel and address the record was filed with.
-func issue(ctx context.Context, db orm.DB, purpose, org, dest, remoteAddr string, user *schema.User, now time.Time, word func(channel, to, code string) (Message, error)) error {
+//
+// charge admits a NUMBER to the texting budgets, after the resend interval and
+// before anything is minted; a send that passes none refuses every number, so no
+// path texts uncharged. carry hands the worded message to the transport.
+func issue(ctx context.Context, db orm.DB, purpose, org, dest, remoteAddr string, user *schema.User, now time.Time,
+	word func(channel, to, code string) (Message, error), charge func() error, carry func(context.Context, Message) error) error {
 	if sender == nil {
 		return ErrNoDelivery
+	}
+	texted := Channel(dest) == Phone
+	if texted && charge == nil {
+		return errUncharged
 	}
 	owner := org
 	if user != nil {
@@ -334,6 +404,11 @@ func issue(ctx context.Context, db orm.DB, purpose, org, dest, remoteAddr string
 	}
 	if outstanding != nil && now.Unix()-outstanding.Time < int64(ResendInterval/time.Second) {
 		return ErrTooSoon
+	}
+	if texted {
+		if err := charge(); err != nil {
+			return err
+		}
 	}
 	code, err := generate(Length)
 	if err != nil {
@@ -376,8 +451,12 @@ func issue(ctx context.Context, db orm.DB, purpose, org, dest, remoteAddr string
 	if err != nil {
 		return err
 	}
-	return sender.Send(ctx, m)
+	return carry(ctx, m)
 }
+
+// carry sends m and waits for the transport's answer, so the caller can report a
+// send that failed.
+func carry(ctx context.Context, m Message) error { return sender.Send(ctx, m) }
 
 // Consume verifies code against the latest live record for receiver and SPENDS the
 // outcome — the check side for callers where the code IS the credential.

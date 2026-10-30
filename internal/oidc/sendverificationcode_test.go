@@ -193,11 +193,14 @@ func TestSendVerificationCode_RefusesWhenNothingCanDeliver(t *testing.T) {
 // "+14155550134" at login found the right user and then answered "the code is
 // incorrect or has expired" — a refusal with no honest explanation available to
 // the screen, and one nobody would meet until the first customer of the phone arm.
+//
+// A number without its country code is not texted at all (otp.Textable), so the
+// spellings that matter are the international ones.
 func TestPhoneCodeMatchesHoweverTheNumberWasTyped(t *testing.T) {
 	for _, tc := range []struct{ sent, typed string }{
 		{"+1 (415) 555-0134", "+14155550134"},
 		{"+14155550134", "+1 415 555 0134"},
-		{"415-555-0134", "4155550134"},
+		{"+1-415-555-0134", "+1 (415) 555 0134"},
 	} {
 		t.Run(tc.sent+" then "+tc.typed, func(t *testing.T) {
 			sender := &fakeSender{}
@@ -215,12 +218,9 @@ func TestPhoneCodeMatchesHoweverTheNumberWasTyped(t *testing.T) {
 			if status != 200 || env["status"] != "ok" {
 				t.Fatalf("send status=%d env=%v, want 200 ok", status, env)
 			}
-			if len(sender.sent) != 1 {
-				t.Fatalf("sender saw %d deliveries, want 1", len(sender.sent))
-			}
 			// The message went to ONE canonical spelling, which is also the one the
 			// record is keyed on.
-			m := sender.sent[0]
+			m := sender.await(t, 1)[0]
 			if m.To != store.NormalizePhone(tc.sent) {
 				t.Errorf("delivered to %q, want the canonical %q", m.To, store.NormalizePhone(tc.sent))
 			}
@@ -396,10 +396,7 @@ func TestSendVerificationCode_Link(t *testing.T) {
 			if env := decode(t, raw); resp.StatusCode != 200 || env["status"] != "ok" {
 				t.Fatalf("status=%d env=%v, want 200 ok", resp.StatusCode, env)
 			}
-			if len(sender.sent) != 1 {
-				t.Fatalf("sender saw %d deliveries, want 1", len(sender.sent))
-			}
-			m := sender.sent[0]
+			m := sender.await(t, 1)[0]
 			rec, err := store.GetLatestVerificationRecord(context.Background(), db, "hanzo", otp.Receiver(tc.dest))
 			if err != nil || rec == nil {
 				t.Fatalf("no record filed: %v", err)

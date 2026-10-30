@@ -14,6 +14,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/otp"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -116,16 +117,36 @@ func addBody(address, code string) string {
 // returns the code the person reads.
 func codeTo(t *testing.T, app *zip.App, sent *fakeSender, typ, dest string) string {
 	t.Helper()
-	before := len(sent.sent)
-	if status, env := sendCode(t, app, map[string]string{
-		"dest": dest, "type": typ, "applicationId": "admin/" + founding,
-	}); status != 200 || env["status"] != "ok" {
+	return codeAs(t, app, sent, "", typ, dest)
+}
+
+// codeAs is codeTo asked with a bearer: how a signed-in person asks for the code
+// that proves a number they are adding, which no account holds yet.
+func codeAs(t *testing.T, app *zip.App, sent *fakeSender, bearer, typ, dest string) string {
+	t.Helper()
+	before := sent.count()
+	if status, env := askAs(t, app, bearer, typ, dest); status != 200 || env["status"] != "ok" {
 		t.Fatalf("send a code to %s: status=%d env=%v", dest, status, env)
 	}
-	if len(sent.sent) != before+1 {
-		t.Fatalf("send to %s delivered %d messages", dest, len(sent.sent)-before)
+	got := sent.await(t, before+1)
+	if len(got) != before+1 {
+		t.Fatalf("send to %s delivered %d messages", dest, len(got)-before)
 	}
-	return codeIn(t, sent.sent[len(sent.sent)-1].Body)
+	return codeIn(t, got[len(got)-1].Body)
+}
+
+// askAs asks the send endpoint for a code to dest at the founding application,
+// with bearer when there is one, and returns the answer.
+func askAs(t *testing.T, app *zip.App, bearer, typ, dest string) (int, map[string]any) {
+	t.Helper()
+	req := multipartReq(PathVerificationCodes, map[string]string{
+		"dest": dest, "type": typ, "applicationId": "admin/" + founding,
+	})
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	resp, raw := do(t, app, req)
+	return resp.StatusCode, decode(t, raw)
 }
 
 // signInByCode signs in at the founding application with a code and returns the
@@ -176,8 +197,9 @@ func TestFoundedPhoneIsSentACodeAndSignsInByIt(t *testing.T) {
 	}
 }
 
-// A number two registrations carry names nobody: no code is minted for either, and
-// sign-in by it gets the refusal a wrong password gets.
+// A number two registrations carry names nobody: no code is minted for either, the
+// send is answered exactly as one to a number nobody holds, and sign-in by it gets
+// the refusal a wrong password gets.
 func TestAmbiguousFoundedPhoneIsRefused(t *testing.T) {
 	app, db, a, sent := addressServer(t)
 	for _, name := range []string{"wallet_evm_aaaaaaaaaaaaaaaa", "wallet_evm_bbbbbbbbbbbbbbbb"} {
@@ -185,11 +207,14 @@ func TestAmbiguousFoundedPhoneIsRefused(t *testing.T) {
 	}
 
 	status, env := sendCode(t, app, map[string]string{"dest": phoneSent, "type": "phone", "applicationId": "admin/" + founding})
-	if status == 200 || env["msg"] != "verification code cannot be sent" {
-		t.Fatalf("send to an ambiguous number: status=%d env=%v, want the opaque refusal", status, env)
+	if status != 200 || env["status"] != "ok" {
+		t.Fatalf("send to an ambiguous number: status=%d env=%v, want the answer a number nobody holds gets", status, env)
 	}
-	if len(sent.sent) != 0 {
-		t.Fatalf("an ambiguous number was sent %d codes", len(sent.sent))
+	if rec, _ := store.GetLatestVerificationRecord(tctx(), db, "hanzo", phoneKept); rec != nil {
+		t.Fatalf("a code was minted for an ambiguous number: %+v", rec)
+	}
+	if n := sent.count(); n != 0 {
+		t.Fatalf("an ambiguous number was sent %d codes", n)
 	}
 	if m := signInByCode(t, app, phoneKept, "123456"); m["msg"] != "the username or password is incorrect" {
 		t.Fatalf("sign-in by an ambiguous number = %v", m)
@@ -220,7 +245,7 @@ func TestAddressAddsAPhoneAndThePhoneSignsIn(t *testing.T) {
 	app, db, a, sent := addressServer(t)
 	u := walletMade(t, db, a, "wallet_evm_0123456789abcdef")
 
-	proof := codeTo(t, app, sent, "phone", phoneSent)
+	proof := codeAs(t, app, sent, bearerOf(t, db, a, u, nil), "phone", phoneSent)
 	if rec := filed(t, db, "hanzo", phoneKept); rec.User != "" {
 		t.Fatalf("premise: a number nobody holds is sent a code for nobody, got %q", rec.User)
 	}
@@ -254,6 +279,8 @@ func TestAddressAddsAPhoneAndThePhoneSignsIn(t *testing.T) {
 		t.Fatal("the audit row can be forged or trimmed through the audit CRUD")
 	}
 
+	// The number was just asked for; the next code is a resend interval later.
+	clockAt(t, time.Now().Add(otp.ResendInterval))
 	code := codeTo(t, app, sent, "phone", phoneKept)
 	if m := signInByCode(t, app, phoneSent, code); m["status"] != "ok" || m["data"] != u.Owner+"/"+u.Name {
 		t.Fatalf("sign-in by the added phone = %v, want %s/%s", m, u.Owner, u.Name)
@@ -284,7 +311,7 @@ func TestAddressWrongCodeIsRefusedAndCounted(t *testing.T) {
 	app, db, a, sent := addressServer(t)
 	u := walletMade(t, db, a, "wallet_evm_0123456789abcdef")
 
-	proof := codeTo(t, app, sent, "phone", phoneSent)
+	proof := codeAs(t, app, sent, bearerOf(t, db, a, u, nil), "phone", phoneSent)
 	wrong := "000000"
 	if proof == wrong {
 		wrong = "111111"
@@ -320,7 +347,7 @@ func TestAddressHeldByAnotherIsRefusedWithoutSpending(t *testing.T) {
 			app, db, a, sent := addressServer(t)
 			u := walletMade(t, db, a, "wallet_evm_0123456789abcdef")
 			// The code went out while nobody held the address.
-			proof := codeTo(t, app, sent, c.typ, c.address)
+			proof := codeAs(t, app, sent, bearerOf(t, db, a, u, nil), c.typ, c.address)
 			c.hold(t, db, a)
 
 			status, env := putAddress(t, app, bearerOf(t, db, a, u, nil), addBody(c.address, proof))
@@ -349,16 +376,23 @@ func TestAddressNeverReplaces(t *testing.T) {
 		t.Fatalf("the number already on file: status=%d env=%v, want ok", status, env)
 	}
 
-	proof := codeTo(t, app, sent, "phone", "+1 212 555 0100")
-	status, env := putAddress(t, app, bearer, addBody("+1 212 555 0100", proof))
+	// The send texts nothing to another number for an account that already signs in
+	// with one, since the write it would prove is refused; it answers as usual.
+	if status, env := askAs(t, app, bearer, "phone", "+1 212 555 0100"); status != 200 || env["status"] != "ok" {
+		t.Fatalf("ask for another number: status=%d env=%v", status, env)
+	}
+	if rec, _ := store.GetLatestVerificationRecord(tctx(), db, "hanzo", "+12125550100"); rec != nil {
+		t.Fatalf("a number the account cannot add was texted a code: %+v", rec)
+	}
+	status, env := putAddress(t, app, bearer, addBody("+1 212 555 0100", "123456"))
 	if status != 409 || !strings.Contains(env["msg"].(string), "never replaced") {
 		t.Fatalf("another number: status=%d env=%v, want 409", status, env)
 	}
 	if got := row(t, db, u); got.Phone != phoneKept {
 		t.Fatalf("the phone was replaced with %q", got.Phone)
 	}
-	if rec := filed(t, db, "hanzo", "+12125550100"); rec.Attempts != 0 {
-		t.Fatalf("a refused replacement counted the code: attempts=%d", rec.Attempts)
+	if n := sent.count(); n != 0 {
+		t.Fatalf("%d texts went out", n)
 	}
 }
 
@@ -368,7 +402,7 @@ func TestAddressWritesOnlyTheCaller(t *testing.T) {
 	caller := walletMade(t, db, a, "wallet_evm_0123456789abcdef")
 	victim := walletMade(t, db, a, "wallet_evm_eeeeeeeeeeeeeeee")
 
-	proof := codeTo(t, app, sent, "phone", phoneSent)
+	proof := codeAs(t, app, sent, bearerOf(t, db, a, caller, nil), "phone", phoneSent)
 	b, _ := json.Marshal(map[string]string{
 		"clientId": founding, "address": phoneSent, "code": proof,
 		"owner": victim.Owner, "name": victim.Name, "user": victim.Owner + "/" + victim.Name,
@@ -389,7 +423,7 @@ func TestAddressWritesOnlyTheCaller(t *testing.T) {
 func TestAddressRefusesABearerSomeoneActsThrough(t *testing.T) {
 	app, db, a, sent := addressServer(t)
 	u := walletMade(t, db, a, "wallet_evm_0123456789abcdef")
-	proof := codeTo(t, app, sent, "phone", phoneSent)
+	proof := codeAs(t, app, sent, bearerOf(t, db, a, u, nil), "phone", phoneSent)
 
 	for name, bearer := range map[string]string{
 		"impersonated": bearerOf(t, db, a, u, func(id *Identity) {
