@@ -256,6 +256,21 @@ func signupHandler(db orm.DB) zip.Handler {
 			}
 		}
 
+		// A phone number is an address too: two accounts in one org carrying the same
+		// number name nobody, and a number that is already registered is taken. The
+		// number is not proven here — proving it is the code path — but the
+		// squatting that uniqueness alone closes (a second signup stealing a
+		// number another account holds) is closed either way.
+		phone := store.NormalizePhone(f.Phone)
+		if phone != "" {
+			switch existing, err := store.GetSignupByPhone(ctx, db, app.Organization, phone); {
+			case err == store.ErrPhoneAmbiguous, existing != nil:
+				return httpx.Err(c, "phone number already exists")
+			case err != nil:
+				return httpx.Err(c, err.Error())
+			}
+		}
+
 		// The username. A caller that NAMES one gets exactly that name or a refusal —
 		// provisioning a known name is a real use, and silently substituting another
 		// would hand back a different principal than the one asked for. A caller that
@@ -351,7 +366,7 @@ func signupHandler(db orm.DB) zip.Handler {
 				FirstName:      f.FirstName,
 				LastName:       f.LastName,
 				Email:          email,
-				Phone:          store.NormalizePhone(f.Phone),
+				Phone:          phone,
 				CountryCode:    f.CountryCode,
 				Affiliation:    f.Affiliation,
 				Avatar:         org.DefaultAvatar,

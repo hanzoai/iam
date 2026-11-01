@@ -235,7 +235,17 @@ const (
 	// Ceiling is the requests for a texted code the deployment admits in a
 	// day, texted or not. It bounds the ledger a flood of numbers nobody holds
 	// can write, since those cost no text and so no money bound holds them.
+	//
+	// It counts OPEN requests only. A second factor is charged to FactorDay
+	// instead, so the flood this bound exists for cannot lock a holder out of
+	// their own second factor.
 	Ceiling = 50_000
+	// FactorDay is the second factors the whole deployment sends in a day. It is
+	// a budget of its own, reserved: only a holder's own code adds to it, and
+	// only a holder's own code is refused by it, so nothing a stranger does can
+	// spend it. Generous because it has to survive an incident in which every
+	// signed-in person re-enrols at once.
+	FactorDay = 2_000
 )
 
 // Receiver is the ONE spelling a code is filed and found under.

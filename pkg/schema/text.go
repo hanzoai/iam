@@ -32,7 +32,7 @@ type Text struct {
 	// "" for a second factor, which no application asks for.
 	Application string `json:"application,omitempty" orm:"index"`
 	// Client is the keyed digest of the asking client's network: its IPv4
-	// address, or its IPv6 /64.
+	// address, or its IPv6 /48.
 	Client string `json:"client" orm:"index"`
 	// Number is the keyed digest of the destination number.
 	Number string `json:"number" orm:"index"`

@@ -215,7 +215,7 @@ func textCode(c *zip.Ctx, db orm.DB, app *schema.Application, org *schema.Organi
 	}
 	ask := otp.Ask{
 		App:     app.Owner + "/" + app.Name,
-		Client:  httpx.Peer(c),
+		Client:  httpx.Caller(c),
 		Consent: consented(c.Fiber().FormValue("consent")),
 	}
 	err = otp.Text(ctx, db, org.Name, dest, ask, holder, holder != nil || add, nowFunc())

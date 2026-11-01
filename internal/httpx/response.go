@@ -206,12 +206,90 @@ func Client(connecting, forwarded string) netip.Addr {
 // Peer is [Client] for a raw handler, as text: who is asking, read off the
 // request's own CF-Connecting-IP and X-Forwarded-For, or "" when they name no
 // address.
+//
+// It is what an AUDIT row records — a fact about the request — and not what a
+// budget counts a request by: every header it reads is the caller's own words,
+// so a limit keyed on it is a limit the caller sets. Counting reads [Caller].
 func Peer(c *zip.Ctx) string {
 	ip := Client(c.Header("CF-Connecting-IP"), c.Header("X-Forwarded-For"))
 	if !ip.IsValid() {
 		return ""
 	}
 	return ip.String()
+}
+
+// StampHeader is the name the host crosses a caller's address under. It is
+// github.com/hanzoai/ai/address.Header, which is a leaf that imports nothing; the
+// name is repeated here rather than imported so this package stays one, and the
+// test beside the read asserts the value so the two cannot drift apart in silence.
+const StampHeader = "X-Client-Ip"
+
+// Caller is the address a request is COUNTED by — the bucket a rate limit or a
+// spending budget charges. It is read from facts the caller cannot write:
+//
+//   - Over the host's socket the peer is no address at all, so the host answers:
+//     it computes the caller once (cloud's clientip), DELETES any copy the request
+//     carried and stamps its own under [StampHeader]. Nothing else is read.
+//   - Behind our own proxy hop (an ingress in private space) the right-most
+//     forwarded entry that is not itself one of our hops is the caller, because
+//     that is the entry the nearest proxy appended. Anything to its left is the
+//     caller's own words.
+//   - A public socket peer IS the caller: it connected to us, and no header it
+//     sends is read.
+//
+// CF-Connecting-IP is never read here, and that is the point: the address a
+// budget charges must not be one the caller can choose. A request that reaches
+// this process without the host in front of it carries no stamp this process can
+// trust, and falls to the socket peer, which is over-strict at worst.
+func Caller(c *zip.Ctx) string {
+	return caller(c.Fiber().RequestCtx().RemoteAddr().String(), c.Header(StampHeader), c.Header("X-Forwarded-For"))
+}
+
+// caller is [Caller] over the three facts it reads, so the rule can be tested
+// without a request.
+func caller(peer, stamp, forwarded string) string {
+	p := parseHop(peer)
+	if !p.IsValid() {
+		// The host's socket. Its stamp is the answer, and only one value counts:
+		// the host deletes every copy before writing its own, so more than one
+		// would mean this request did not come through it.
+		return text(parseHop(stamp))
+	}
+	if !ownHop(p) {
+		return p.String()
+	}
+	hops := strings.Split(forwarded, ",")
+	for i := len(hops) - 1; i >= 0; i-- {
+		if a := parseHop(hops[i]); a.IsValid() && !ownHop(a) {
+			return a.String()
+		}
+	}
+	return p.String()
+}
+
+// parseHop reads one hop as an address; anything that is not one is the zero
+// Addr, whose String is "".
+func parseHop(s string) netip.Addr {
+	ip, err := netip.ParseAddr(strings.TrimSpace(s))
+	if err != nil {
+		return netip.Addr{}
+	}
+	return ip.Unmap()
+}
+
+// text is an address as the ledger and the limits spell it: "" for no address.
+func text(a netip.Addr) string {
+	if !a.IsValid() {
+		return ""
+	}
+	return a.String()
+}
+
+// ownHop reports whether addr is one of our own forwarding hops: private,
+// loopback or link-local, which is where an in-cluster ingress and the pod's own
+// socket peer live.
+func ownHop(a netip.Addr) bool {
+	return a.IsPrivate() || a.IsLoopback() || a.IsLinkLocalUnicast() || a.IsLinkLocalMulticast()
 }
 
 // Bearer returns the token from an `Authorization: Bearer <token>` header, or "".

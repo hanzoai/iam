@@ -359,7 +359,7 @@ func TestTextPerNumber(t *testing.T) {
 func TestTextPerClient(t *testing.T) {
 	for _, tc := range []struct{ name, first, next, other string }{
 		{"ipv4", "203.0.113.7", "203.0.113.7", "203.0.113.8"},
-		{"ipv6 /64", "2001:db8:1:2::1", "2001:db8:1:2:ffff::9", "2001:db8:1:3::1"},
+		{"ipv6 /48", "2001:db8:1:2::1", "2001:db8:1:2:ffff::9", "2001:db9::1"},
 		{"no address", "", "", "203.0.113.7"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -412,21 +412,22 @@ func TestTextPerApp(t *testing.T) {
 }
 
 // PerDay texts in all, every application and every second factor together.
+// Open sends and second factors are charged to SEPARATE budgets, so a flood of
+// open requests cannot exhaust the one a holder's own second factor needs.
 func TestTextPerDay(t *testing.T) {
 	db, _ := texting(t)
 	ctx := context.Background()
-	seedLedger(t, db, PerDay, schema.Text{Owner: "hanzo", Time: t0.Unix(), Client: "seed", Sent: true, Factor: true})
+	seedLedger(t, db, PerDay, schema.Text{Owner: "hanzo", Time: t0.Unix(), Client: "seed", Sent: true})
 	carol := account(t, db, "hanzo", "carol", "", "+14155550134")
 
 	s := spent(t, Text(ctx, db, "hanzo", "+14155550199", asked("203.0.113.7"), nil, false, t0.Add(time.Minute)), "day")
 	if s.Limit != PerDay {
 		t.Fatalf("spent = %+v", s)
 	}
-	// A second factor is held by it too, and nothing is minted.
-	err := Issue(ctx, db, "hanzo", "+14155550134", "203.0.113.7", carol, t0.Add(time.Minute))
-	spent(t, err, "day")
-	if rec, _ := store.GetLatestVerificationRecord(ctx, db, "hanzo", "+14155550134"); rec != nil {
-		t.Fatal("a refused second factor minted a code")
+	// The open budget is full, but a second factor is reserved its own, so it
+	// still goes through.
+	if err := Issue(ctx, db, "hanzo", "+14155550134", "203.0.113.7", carol, t0.Add(time.Minute)); err != nil {
+		t.Fatalf("a second factor while the open budget is full: %v", err)
 	}
 	if err := Text(ctx, db, "hanzo", "+14155550199", asked("203.0.113.7"), nil, false, t0.Add(24*time.Hour)); err != nil {
 		t.Fatalf("a day later: %v", err)

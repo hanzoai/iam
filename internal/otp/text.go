@@ -252,8 +252,8 @@ func admit(ctx context.Context, db orm.DB, org, number string, ask Ask, factor, 
 				return err
 			}
 		}
-		for _, b := range bounds(row) {
-			if err := b.hold(ctx, tx, now); err != nil {
+		for _, b := range budgets {
+			if err := b.hold(ctx, tx, row, now); err != nil {
 				return err
 			}
 		}
@@ -279,70 +279,173 @@ func paced(ctx context.Context, tx orm.DB, number string, now time.Time) error {
 	return nil
 }
 
-// filter is one field condition on the ledger.
-type filter struct {
-	cond  string
-	value any
-}
-
-// bound is one budget: its name, its limit, its window and the rows it counts.
-type bound struct {
+// budget is one bound on texted codes: its limit, its window, the counter a row
+// is charged to, and — separately — whether a request is admitted against it and
+// whether an admitted row adds to it. The two are not the same, and that is the
+// point: a second factor's code is admitted against the client and factor bounds
+// alone, so a stranger who fills the open-request budgets cannot lock a holder
+// out of their own second factor.
+type budget struct {
 	name   string
 	limit  int
 	window time.Duration
-	where  []filter
+	// bucket names the counter a row of this kind is counted in. "" is one
+	// deployment-wide counter.
+	bucket func(schema.Text) string
+	// applies says a request must be admitted against this bound before it is
+	// filed.
+	applies func(schema.Text) bool
+	// counts says an admitted row adds one to this bound's counter.
+	counts func(schema.Text) bool
 }
 
-// bounds are the budgets row is checked against. The per-number one counts open
-// requests only, so a holder's own second-factor codes never decide what a
-// stranger asking for the same number is told.
-func bounds(row schema.Text) []bound {
-	var bs []bound
-	if !row.Factor {
-		bs = append(bs, bound{"number", PerNumber, 24 * time.Hour, []filter{{"Number=", row.Number}, {"Factor=", false}}})
-	}
-	bs = append(bs, bound{"client", PerClient, time.Hour, []filter{{"Client=", row.Client}}})
-	if row.Application != "" {
-		bs = append(bs, bound{"application", PerApp, 24 * time.Hour, []filter{{"Application=", row.Application}, {"Sent=", true}}})
-	}
-	return append(bs,
-		bound{"day", PerDay, 24 * time.Hour, []filter{{"Sent=", true}}},
-		bound{"ceiling", Ceiling, 24 * time.Hour, nil},
-	)
+// always admits and counts every row.
+func always(schema.Text) bool { return true }
+
+// budgets are every bound, in one place, so the counters a row is charged to and
+// the counters a request is admitted against are read off the same table.
+//
+// The open-request bounds (number, day, ceiling) are what a caller who names a
+// number they do not hold can fill: they are the ones an attacker spends, so no
+// second factor is ever admitted against them. The money bounds a stranger cannot
+// reach (the factor ceiling) are the ones a holder's own codes are charged to.
+var budgets = []budget{
+	// One number's open requests: a holder's own codes never decide what a
+	// stranger asking for the same number is told.
+	{"number", PerNumber, 24 * time.Hour,
+		func(r schema.Text) string { return r.Number },
+		func(r schema.Text) bool { return !r.Factor },
+		func(r schema.Text) bool { return !r.Factor }},
+	// One client, whatever it asks for: a caller hammering the endpoint is
+	// throttled here whether its requests are texted or not.
+	{"client", PerClient, time.Hour,
+		func(r schema.Text) string { return r.Client }, always, always},
+	// One application's texts, which is the surface that spends the carrier's
+	// money. Application ids are "owner/name", so this is already one tenant's.
+	{"application", PerApp, 24 * time.Hour,
+		func(r schema.Text) string { return r.Application },
+		func(r schema.Text) bool { return r.Application != "" },
+		func(r schema.Text) bool { return r.Application != "" && r.Sent }},
+	// One tenant's open texts. Scoped by owner so one tenant's abuse cannot
+	// spend another's.
+	{"day", PerDay, 24 * time.Hour,
+		func(r schema.Text) string { return r.Owner },
+		func(r schema.Text) bool { return !r.Factor },
+		func(r schema.Text) bool { return r.Sent && !r.Factor }},
+	// The deployment's open requests, texted or not: the breaker on the ledger a
+	// flood of numbers nobody holds can write.
+	{"ceiling", Ceiling, 24 * time.Hour,
+		func(schema.Text) string { return "" },
+		func(r schema.Text) bool { return !r.Factor },
+		func(r schema.Text) bool { return !r.Factor }},
+	// The deployment's second factors, RESERVED: only a holder's own code is
+	// charged to it, and only a holder's own code is admitted against it, so an
+	// open flood cannot exhaust it.
+	{"factor", FactorDay, 24 * time.Hour,
+		func(schema.Text) string { return "" },
+		func(r schema.Text) bool { return r.Factor },
+		func(r schema.Text) bool { return r.Sent && r.Factor }},
 }
 
-// hold returns a *Spent when b is exhausted at now, else nil. A row is inside the
-// window while it is younger than the window, so one more is admitted once the
-// row that leaves fewer than limit — the (n-limit)th oldest — ages out.
-func (b bound) hold(ctx context.Context, tx orm.DB, now time.Time) error {
-	window := int64(b.window / time.Second)
-	rows := func() *orm.ModelQuery[schema.Text] {
-		q := orm.TypedQuery[schema.Text](tx).Filter("Time>", now.Unix()-window)
-		for _, f := range b.where {
-			q = q.Filter(f.cond, f.value)
-		}
-		return q
-	}
-	n, err := rows().Count(ctx)
-	if errors.Is(err, orm.ErrNotFound) {
+// hold returns a *Spent when b has no room at now, else nil. It reads ONE counter
+// row — never a scan of the ledger — so a refusal costs the same as an admission
+// however many rows the ledger holds.
+//
+// The window is sliding, like the ledger it replaces: a row counts for window
+// after it was filed, and the admission that takes the bucket over the limit is
+// refused until the oldest one in it ages out. Keeping the window in the counter
+// row (rather than aligning it) is what makes the retry that is reported back
+// match the refusal the caller actually waits for.
+func (b budget) hold(ctx context.Context, tx orm.DB, r schema.Text, now time.Time) error {
+	if !b.applies(r) {
 		return nil
 	}
-	if err != nil || n < b.limit {
-		return err
-	}
-	oldest, err := rows().Order("Time").Offset(n - b.limit).First()
+	n, start, err := read(ctx, tx, b.bucketKey(r))
 	if err != nil {
 		return err
 	}
-	retry := oldest.Time + window - now.Unix()
+	w := int64(b.window / time.Second)
+	if n == 0 || now.Unix() >= start+w {
+		// Empty or expired window: this request opens a new one.
+		return nil
+	}
+	if n < b.limit {
+		return nil
+	}
+	retry := start + w - now.Unix()
 	if retry < 1 {
 		retry = 1
 	}
 	return &Spent{Bound: b.name, Limit: b.limit, Window: b.window, Retry: time.Duration(retry) * time.Second}
 }
 
-// enter writes row to the ledger under a fresh id.
+// bucketKey names the counter row for this bound and bucket, without a window:
+// the window lives in the row.
+func (b budget) bucketKey(r schema.Text) string {
+	return b.name + "/" + b.bucket(r)
+}
+
+// read is a counter row's count and the second its window opened, or zero for
+// one nothing has been filed under yet.
+func read(ctx context.Context, tx orm.DB, key string) (int, int64, error) {
+	t, err := orm.TypedQuery[schema.TextTally](tx).Filter("Bucket=", key).First()
+	if errors.Is(err, orm.ErrNotFound) {
+		return 0, 0, nil
+	}
+	if err != nil {
+		return 0, 0, err
+	}
+	return t.Count, t.Window, nil
+}
+
+// count adds one to the counter row key, opening a new window when the old one
+// has expired. It is called inside the same transaction as the ledger insert.
+// count adds one to the counter row key, opening a new window when the old one
+// has expired. It is called inside the same transaction as the ledger insert.
+func count(ctx context.Context, tx orm.DB, key string, now time.Time, window time.Duration) error {
+	w := int64(window / time.Second)
+	if w < 1 {
+		w = 1
+	}
+	t, err := orm.TypedQuery[schema.TextTally](tx).Filter("Bucket=", key).First()
+	if errors.Is(err, orm.ErrNotFound) {
+		t = orm.New[schema.TextTally](tx)
+		t.Bucket = key
+		t.Window = now.Unix()
+		t.Count = 1
+		t.SetId("tally/" + key)
+		return t.CreateCtx(ctx)
+	}
+	if err != nil {
+		return err
+	}
+	if now.Unix() >= t.Window+w {
+		t.Window = now.Unix()
+		t.Count = 1
+	} else {
+		t.Count++
+	}
+	return t.UpdateCtx(ctx)
+}
+
+// network is what one client is counted as: an IPv4 address, or the /48 an IPv6
+// address sits in. The zero Addr is "".
+//
+// A /64 is what one subscriber's LAN holds, and a subscriber delegated a /48 —
+// which is what a site gets — holds 65,536 of them: bucketing by /64 would let
+// one caller rotate addresses and count as thousands of clients. /48 is the
+// smallest allocation a site is given, so it is the bucket that names one
+// subscriber, at the cost of sharing a budget with everyone else behind them.
 func enter(ctx context.Context, tx orm.DB, row schema.Text) error {
+	at := time.Unix(row.Time, 0)
+	for _, b := range budgets {
+		if !b.counts(row) {
+			continue
+		}
+		if err := count(ctx, tx, b.bucketKey(row), at, b.window); err != nil {
+			return err
+		}
+	}
 	id, err := newID()
 	if err != nil {
 		return err
@@ -356,8 +459,6 @@ func enter(ctx context.Context, tx orm.DB, row schema.Text) error {
 	return t.CreateCtx(ctx)
 }
 
-// network is what one client is counted as: an IPv4 address, or the /64 an IPv6
-// address sits in (one subscriber holds the whole /64). The zero Addr is "".
 func network(ip netip.Addr) string {
 	ip = ip.Unmap()
 	switch {
@@ -366,7 +467,7 @@ func network(ip netip.Addr) string {
 	case ip.Is4():
 		return ip.String()
 	}
-	p, _ := ip.Prefix(64)
+	p, _ := ip.Prefix(48)
 	return p.String()
 }
 

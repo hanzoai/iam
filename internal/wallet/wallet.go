@@ -24,6 +24,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"strings"
@@ -236,7 +237,7 @@ func check(db orm.DB, limit Cap) zip.Handler {
 			App:     app,
 			Org:     org,
 			Session: session(c, db),
-			Client:  httpx.Client(c.Header("CF-Connecting-IP"), c.Header("X-Forwarded-For")),
+			Client:  callerAddr(httpx.Caller(c)),
 			Cap:     limit,
 		}, time.Now().UTC())
 		var refused *capped
@@ -417,3 +418,14 @@ func random() (string, error) {
 
 // trim is the one input-trim used across the shell.
 func trim(s string) string { return strings.TrimSpace(s) }
+
+// callerAddr parses the address the host stamped (or the socket peer) into the
+// netip.Addr wallet admission counts it by. An unparseable address is the zero
+// Addr, which is what the budget treats as the shared bucket.
+func callerAddr(s string) netip.Addr {
+	ip, err := netip.ParseAddr(strings.TrimSpace(s))
+	if err != nil {
+		return netip.Addr{}
+	}
+	return ip.Unmap()
+}
