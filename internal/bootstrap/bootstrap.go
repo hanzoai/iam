@@ -482,13 +482,33 @@ func upsertUser(db orm.DB) zip.TypedHandler[person, reply] {
 			// rather than when the account last changed.
 			if display != existing.DisplayName || email != existing.Email || phone != existing.Phone ||
 				in.IsAdmin != existing.IsAdmin || hash != existing.PasswordHash {
+				// Only a lowering moves the role here (the raise is refused above), and a
+				// lowering is a revoke like any other: recorded, and every credential the
+				// account holds voided, in the same write.
+				lowered := existing.IsAdmin && !in.IsAdmin
 				existing.DisplayName, existing.Email, existing.Phone = display, email, phone
 				existing.IsAdmin = in.IsAdmin
 				if hash != existing.PasswordHash {
 					existing.PasswordHash, existing.PasswordType, existing.PasswordSalt = hash, kind, ""
 				}
 				existing.UpdatedTime = now()
-				if err := existing.UpdateCtx(ctx); err != nil {
+				err := db.RunInTransaction(ctx, func(tx orm.DB) error {
+					existing.Init(tx)
+					if err := existing.UpdateCtx(ctx); err != nil {
+						return err
+					}
+					if !lowered {
+						return nil
+					}
+					x := declared(ctx, in.Owner, "revoked by declaration")
+					who := existing.Owner + "/" + existing.Name
+					if err := store.Append(ctx, tx, x.Row(schema.ActionOrgAdmin,
+						map[string]any{"target": who, "from": true, "to": false})); err != nil {
+						return err
+					}
+					return store.Void(ctx, tx, existing.Owner, existing.Name, x)
+				})
+				if err != nil {
 					return refuse(500, "server_error"), nil
 				}
 			}
@@ -521,12 +541,31 @@ func upsertUser(db orm.DB) zip.TypedHandler[person, reply] {
 			u.CreatedTime, u.UpdatedTime = now(), now()
 			u.Model = model
 			u.SetId(in.Owner + "/" + in.Name)
-			if err := u.CreateCtx(ctx); err != nil {
+			err = db.RunInTransaction(ctx, func(tx orm.DB) error {
+				u.Init(tx)
+				if err := u.CreateCtx(ctx); err != nil {
+					return err
+				}
+				if !u.IsAdmin {
+					return nil
+				}
+				return store.Append(ctx, tx, declared(ctx, in.Owner, "created as an admin by declaration").Row(
+					schema.ActionOrgAdmin, map[string]any{"target": in.Owner + "/" + in.Name, "from": false, "to": true}))
+			})
+			if err != nil {
 				return refuse(500, "server_error"), nil
 			}
 		}
 		return done(action, &account{Name: in.Name, Owner: in.Owner}), nil
 	}
+}
+
+// declared is the audit context of a declaration: the operator's service token
+// acting in org, on the request it rode on.
+func declared(ctx context.Context, org, reason string) store.Act {
+	c := zip.CallerOf(ctx)
+	return store.Act{Actor: "service", Org: org, Reason: reason, Request: c.RequestID, IP: c.IP,
+		Method: "POST", URI: "/v1/iam/admin/users/upsert"}
 }
 
 // ---- helpers ----

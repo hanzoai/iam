@@ -49,6 +49,8 @@ import (
 //	user, application
 //	org                  the scope assume/lookup act in.
 //	email                the lookup key for a user read.
+//	isAdmin              the user list narrowed to an org's admins: a filter on
+//	                     the collection, a boolean, never a secret.
 //	clientId,            the OAuth request parameters (RFC 6749 4.1.1), which
 //	responseType         arrive in the authorize URL by definition.
 //	limit, offset,       pagination and search.
@@ -62,7 +64,7 @@ import (
 var safe = map[string]bool{
 	"owner": true, "name": true, "id": true,
 	"organization": true, "user": true, "application": true, "org": true,
-	"email": true,
+	"email": true, "isAdmin": true,
 	"limit": true, "offset": true, "cursor": true, "p": true, "pageSize": true, "q": true,
 	"clientId": true, "responseType": true,
 	"deleted": true,

@@ -19,6 +19,7 @@ import (
 
 	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/internal/principal"
+	"github.com/hanzoai/iam/internal/users"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -66,6 +67,10 @@ type Input struct {
 	SignupGroup string `json:"signupGroup" url:"-"`
 	DefaultCode string `json:"defaultCode" url:"-"`
 	State       string `json:"state" url:"-"`
+	// Role is the role a redeemer arrives holding: "member" (the default) or
+	// "admin". An invitation carries admin only when its writer may make an admin
+	// of the org (users.Admin), and every edit of one asks again.
+	Role string `json:"role" url:"-"`
 }
 
 // ListInput scopes a listing to one owner (organization).
@@ -104,6 +109,7 @@ func apply(dst *schema.Invitation, in *Input) {
 	dst.SignupGroup = in.SignupGroup
 	dst.DefaultCode = in.DefaultCode
 	dst.State = in.State
+	dst.Role = in.Role
 }
 
 // List returns your organization's invitations, newest first — who has
@@ -177,7 +183,42 @@ func validate(in *Input, was *schema.Invitation) error {
 	if in.Email != "" && (was == nil || in.Email != was.Email) && !schema.BareAddress(in.Email) {
 		return zip.ErrBadRequest("an invitation is pinned to one email address, written bare")
 	}
+	switch in.Role {
+	case "", store.RoleMember, store.RoleAdmin:
+	default:
+		return zip.ErrBadRequest("an invitation's role is member or admin")
+	}
 	return nil
+}
+
+// role holds an invitation that carries org admin to the admin rule, and returns
+// the audit row the write owes: one whenever the role it carries is admin, or
+// changed. An admin invitation is a grant to whoever redeems it, so writing one —
+// or editing one, which can widen who that is — needs the authority to make an
+// admin of its org; nil when the write carries no role worth recording.
+func role(ctx context.Context, db orm.DB, in *Input, was string) (*schema.AuditLog, error) {
+	if in.Role == store.RoleMember {
+		in.Role = ""
+	}
+	if in.Role == store.RoleAdmin {
+		if err := users.Admin(ctx, db, in.Owner, "", "", true); err != nil {
+			return nil, err
+		}
+	}
+	if in.Role != store.RoleAdmin && in.Role == was {
+		return nil, nil
+	}
+	return users.Act(ctx, in.Owner, "invitation "+in.Name).Row(schema.ActionInviteRole, map[string]any{
+		"invitation": in.Owner + "/" + in.Name, "from": orMember(was), "to": orMember(in.Role),
+	}), nil
+}
+
+// orMember names an invitation's role, "member" when it states none.
+func orMember(r string) string {
+	if r == "" {
+		return store.RoleMember
+	}
+	return r
 }
 
 // Create issues an invitation to join your organization — the code or link a new
@@ -191,6 +232,10 @@ func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Invitation, er
 		return nil, err
 	}
 	if err := validate(in, nil); err != nil {
+		return nil, err
+	}
+	trail, err := role(ctx, h.db, in, "")
+	if err != nil {
 		return nil, err
 	}
 	switch _, err := orm.Get[schema.Invitation](h.db, key(in.Owner, in.Name)); {
@@ -217,10 +262,28 @@ func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Invitation, er
 	}
 	invitation.SetId(key(in.Owner, in.Name))
 
-	if err := invitation.CreateCtx(ctx); err != nil {
+	if err := h.written(ctx, invitation, trail, func(i *schema.Invitation) error { return i.CreateCtx(ctx) }); err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
 	return invitation, nil
+}
+
+// written runs one write of inv, and when the write owes a role row (trail) runs
+// it in the same transaction as that row, so an invitation never carries a role
+// its trail does not record.
+func (h *Handler) written(ctx context.Context, inv *schema.Invitation, trail *schema.AuditLog, write func(*schema.Invitation) error) error {
+	if trail == nil {
+		return write(inv)
+	}
+	err := h.db.RunInTransaction(ctx, func(tx orm.DB) error {
+		inv.Init(tx)
+		if err := write(inv); err != nil {
+			return err
+		}
+		return store.Append(ctx, tx, trail)
+	})
+	inv.Init(h.db)
+	return err
 }
 
 // Update changes an invitation's terms — the role it grants, how many may redeem
@@ -239,10 +302,14 @@ func (h *Handler) Update(ctx context.Context, in *Input) (*schema.Invitation, er
 	if err := validate(in, invitation); err != nil {
 		return nil, err
 	}
+	trail, err := role(ctx, h.db, in, invitation.Role)
+	if err != nil {
+		return nil, err
+	}
 	generated := invitation.Generated && in.Code == invitation.Code
 	apply(invitation, in)
 	invitation.Generated = generated
-	if err := invitation.UpdateCtx(ctx); err != nil {
+	if err := h.written(ctx, invitation, trail, func(i *schema.Invitation) error { return i.UpdateCtx(ctx) }); err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
 	return invitation, nil

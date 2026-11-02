@@ -98,8 +98,8 @@ func Can(ctx context.Context, method, entity, owner, name string) bool {
 }
 
 // IsSuper reports whether the ctx principal is a SuperAdmin — used by a raw
-// handler to gate a privileged field (e.g. provision-don't-promote: only a super
-// may set isAdmin). Fails closed when no principal is present.
+// handler to gate a privileged field (e.g. only a SuperAdmin records an owner of
+// an org the platform runs). Fails closed when no principal is present.
 func IsSuper(ctx context.Context) bool {
 	p, ok := principal.From(ctx)
 	return ok && p.Sudo

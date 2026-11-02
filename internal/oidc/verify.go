@@ -60,8 +60,25 @@ func verifyBearer(ctx context.Context, db orm.DB, tokenStr string) (*Claims, err
 	if schema.Confined(claims.Scope) {
 		return nil, errConfined
 	}
+	// A token its subject's account voided (schema.User.Voids) speaks for authority
+	// that account no longer holds: it was demoted or removed after the token was
+	// minted, and the signature alone would carry the old claims to their expiry.
+	u, err := store.GetUserBySubject(ctx, db, claims.Subject)
+	if err != nil {
+		return nil, err
+	}
+	var iat int64
+	if claims.IssuedAt != nil {
+		iat = claims.IssuedAt.Unix()
+	}
+	if u.Voids(iat) {
+		return nil, errVoided
+	}
 	return claims, nil
 }
+
+// errVoided refuses a token minted before its account's epoch (store.Void).
+var errVoided = errors.New("verify: the token was voided")
 
 // verifyToken parses tokenStr, verifies its signature against the Cert named by
 // the token's kid, and returns the validated claims. It fails closed on an

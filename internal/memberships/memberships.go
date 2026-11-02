@@ -164,6 +164,9 @@ func ensure(db orm.DB) zip.Handler {
 		if err := account(ctx, in.User); err != nil {
 			return httpx.Err(c, err.Error())
 		}
+		if err := administers(ctx, db, in); err != nil {
+			return refused(c, err)
+		}
 		// An owner is recorded only as an org's founder: the first owner of an org
 		// that has none. Anyone after that is offered ownership by invitation and
 		// takes it by accepting, so nobody is made an owner they did not ask to be.
@@ -226,13 +229,36 @@ func remove(db orm.DB) zip.Handler {
 		if store.IsHomeOrg(in.User, in.Org) {
 			return httpx.Err(c, homeOrgIsNotRevocable)
 		}
+		// Taking away an admin or owner membership is a revoke of org admin, under
+		// the one rule: the last admin stays, unless a SuperAdmin takes them.
+		owner, name, _ := strings.Cut(in.User, "/")
+		held, err := store.GetMembership(ctx, db, in.User, in.Org)
+		if err != nil {
+			return httpx.Err(c, err.Error())
+		}
+		if held != nil {
+			in.Role = held.Role // the trail names the role taken away
+		}
+		if held != nil && (held.Role == store.RoleAdmin || held.Role == store.RoleOwner) {
+			if err := users.Admin(ctx, db, in.Org, owner, name, false); err != nil {
+				return refused(c, err)
+			}
+		}
+		// A removal ends the access the account's tokens still carry: the `orgs`
+		// claim they were minted with names this org for as long as they live.
 		var removed bool
-		err := db.RunInTransaction(ctx, func(tx orm.DB) error {
+		err = db.RunInTransaction(ctx, func(tx orm.DB) error {
 			var err error
 			if removed, err = store.DeleteMembership(ctx, tx, in.User, in.Org); err != nil {
 				return err
 			}
-			return store.Append(ctx, tx, record(c, schema.ActionMembershipRevoke, in, "removed", removed))
+			if err := store.Append(ctx, tx, record(c, schema.ActionMembershipRevoke, in, "removed", removed)); err != nil {
+				return err
+			}
+			if !removed {
+				return nil
+			}
+			return store.Void(ctx, tx, owner, name, acted(c, in.Org, "removed from "+in.Org))
 		})
 		if err != nil {
 			return httpx.Err(c, err.Error())
@@ -249,6 +275,7 @@ func remove(db orm.DB) zip.Handler {
 func record(c *zip.Ctx, action string, in request, outcome string, changed bool) *schema.AuditLog {
 	object, _ := json.Marshal(map[string]any{
 		"user": in.User, "org": in.Org, "role": in.Role, outcome: changed,
+		"request": c.Header(zip.HeaderRequestID),
 	})
 	return &schema.AuditLog{
 		Owner:        in.Org,
@@ -325,6 +352,53 @@ func account(ctx context.Context, user string) error {
 		return nil
 	}
 	return users.Authorize(ctx, owner)
+}
+
+// administers holds a grant of an admin or owner membership to the admin rule.
+// An admin membership that does not exist yet is a grant of org admin, asked of
+// users.Admin like every other; one that exists already changes nothing, since
+// a membership is never raised. An owner is a founder (found), and in an org the
+// platform runs no founder is made by anyone but a SuperAdmin: an owner there is
+// its admin, and that is a SuperAdmin's to make.
+func administers(ctx context.Context, db orm.DB, in request) error {
+	owner, name, _ := strings.Cut(in.User, "/")
+	switch in.Role {
+	case store.RoleAdmin:
+		held, err := store.GetMembership(ctx, db, in.User, in.Org)
+		if err != nil {
+			return zip.ErrInternal(err.Error())
+		}
+		if held != nil {
+			return nil
+		}
+		return users.Admin(ctx, db, in.Org, owner, name, true)
+	case store.RoleOwner:
+		if policy.IsPlatformOrg(in.Org) && !authz.IsSuper(ctx) {
+			return zip.ErrForbidden(in.Org + " is run by the platform: only a SuperAdmin makes an owner there")
+		}
+	}
+	return nil
+}
+
+// refused answers a refusal of the admin rule in this surface's envelope, at the
+// status the rule gave (403, or 409 for the last admin).
+func refused(c *zip.Ctx, err error) error {
+	status := http.StatusForbidden
+	var he *zip.HTTPError
+	if errors.As(err, &he) && he.Status != 0 {
+		status = he.Status
+	}
+	return httpx.Fail(c, status, err.Error(), "")
+}
+
+// acted is the audit context of an act on this surface: who, in which org, why,
+// and the request it rode on.
+func acted(c *zip.Ctx, org, reason string) store.Act {
+	return store.Act{
+		Actor: actor(c.Context()), Org: org, Reason: reason,
+		Request: c.Header(zip.HeaderRequestID), IP: httpx.ClientIP(c),
+		Method: c.Method(), URI: c.Fiber().OriginalURL(),
+	}
 }
 
 // homeOrgIsNotRevocable answers a revoke whose (user, org) pair names the org the

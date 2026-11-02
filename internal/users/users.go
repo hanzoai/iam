@@ -14,6 +14,7 @@ package users
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"sync"
 	"time"
@@ -109,11 +110,12 @@ type CreateInput struct {
 	// platform's own balance — so a body that could state Type or IsAdmin could
 	// write itself a credential that spends it.
 	//
-	// The class therefore comes from the CALLER'S CODE, never the caller's JSON:
-	// signup states "normal-user", federation states the same, the service-account
-	// surface mints its own row with its own authorization, and SCIM states an
-	// admin bit only when the principal is a SuperAdmin. A body that carries them
-	// is ignored exactly as a body-supplied Id is.
+	// The class therefore comes from the CALLER'S CODE, never the record's own
+	// fields: signup states "normal-user", federation states the same, the
+	// service-account surface mints its own row with its own authorization. A body's
+	// `user.type` is ignored exactly as a body-supplied Id is. The admin bit is the
+	// one a request may ASK for (`user.isAdmin`, read into asked) or code may state
+	// (Admin: SCIM, an admin invitation's signup); either way users.Admin decides.
 	Type  string `json:"-"`
 	Admin bool   `json:"-"`
 	// EmailVerified records that an identity provider PROVED this address. It is
@@ -136,6 +138,57 @@ type CreateInput struct {
 	// stranger's own signup would be refused as taken. So it comes from the code
 	// that registered the account — signup and federation — and nothing else.
 	Application string `json:"-"`
+
+	// asked is the `user.isAdmin` the REQUEST stated, nil when it stated none. It
+	// is set only by UnmarshalJSON, so only a decoded request carries it, and it is
+	// honoured only for a signed-in caller that users.Admin lets grant the role:
+	// the body asks, the rule decides, and nothing is dropped in silence.
+	asked *bool
+}
+
+// UnmarshalJSON decodes a create body and records whether it stated isAdmin.
+func (in *CreateInput) UnmarshalJSON(b []byte) error {
+	type plain CreateInput
+	if err := json.Unmarshal(b, (*plain)(in)); err != nil {
+		return err
+	}
+	asked, err := askedAdmin(b)
+	in.asked = asked
+	return err
+}
+
+// askedAdmin reads whether a write body stated `user.isAdmin`, and what. A bool
+// cannot tell false from absent, and on a full-row update that difference is a
+// demotion: a client that leaves the field out means "as stored", one that sends
+// false means "no longer an admin". It reads the body by the same decoder and
+// the same rules as the record itself, so the two cannot disagree on a spelling.
+func askedAdmin(b []byte) (*bool, error) {
+	var probe struct {
+		User struct {
+			IsAdmin *bool `json:"isAdmin"`
+		} `json:"user"`
+	}
+	if err := json.Unmarshal(b, &probe); err != nil {
+		return nil, err
+	}
+	return probe.User.IsAdmin, nil
+}
+
+// adminAsked is the org-admin value a write ends with: what the request asked,
+// else what the calling code stated (code), else as it was. The two never meet —
+// code's field is off the wire and only a decoded request asks — and a request
+// that asks needs a signed-in caller to ask on behalf of.
+func adminAsked(ctx context.Context, was bool, code, asked *bool) (bool, error) {
+	if asked != nil {
+		if _, ok := principal.From(ctx); !ok {
+			return false, zip.ErrForbidden("isAdmin is changed by a signed-in caller")
+		}
+		return *asked, nil
+	}
+	if code != nil {
+		return *code, nil
+	}
+	return was, nil
 }
 
 // UpdateInput carries the desired user state plus an optional new plaintext
@@ -151,17 +204,32 @@ type UpdateInput struct {
 
 	User     schema.User `json:"user"`
 	Password string      `json:"password,omitempty" url:"-"`
-	// Admin raises or lowers the org-admin bit. Nil means "leave it as stored",
-	// which is what every profile edit means. It is off the wire (see CreateInput):
-	// the bit is one of the two things store.BillingAccount reads to name an org's
-	// pool as the payer, so stating it is a grant of spending authority and belongs
-	// to a caller that has checked for it — SCIM checks authz.IsSuper.
+	// Admin raises or lowers the org-admin bit from the CALLING CODE (SCIM). Nil
+	// means "leave it as stored", which is what every profile edit means. It is
+	// off the wire: a request asks through `user.isAdmin` (asked, below), and
+	// either way the change is users.Admin's to allow — the bit is one of the two
+	// things store.BillingAccount reads to name an org's pool as the payer.
 	//
 	// There is no Type here at all. Nothing legitimately RE-CLASSES an existing
 	// principal: a person does not become a machine by being edited, and the one
 	// surface that makes machines creates its own row. So Type is always carried
 	// from the stored record, like Id and CreatedTime.
 	Admin *bool `json:"-"`
+
+	// asked is the `user.isAdmin` the request stated, nil when it left it out —
+	// see CreateInput.asked.
+	asked *bool
+}
+
+// UnmarshalJSON decodes an update body and records whether it stated isAdmin.
+func (in *UpdateInput) UnmarshalJSON(b []byte) error {
+	type plain UpdateInput
+	if err := json.Unmarshal(b, (*plain)(in)); err != nil {
+		return err
+	}
+	asked, err := askedAdmin(b)
+	in.asked = asked
+	return err
 }
 
 // AuthzTarget reports the (owner, name) this create binds — the user entity is
@@ -213,6 +281,12 @@ type ListInput struct {
 	// would have to choose, and choosing is how somebody joins a team under a
 	// colleague's identity.
 	Email string `json:"email,omitempty"`
+	// IsAdmin narrows the page to the org's admins: the accounts that live in it
+	// with the org-admin flag. Admins by membership are on the org's roster,
+	// GET /v1/iam/memberships?org=, with role admin or owner. The SuperAdmins are
+	// the people of the admin org, GET /v1/iam/users?owner=admin, which only a
+	// SuperAdmin reads.
+	IsAdmin bool `json:"isAdmin,omitempty"`
 
 	Limit  int `json:"limit,omitempty"`
 	Offset int `json:"offset,omitempty"`
@@ -238,6 +312,11 @@ type DeleteOutput struct {
 // sign-in, or SCIM — so a name accepted here works everywhere.
 //
 // A name already taken in your organization is refused rather than overwritten.
+//
+// Send `isAdmin: true` to create them as an admin of their organization. A
+// SuperAdmin may do that in any organization; an organization's admin may in
+// their own, unless the platform runs it (a brand), where only a SuperAdmin may.
+// Anyone else is refused, never ignored. The answer states `isAdmin` as stored.
 func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error) {
 	owner, _ := in.AuthzTarget()
 	if owner == "" {
@@ -257,6 +336,17 @@ func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error)
 	name, err := schema.Username(in.User.Name)
 	if err != nil {
 		return nil, zip.ErrBadRequest(err.Error())
+	}
+	// The org-admin role is the calling code's to state (in.Admin) or the
+	// request's to ask for (asked), and a grant is users.Admin's to allow.
+	admin, err := adminAsked(ctx, false, &in.Admin, in.asked)
+	if err != nil {
+		return nil, err
+	}
+	if admin {
+		if err := Admin(ctx, a.db, owner, owner, name, true); err != nil {
+			return nil, err
+		}
 	}
 
 	existing, err := a.lookup(ctx, owner, name)
@@ -284,8 +374,12 @@ func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error)
 	// whatever the body carried is discarded here, exactly like the Id above and
 	// for a closely related reason. Both are fields a caller with user-admin scope
 	// could otherwise point at something it was never granted — Id at a victim's
-	// subject, Type/IsAdmin at the org pool's `billing_account` claim.
-	u.Type, u.IsAdmin = in.Type, in.Admin
+	// subject, Type/IsAdmin at the org pool's `billing_account` claim. IsAdmin is
+	// what the rule above allowed; the body's own copy of it is never read.
+	u.Type, u.IsAdmin = in.Type, admin
+	// The token epoch is the server's (schema.User.Epoch): a new account has
+	// voided nothing, and a body naming a future second would void its tokens.
+	u.Epoch = 0
 	// The address proof is the calling code's to state as well, and whatever the
 	// body carried is discarded, for the reason CreateInput.EmailVerified gives.
 	// Update carries the stored value for the same reason.
@@ -335,10 +429,22 @@ func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error)
 	now := nowRFC3339()
 	u.CreatedTime, u.UpdatedTime = now, now
 
-	u.Init(a.db)
-	if err := u.Create(); err != nil {
+	// An admin is created with the audit row of its grant, or not at all.
+	err = a.db.RunInTransaction(ctx, func(tx orm.DB) error {
+		u.Init(tx)
+		if err := u.CreateCtx(ctx); err != nil {
+			return err
+		}
+		if !admin {
+			return nil
+		}
+		return store.Append(ctx, tx, Act(ctx, owner, "created as an admin").Row(schema.ActionOrgAdmin,
+			map[string]any{"target": owner + "/" + name, "from": false, "to": true}))
+	})
+	if err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
+	u.Init(a.db)
 	return u.Mask(), nil
 }
 
@@ -416,6 +522,9 @@ func (a *API) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
 		if email := strings.TrimSpace(in.Email); email != "" {
 			q = q.Filter("Email=", email)
 		}
+		if in.IsAdmin {
+			q = q.Filter("IsAdmin=", true)
+		}
 		return q
 	}
 	total, err := narrow().Count(ctx)
@@ -449,6 +558,15 @@ func (a *API) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
 // signs anyone out.
 //
 // A SuperAdmin's account is changed only by a SuperAdmin.
+//
+// Send `isAdmin` to make them an admin of their organization or to stop them
+// being one; leave it out and it stays as it is. A SuperAdmin may change it on
+// anyone. An organization's admin may change it on the other people of their own
+// organization, except that only a SuperAdmin makes an admin in an organization
+// the platform runs, nobody makes themselves one, and the last admin is not
+// removed. Anyone else is refused, never ignored. Stopping someone being an admin
+// signs them out everywhere at once: every token they hold stops working. The
+// answer states `isAdmin` as stored.
 func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error) {
 	owner, name := in.AuthzTarget()
 	if owner == "" || name == "" {
@@ -464,6 +582,16 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 	}
 	if err := Authorize(ctx, existing.Owner); err != nil {
 		return nil, err
+	}
+	admin, err := adminAsked(ctx, existing.IsAdmin, in.Admin, in.asked)
+	if err != nil {
+		return nil, err
+	}
+	moved := admin != existing.IsAdmin
+	if moved {
+		if err := Admin(ctx, a.db, existing.Owner, existing.Owner, existing.Name, admin); err != nil {
+			return nil, err
+		}
 	}
 
 	u := &in.User
@@ -500,12 +628,11 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 	// legacy update-user verb, both of which bind a whole user from the body, so
 	// without this an org admin could re-class any member of its org — quietly, and
 	// with isAdmin left false, since machine-typing alone is enough. Type is never
-	// restated; IsAdmin only by a caller that has checked it may (SCIM, SuperAdmin).
+	// restated; IsAdmin is what users.Admin allowed above, never the body's copy.
 	u.Type = existing.Type
-	u.IsAdmin = existing.IsAdmin
-	if in.Admin != nil {
-		u.IsAdmin = *in.Admin
-	}
+	u.IsAdmin = admin
+	// The token epoch is the server's, moved only by store.Void (below).
+	u.Epoch = existing.Epoch
 	// EmailVerified is a PROOF the server recorded, not a property a body may state
 	// (see CreateInput.EmailVerified). Signup records false, the broker records true
 	// when an identity provider proved it, and both write through their own paths;
@@ -574,11 +701,43 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 		return nil, zip.ErrInternal(err.Error())
 	}
 
-	// Retarget the decoded value at the stored row (same orm key), then update.
-	u.Init(a.db)
-	u.SetKey(existing.Key())
-	if err := u.Update(); err != nil {
+	// Retarget the decoded value at the stored row (same orm key), then update. A
+	// moved role is written with its audit row; a revoke also voids every
+	// credential the account holds, so the claims it was minted with stop working
+	// now rather than when they expire.
+	err = a.db.RunInTransaction(ctx, func(tx orm.DB) error {
+		u.Init(tx)
+		u.SetKey(existing.Key())
+		if err := u.UpdateCtx(ctx); err != nil {
+			return err
+		}
+		if !moved {
+			return nil
+		}
+		reason := "granted"
+		if !admin {
+			reason = "revoked"
+		}
+		who := existing.Owner + "/" + existing.Name
+		x := Act(ctx, existing.Owner, reason)
+		if err := store.Append(ctx, tx, x.Row(schema.ActionOrgAdmin,
+			map[string]any{"target": who, "from": existing.IsAdmin, "to": admin})); err != nil {
+			return err
+		}
+		if admin {
+			return nil
+		}
+		return store.Void(ctx, tx, existing.Owner, existing.Name, x)
+	})
+	if err != nil {
 		return nil, zip.ErrInternal(err.Error())
+	}
+	u.Init(a.db)
+	if moved && !admin {
+		// The row as Void left it, so the answer states the epoch it set.
+		if fresh, err := a.lookup(ctx, existing.Owner, existing.Name); err == nil && fresh != nil {
+			return fresh.Mask(), nil
+		}
 	}
 	return u.Mask(), nil
 }
@@ -587,7 +746,9 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 // immediately and the account is gone rather than suspended — to keep the record
 // and only stop sign-in, update the user instead.
 //
-// A SuperAdmin's account is removed only by a SuperAdmin.
+// A SuperAdmin's account is removed only by a SuperAdmin, and only a SuperAdmin
+// removes the last admin of an organization. Every token the account holds stops
+// working at once.
 func (a *API) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 	existing, err := a.lookup(ctx, in.Owner, in.Name)
 	if err != nil {
@@ -597,6 +758,17 @@ func (a *API) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 		return nil, zip.ErrNotFound("user " + in.Owner + "/" + in.Name + " not found")
 	}
 	if err := Authorize(ctx, existing.Owner); err != nil {
+		return nil, err
+	}
+	// Removing an admin revokes their role under the one rule, and removing an
+	// account also ends every admin membership it holds elsewhere: the last admin
+	// of any org stays, unless a SuperAdmin removes them.
+	if existing.IsAdmin {
+		if err := Admin(ctx, a.db, existing.Owner, existing.Owner, existing.Name, false); err != nil {
+			return nil, err
+		}
+	}
+	if err := keepsAnAdmin(ctx, a.db, existing.Owner, existing.Name); err != nil {
 		return nil, err
 	}
 	// Take the account off every roster BEFORE removing it. The membership rows
@@ -613,7 +785,23 @@ func (a *API) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 	// A crash between the two leaves a live account holding its home org and
 	// missing its team rows: strictly LESS access than before, which is the
 	// direction to fail in, and the retry finishes the job.
-	if err := store.DeleteUser(ctx, a.db, existing); err != nil {
+	//
+	// Its credentials are voided first (store.Void: tokens, refresh grants and
+	// sessions), and the removal is recorded beside that, under its own org.
+	who := existing.Owner + "/" + existing.Name
+	x := Act(ctx, existing.Owner, "account removed")
+	err = a.db.RunInTransaction(ctx, func(tx orm.DB) error {
+		if err := store.Void(ctx, tx, existing.Owner, existing.Name, x); err != nil {
+			return err
+		}
+		existing.Init(tx)
+		if err := store.DeleteUser(ctx, tx, existing); err != nil {
+			return err
+		}
+		return store.Append(ctx, tx, x.Row(schema.ActionUserRemove,
+			map[string]any{"target": who, "admin": existing.IsAdmin}))
+	})
+	if err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
 	return &DeleteOutput{Deleted: true}, nil
