@@ -73,7 +73,26 @@ func TestFederationMfa_EnrolledUserChallengedThenResumes(t *testing.T) {
 	if n := tokens(t, db); n != 0 {
 		t.Fatalf("%d token row(s) persisted before the second factor", n)
 	}
+	// The account's address resolved the sign-in, and the link waits on the factor.
+	if u := userRow(t, db, "alice"); u.Google != "" || u.EmailVerified {
+		t.Fatalf("the link was written before the second factor: %+v", u)
+	}
 	id := challengeOf(t, resp)
+
+	// A wrong factor uses the challenge up and writes nothing.
+	bad := jsonReq("POST", PathFederationMfa, map[string]string{"mfaType": factor.App, "passcode": "not-a-code"})
+	bad.Header.Set("Cookie", challengeCookie+"="+id)
+	if _, body := do(t, app, bad); decode(t, body)["status"] == "ok" {
+		t.Fatal("a wrong factor resumed the sign-in")
+	}
+	if u := userRow(t, db, "alice"); u.Google != "" || u.EmailVerified {
+		t.Fatalf("a wrong factor wrote the link: %+v", u)
+	}
+	q, cookie = beginAuthorize(t, app, "webapp", fedProvGoogle)
+	m.mu.Lock()
+	m.nonce = q.Get("nonce")
+	m.mu.Unlock()
+	id = challengeOf(t, callback(t, app, q.Get("state"), "idp-code-2", cookie))
 
 	// Present the factor → the code is minted and the RP redirect returned.
 	req := jsonReq("POST", PathFederationMfa, map[string]string{"mfaType": factor.App, "passcode": passcode(t, secret)})
@@ -101,6 +120,9 @@ func TestFederationMfa_EnrolledUserChallengedThenResumes(t *testing.T) {
 	}
 	if tok.User != "hanzo/alice" {
 		t.Fatalf("code bound to %q, want hanzo/alice", tok.User)
+	}
+	if u := userRow(t, db, "alice"); u.Google != m.sub || !u.EmailVerified {
+		t.Fatalf("the link was not written once the factor passed: %+v", u)
 	}
 }
 

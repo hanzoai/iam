@@ -5,6 +5,7 @@ package oidc
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -106,6 +107,9 @@ func federationMfaHandler(db orm.DB) zip.Handler {
 		if err != nil {
 			if err == errPKCERequired {
 				return httpx.Err(c, "PKCE is required for public clients")
+			}
+			if errors.Is(err, errAddressHeld) {
+				return httpx.Err(c, msgAddressHeld)
 			}
 			return httpx.Err(c, "internal error")
 		}

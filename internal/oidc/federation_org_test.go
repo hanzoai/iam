@@ -90,11 +90,11 @@ func TestFederation_ReturningPersonKeepsTheirAccount(t *testing.T) {
 	db, app, prov, _ := federatedApp(t)
 
 	id := federatedIdentity{subject: "idp-1", email: "social@example.com", emailVerified: true}
-	first, err := linkOrProvision(ctx, db, app, prov, id)
+	first, _, err := linkOrProvision(ctx, db, app, prov, id)
 	if err != nil {
 		t.Fatalf("first sign-in: %v", err)
 	}
-	again, err := linkOrProvision(ctx, db, app, prov, id)
+	again, _, err := linkOrProvision(ctx, db, app, prov, id)
 	if err != nil {
 		t.Fatalf("second sign-in: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestFederation_ReturningPersonFoundBySubjectAlone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("provision: %v", err)
 	}
-	again, err := linkOrProvision(ctx, db, app, prov,
+	again, _, err := linkOrProvision(ctx, db, app, prov,
 		federatedIdentity{subject: "idp-1", email: "after@example.com", emailVerified: true})
 	if err != nil {
 		t.Fatalf("return with a new address: %v", err)
@@ -135,9 +135,10 @@ func TestFederation_ReturningPersonFoundBySubjectAlone(t *testing.T) {
 	}
 }
 
-// A person returning from the SAME provider under a new subject — or arriving at
-// an address a founded account already holds — is linked to that account rather
-// than given a second one on the same address.
+// An address a founded account already holds stays held. Another provider on it
+// links to that account; the same provider under a different subject is refused,
+// since the account already signs in with an identity there. Neither founds a
+// second account.
 func TestFederation_AddressStaysHeldAfterFounding(t *testing.T) {
 	ctx := context.Background()
 	db, app, prov, binding := federatedApp(t)
@@ -147,14 +148,27 @@ func TestFederation_AddressStaysHeldAfterFounding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("provision: %v", err)
 	}
-	again, err := linkOrProvision(ctx, db, app, prov,
-		federatedIdentity{subject: "idp-2", email: "social@example.com", emailVerified: true})
+	if _, _, err := linkOrProvision(ctx, db, app, prov,
+		federatedIdentity{subject: "idp-2", email: "social@example.com", emailVerified: true}); err != errAddressHeld {
+		t.Fatalf("a second subject of the same provider: err = %v, want errAddressHeld", err)
+	}
+	github := &schema.Provider{Type: "GitHub"}
+	github.Name = "github"
+	again, link, err := linkOrProvision(ctx, db, app, github,
+		federatedIdentity{subject: "gh-1", email: "social@example.com", emailVerified: true})
 	if err != nil {
 		t.Fatalf("link: %v", err)
 	}
-	if again.Owner != first.Owner || again.Name != first.Name {
-		t.Fatalf("linked to %s/%s, want the account that holds the address, %s/%s",
-			again.Owner, again.Name, first.Owner, first.Name)
+	if again.Owner != first.Owner || again.Name != first.Name || link == nil || link.Subject != "gh-1" {
+		t.Fatalf("resolved %s/%s link %+v, want the account that holds the address, %s/%s, linking gh-1",
+			again.Owner, again.Name, link, first.Owner, first.Name)
+	}
+	if err := link.write(ctx, db, again.Owner, again.Name, app.ClientId); err != nil {
+		t.Fatalf("write the link: %v", err)
+	}
+	linked, _ := store.GetUserByName(ctx, db, first.Owner, first.Name)
+	if linked == nil || linked.GitHub != "gh-1" || linked.Google != "idp-1" {
+		t.Fatalf("after the link: %+v, want GitHub gh-1 beside Google idp-1", linked)
 	}
 	if org, _ := store.GetOrganizationByName(ctx, db, "social2"); org != nil {
 		t.Fatal("a second org was founded on an address already held")
@@ -188,7 +202,7 @@ func TestFederation_SharedAppDoesNotFileAStrangerInItsOrg(t *testing.T) {
 	db, app, prov, _ := federatedApp(t)
 	app.OrgChoiceMode, app.IsShared = "", true
 
-	_, err := linkOrProvision(ctx, db, app, prov,
+	_, _, err := linkOrProvision(ctx, db, app, prov,
 		federatedIdentity{subject: "idp-1", email: "social@example.com", emailVerified: true})
 	if err != errNoFederatedSignup {
 		t.Fatalf("err = %v, want errNoFederatedSignup", err)
@@ -205,7 +219,7 @@ func TestFederation_SharedFoundingAppFoundsItsOwnOrg(t *testing.T) {
 	db, app, prov, _ := federatedApp(t)
 	app.IsShared = true
 
-	u, err := linkOrProvision(ctx, db, app, prov,
+	u, _, err := linkOrProvision(ctx, db, app, prov,
 		federatedIdentity{subject: "idp-1", email: "social@example.com", emailVerified: true})
 	if err != nil {
 		t.Fatalf("provision: %v", err)
@@ -231,11 +245,11 @@ func TestFederation_ReturningAtASiblingApplicationKeepsTheirAccount(t *testing.T
 	}
 
 	id := federatedIdentity{subject: "idp-1", email: "social@example.com", emailVerified: true}
-	first, err := linkOrProvision(ctx, db, sibling, prov, id)
+	first, _, err := linkOrProvision(ctx, db, sibling, prov, id)
 	if err != nil {
 		t.Fatalf("first sign-in at hanzo.ai: %v", err)
 	}
-	again, err := linkOrProvision(ctx, db, app, prov, id)
+	again, _, err := linkOrProvision(ctx, db, app, prov, id)
 	if err != nil {
 		t.Fatalf("sign-in at the console: %v", err)
 	}

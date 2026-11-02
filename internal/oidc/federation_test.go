@@ -1205,7 +1205,7 @@ func TestRedTeam_FederationMintsSuperAdmin(t *testing.T) {
 	// Defense in depth: the innermost mint refuses this app directly too.
 	evil, _ := store.GetApplicationByClientId(tctx(), db, "evil-app")
 	prov, _ := store.GetProvider(tctx(), db, "admin", fedProvGoogle)
-	if _, err := linkOrProvision(tctx(), db, evil, prov, federatedIdentity{subject: "s1", email: "a@b.com", emailVerified: true}); err == nil {
+	if _, _, err := linkOrProvision(tctx(), db, evil, prov, federatedIdentity{subject: "s1", email: "a@b.com", emailVerified: true}); err == nil {
 		t.Fatal("PoC: linkOrProvision minted an identity into the admin org")
 	}
 }

@@ -1128,13 +1128,20 @@ not call it. Pinned by `TestLink_*`.
 
 A social SIGN-IN resolves its account in `linkOrProvision` (`internal/oidc/federation.go`):
 the provider subject, else the one account holding the address, else a new account.
-The address links when the provider verified it, however the account was made and
-whatever its own `EmailVerified`; the link sets the subject and `EmailVerified` and
-nothing else (password, sessions, other methods, org, roles stay), audited in the
-same transaction as `schema.ActionFederationLink`. Refused: an address the provider
-did not verify (`errAddressHeld`), two accounts on one address
-(`store.ErrEmailAmbiguous`). The address lookups never read a reserved org, so an
-`admin` account is never linked this way. Pinned by `TestFederation_Links*`.
+An existing account is opened only when the provider vouches for it (`vouches`): a
+provider filed under a reserved org (every production provider is `admin/provider-*`)
+may open any account outside a reserved org; a tenant's provider only accounts of its
+own org, never a held org's. The address links when the provider verified it, however
+the account was made and whatever its own `EmailVerified`; the link sets the subject
+and `EmailVerified` and nothing else (password, sessions, other methods, org, roles
+stay). It is resolved, not written: `federationMint` writes it after the account
+state and second-factor gates, re-checking the row under its lock, with the
+`schema.ActionFederationLink` audit row appended first. Refused (`errAddressHeld`): an
+address the provider did not verify, an account the provider does not vouch for, an
+account holding another subject of that provider. Two accounts on one address, in
+either reach or across both, is `store.ErrEmailAmbiguous`. The lookups never read a
+reserved org, so an `admin` account is never linked this way. Pinned by
+`TestFederation_Links*`, `federation_trust_test.go`.
 
 ## A wallet is a sign-in method, and the account's DID is derived from `sub`
 

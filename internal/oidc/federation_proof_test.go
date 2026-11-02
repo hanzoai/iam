@@ -10,12 +10,13 @@ package oidc
 import (
 	"testing"
 
+	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
 
 // A genuine federated provision records the proof its provider gave and carries
-// no password, and a second identity on the same verified address links onto the
-// account rather than being refused or duplicated.
+// no password, and another provider's identity on the same verified address
+// resolves to the account rather than being refused or duplicated.
 func TestFederation_ProvisionRecordsTheProviderProof(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "webapp", signup: true, redirectURIs: []string{testRedirect}})
@@ -38,14 +39,16 @@ func TestFederation_ProvisionRecordsTheProviderProof(t *testing.T) {
 	before := countUsers(t, db)
 	app2, _ := store.GetApplicationByClientId(tctx(), db, "webapp")
 	prov, _ := store.GetProvider(tctx(), db, "admin", fedProvGoogle)
-	linked, err := linkOrProvision(tctx(), db, app2, prov, federatedIdentity{
-		subject: "google-sub-second-identity", email: m.email, emailVerified: true,
+	github := &schema.Provider{Type: "GitHub"}
+	github.Owner, github.Name = prov.Owner, "github"
+	linked, link, err := linkOrProvision(tctx(), db, app2, github, federatedIdentity{
+		subject: "github-sub-second-identity", email: m.email, emailVerified: true,
 	})
 	if err != nil {
 		t.Fatalf("a verified address refused a second identity: %v", err)
 	}
-	if linked.Name != provisioned.Name {
-		t.Fatalf("linked onto %q, want the existing account %q", linked.Name, provisioned.Name)
+	if linked.Name != provisioned.Name || link == nil {
+		t.Fatalf("linked onto %q (link %+v), want the existing account %q", linked.Name, link, provisioned.Name)
 	}
 	if countUsers(t, db) != before {
 		t.Fatal("a second row was created on an address one account already holds")
