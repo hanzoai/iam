@@ -37,6 +37,7 @@ func seedInvite(t *testing.T, db orm.DB, inv schema.Invitation) {
 	row.Application = inv.Application
 	row.Username, row.Email, row.Phone = inv.Username, inv.Email, inv.Phone
 	row.State, row.Generated = inv.State, inv.Generated
+	row.Role = inv.Role
 	row.SetId(inv.Owner + "/" + inv.Name)
 	if err := row.CreateCtx(context.Background()); err != nil {
 		t.Fatalf("seed invitation %s/%s: %v", inv.Owner, inv.Name, err)
@@ -109,6 +110,33 @@ func TestSignup_sharedApp_refusesItsOwnOrgUninvited(t *testing.T) {
 	}
 	if u, _ := store.GetUserByName(context.Background(), db, "hanzo", "stranger"); u != nil {
 		t.Fatal("a stranger was filed in the operator's org")
+	}
+}
+
+// An invitation that carries admin (written by someone the admin rule let grant
+// it) makes the account it signs up an admin of the org, and that grant is a row
+// in the org's trail.
+func TestSignup_adminInvitation_arrivesAsTheOrgsAdmin(t *testing.T) {
+	app, db := newServer(t)
+	seedAppFull(t, db, fullApp{clientID: "portal", secret: "s3cret", org: "hanzo", shared: true, signup: true})
+	seedOrg(t, db, "hanzo")
+	seedOrg(t, db, "acme")
+	seedInvite(t, db, schema.Invitation{Owner: "acme", Name: "lead", Code: "acme-lead-9x", Quota: 1, State: "Active", Role: store.RoleAdmin})
+
+	status, env := signupReq(t, app, map[string]string{
+		"application": "portal", "organization": "acme", "invitationCode": "acme-lead-9x",
+		"username": "lead", "password": invitePassword,
+	})
+	if status != 200 || env["status"] != "ok" {
+		t.Fatalf("admin-invited signup: status=%d env=%v, want 200 ok", status, env)
+	}
+	u, _ := store.GetUserByName(context.Background(), db, "acme", "lead")
+	if u == nil || !u.IsAdmin {
+		t.Fatalf("the admin invitation's redeemer = %+v, want an admin of acme", u)
+	}
+	rows, err := orm.TypedQuery[schema.AuditLog](db).Filter("Owner=", "acme").Filter("Action=", schema.ActionOrgAdmin).GetAll(context.Background())
+	if err != nil || len(rows) != 1 || !strings.Contains(rows[0].Object, `"target":"acme/lead"`) {
+		t.Fatalf("org-admin rows = %+v (%v), want one granting acme/lead", rows, err)
 	}
 }
 

@@ -109,6 +109,17 @@ const (
 	// Object names the provider, the subject, the client and whether the account's
 	// address was verified before the link; never a credential.
 	ActionFederationLink = "federation-link"
+	// The admin lifecycle (iam LLM.md "Org admins"). Each is filed under the org
+	// acted in, so that org's admins read it at GET /v1/iam/audit-logs, and its
+	// Object is store.Act's: the target, the value before and after, the reason
+	// and the request id. ActionOrgAdmin is an account's org-admin flag moving
+	// (a grant or a revoke, told apart by from/to); ActionInviteRole an
+	// invitation written to carry a role; ActionUserRemove an account deleted;
+	// ActionVoid an account's tokens and sessions ended because it lost authority.
+	ActionOrgAdmin   = "org-admin"
+	ActionInviteRole = "invitation-role"
+	ActionUserRemove = "user-remove"
+	ActionVoid       = "void"
 )
 
 // PlatformWritten reports whether action names a record the platform writes
@@ -123,7 +134,8 @@ func PlatformWritten(action string) bool {
 		ActionAssumeOrg, ActionReleaseOrg, ActionListOrgs, ActionSuperAdmin, ActionWorkloadToken,
 		ActionInviteSend, ActionInviteAccept, ActionInviteRefused, ActionInviteSignupRefused,
 		ActionInviteCodeSent, ActionMembershipGrant, ActionMembershipRevoke, ActionImpersonate,
-		ActionDelegate, ActionAddress, ActionWalletSignup, ActionFederationLink:
+		ActionDelegate, ActionAddress, ActionWalletSignup, ActionFederationLink,
+		ActionOrgAdmin, ActionInviteRole, ActionUserRemove, ActionVoid:
 		return true
 	}
 	return false

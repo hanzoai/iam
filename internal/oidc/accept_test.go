@@ -80,9 +80,9 @@ func seedPerson(t *testing.T, db orm.DB, owner, name, email string, verified boo
 }
 
 type invite struct {
-	owner, name, code, email, username, state, application string
-	quota, used                                            int
-	pattern, generated                                     bool
+	owner, name, code, email, username, state, application, role string
+	quota, used                                                  int
+	pattern, generated                                           bool
 }
 
 func seedInvite(t *testing.T, db orm.DB, in invite) {
@@ -90,7 +90,7 @@ func seedInvite(t *testing.T, db orm.DB, in invite) {
 	inv := orm.New[schema.Invitation](db)
 	inv.Owner, inv.Name, inv.Code, inv.Email, inv.Username = in.owner, in.name, in.code, in.email, in.username
 	inv.State, inv.Application, inv.Quota, inv.UsedCount, inv.IsRegexp = in.state, in.application, in.quota, in.used, in.pattern
-	inv.Generated = in.generated
+	inv.Generated, inv.Role = in.generated, in.role
 	inv.SetId(in.owner + "/" + in.name)
 	if err := inv.CreateCtx(context.Background()); err != nil {
 		t.Fatalf("seed invitation: %v", err)
@@ -351,6 +351,25 @@ func TestAccept_codesDoNotCrossPurposes(t *testing.T) {
 	}
 	if ok, err := otp.Consume(ctx, r.db, ada, "ada@example.com", general, now); !ok || err != nil {
 		t.Fatalf("the sign-in code no longer signs in: %v", err)
+	}
+}
+
+// An invitation that carries admin is accepted as an admin membership, and the
+// grant is recorded in the org beside the join.
+func TestAccept_anAdminInvitationArrivesAsAnAdmin(t *testing.T) {
+	r := acceptRig(t)
+	seedPerson(t, r.db, "hanzo", "ada", "ada@example.com", false)
+	seedInvite(t, r.db, invite{owner: "acme", name: "lead", code: "LEADCODE22", state: "Active", quota: 1, role: store.RoleAdmin})
+
+	status, e := r.accept(t, r.as(t, "hanzo/ada"), `{"owner":"acme","code":"LEADCODE22"}`)
+	if status != 200 || !e.Data.Joined {
+		t.Fatalf("status=%d answer=%+v", status, e)
+	}
+	if m := member(t, r.db, "hanzo/ada", "acme"); m == nil || m.Role != store.RoleAdmin {
+		t.Fatalf("membership %+v, want an admin row", m)
+	}
+	if n, err := store.Recorded(context.Background(), r.db, schema.ActionOrgAdmin, time.Now().Add(-time.Minute), "Organization", "acme"); err != nil || n != 1 {
+		t.Fatalf("recorded %d org-admin grants (%v), want 1", n, err)
 	}
 }
 

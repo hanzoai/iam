@@ -407,6 +407,83 @@ nothing.
   `PlatformWritten`: the audit-log CRUD cannot create, alter or delete it.
   assume/release/list-organizations/impersonate keep their own rows.
 
+## Org admins — who makes one, who takes it away, and it takes effect now
+
+An org admin is `IsAdmin` on an account in its own org (`owner`), or an
+org-wide `admin`/`owner` membership of another (`policy.Principal.AdminOf`
+reads both). It is never platform authority. **`users.Admin`** is the one rule
+every writer of either asks, for a CHANGE only (a row written back as read
+moves nothing and needs nothing): `POST`/`PUT /v1/iam/users`, SCIM, an
+invitation that carries the role, and an admin role on `/v1/iam/memberships`.
+
+| caller | grant (false→true) | revoke (true→false) |
+|---|---|---|
+| SuperAdmin (`schema.User.SuperAdmin`) | any account, any org | any, the last admin included |
+| admin of org X (AdminOf X), X a customer org | others of X | others of X, and self, while another admin remains |
+| admin of a platform org (`policy.IsPlatformOrg`: hanzo, lux, zoo, pars, platform, …) | refused 403: only a SuperAdmin makes an admin of a brand | as above |
+| anyone, target in or org = `admin` | refused 403 (SuperAdmin only) | refused 403 |
+| admin of another org, plain member, application, machine | refused 403 | refused 403 |
+| last admin of X (store.Admins: live persons, flag or membership) | — | refused 409, unless SuperAdmin |
+
+Nobody raises their own flag. A request that states `user.isAdmin` is read
+for presence (`askedAdmin`): absent keeps the stored value, a stated value is
+decided by the rule, and a refusal is an error, never a 200 with the field
+dropped. `isAdmin` is always written out, `false` included. In-process code
+(signup through an admin invitation, the upsert, onboarding's founder) states
+it through `Admin` and is trusted only with no principal; a request with a
+principal is always ruled on. Deleting an account revokes every admin role it
+holds: refused 409 while it is the last admin of its org or of any org it
+holds an admin membership of (SuperAdmin excepted).
+
+**Contract.**
+
+| op | body / query | answer |
+|---|---|---|
+| `POST /v1/iam/users` | `{"user":{owner,name,…,"isAdmin":true}}` | the user, `isAdmin` as stored; 403 / 409 above |
+| `PUT /v1/iam/users/{owner}/{name}` | `{"user":{…,"isAdmin":bool}}`; omit to keep | same |
+| `DELETE /v1/iam/users/{owner}/{name}` | — | `{deleted}`; 409 last admin |
+| `GET /v1/iam/users?owner=X&isAdmin=true&limit=&offset=` | admins of X by flag; each row has `lastSigninTime`, `preferredMfaType` (non-empty = second factor on), `epoch` | `{users,total}` |
+| `GET /v1/iam/users?owner=admin` | the SuperAdmins (SuperAdmin only) | same |
+| `GET /v1/iam/memberships?org=X` | admins by membership: `role` admin/owner | roster |
+| `POST /v1/iam/memberships` `{user,org,role:"admin"}` | a new admin row is a grant; owner = founder, and a brand's needs a SuperAdmin | `{status,data}`; 403/409 |
+| `POST /v1/iam/delete-membership` `{user,org}` | revoking admin/owner is a revoke; every removal voids | same |
+| `POST`/`PUT /v1/iam/invitations` | `role`: `member` (default) or `admin`; admin needs grant authority, re-asked on every edit | the invitation |
+| `GET /v1/iam/audit-logs?owner=X` | X's admins and SuperAdmins | rows below |
+
+**Invitations carry a role.** `schema.Invitation.Role`. Redeeming applies it:
+an account signing up through it is created with `IsAdmin` (the locked row's
+role, `redeem`), and an account accepting it (`join`) gets an `admin`
+membership. Neither is gated again at redemption: the writer was.
+
+**Revocation is immediate (`store.Void`).** A revoke of the flag, a removed
+membership (any role: its `orgs` claim keeps opening the org), an upsert
+lowering, and a deleted account each: set `User.Epoch` to now; delete the
+account's token rows (refresh grants and access-token rows, so refresh fails
+and introspection answers inactive) and its sessions (all applications).
+`verifyBearer` refuses a token whose subject's row `Voids(iat)` (`iat <=
+epoch`), so every IAM door refuses the old token at once; a token minted in
+the same second is void too. Cost in IAM: one indexed user read per bearer
+verification.
+
+**Cloud must ask the row too.** cloud verifies IAM JWTs offline and caches the
+result per token until `exp` (`middleware_identity.go` validatedPrincipal,
+`identity_cache.go`), so a voided token keeps its claims there for up to a week.
+The change: in `validatedPrincipal`, after the memo lookup and for a person
+token (`!claims.Machine()`), refuse 401 unless the subject's row is live —
+`u := iamstore.GetUserBySubject(sub)`; live = `u != nil && !u.IsForbidden &&
+!u.IsDeleted && !u.Voids(iat)` — through a plane op in `apps/iam` beside
+`IAMSelf` (the IAM store lives in that process); the same in
+`TokenValidator.Validate`. Uncached it is one plane call and one indexed read
+per request; cached per subject it is that once per TTL, and the TTL is the
+window a revoked token still works.
+
+**Audit (`store.Act.Row`).** Filed under the org acted in, `PlatformWritten`,
+object = target, from, to, `reason`, `request` (X-Request-Id), with the actor in
+`user`: `org-admin` (a flag or admin grant/revoke: create, update, SCIM,
+upsert, onboarding's founder, an accepted admin invitation), `invitation-role`,
+`user-remove`, `void` (with token and session counts), plus the existing
+`membership-grant` / `membership-revoke` (now with `request`).
+
 ## Impersonation — support signs in AS the person, and every token says so
 
 The owner overrode "nobody is impersonated" for one capability: from

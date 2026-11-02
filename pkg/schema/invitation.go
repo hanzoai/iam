@@ -43,6 +43,13 @@ type Invitation struct {
 	SignupGroup string `json:"signupGroup"`
 	DefaultCode string `json:"defaultCode"`
 
+	// Role is the role a redeemer arrives holding in Owner: "member" (or empty)
+	// or "admin". An admin role is written only by a caller users.Admin lets
+	// grant org-admin there, and redeeming applies it: an account that signs up
+	// through it is its org's admin, and one that accepts it holds an admin
+	// membership.
+	Role string `json:"role,omitempty"`
+
 	State string `json:"state"`
 
 	// SentTime is when an email about this invitation last went to its pinned
