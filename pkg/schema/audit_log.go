@@ -104,6 +104,11 @@ const (
 	// org with the client address (ClientIp) and its network (Object). It is the
 	// ledger the wallet creation cap counts.
 	ActionWalletSignup = "wallet-signup"
+	// A social sign-in linking its provider subject onto the existing account that
+	// holds the address the provider verified, filed under that account's org.
+	// Object names the provider, the subject, the client and whether the account's
+	// address was verified before the link; never a credential.
+	ActionFederationLink = "federation-link"
 )
 
 // PlatformWritten reports whether action names a record the platform writes
@@ -118,7 +123,7 @@ func PlatformWritten(action string) bool {
 		ActionAssumeOrg, ActionReleaseOrg, ActionListOrgs, ActionSuperAdmin, ActionWorkloadToken,
 		ActionInviteSend, ActionInviteAccept, ActionInviteRefused, ActionInviteSignupRefused,
 		ActionInviteCodeSent, ActionMembershipGrant, ActionMembershipRevoke, ActionImpersonate,
-		ActionDelegate, ActionAddress, ActionWalletSignup:
+		ActionDelegate, ActionAddress, ActionWalletSignup, ActionFederationLink:
 		return true
 	}
 	return false

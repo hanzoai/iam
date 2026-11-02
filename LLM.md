@@ -1126,6 +1126,16 @@ account → Security) POSTs same-origin with the session cookie plus a hanzo-con
 bearer and navigates to the answer. `@hanzo/iam`, hanzo.ai and `@hanzo/rooms` do
 not call it. Pinned by `TestLink_*`.
 
+A social SIGN-IN resolves its account in `linkOrProvision` (`internal/oidc/federation.go`):
+the provider subject, else the one account holding the address, else a new account.
+The address links when the provider verified it, however the account was made and
+whatever its own `EmailVerified`; the link sets the subject and `EmailVerified` and
+nothing else (password, sessions, other methods, org, roles stay), audited in the
+same transaction as `schema.ActionFederationLink`. Refused: an address the provider
+did not verify (`errAddressHeld`), two accounts on one address
+(`store.ErrEmailAmbiguous`). The address lookups never read a reserved org, so an
+`admin` account is never linked this way. Pinned by `TestFederation_Links*`.
+
 ## A wallet is a sign-in method, and the account's DID is derived from `sub`
 
 A person links a wallet once, here, and every app reads it as a claim. Three

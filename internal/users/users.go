@@ -119,12 +119,9 @@ type CreateInput struct {
 	// EmailVerified records that an identity provider PROVED this address. It is
 	// off the wire for the same reason Type and Admin are, and it states here the
 	// rule Update already keeps: an address is proven by the flow that verifies it
-	// and by nothing else. The federation broker asks this bit before it links a
-	// social identity onto an existing local account — it adopts a row only when
-	// that row's own address was proven, or when the row carries no password
-	// anybody could already sign in with. A body that could state the bit would
-	// answer that question for the broker, and a row carrying a chosen password AND
-	// a stated proof passes a check that exists to say no.
+	// and by nothing else. Relying parties read it as the account's email_verified
+	// claim, so a body that could state it would let the sender vouch for an
+	// address on the platform's behalf.
 	//
 	// So the proof comes from the CALLING CODE, never the caller's JSON: the
 	// federation broker states what its provider vouched for, and every other
@@ -290,11 +287,8 @@ func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error)
 	// subject, Type/IsAdmin at the org pool's `billing_account` claim.
 	u.Type, u.IsAdmin = in.Type, in.Admin
 	// The address proof is the calling code's to state as well, and whatever the
-	// body carried is discarded, for the reason CreateInput.EmailVerified gives:
-	// this bit is what the federation broker reads to decide whether a social
-	// identity may be linked onto an existing account, so a body that states it
-	// answers the broker's question on the sender's behalf. Update carries the
-	// stored value for the same reason.
+	// body carried is discarded, for the reason CreateInput.EmailVerified gives.
+	// Update carries the stored value for the same reason.
 	u.EmailVerified = in.EmailVerified
 	// The registration is the calling code's to state for the same reason (see
 	// CreateInput.Application).
@@ -512,14 +506,10 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 	if in.Admin != nil {
 		u.IsAdmin = *in.Admin
 	}
-	// EmailVerified is a PROOF the server recorded, not a property a body may state.
-	// It is what the federation broker asks before it links a social identity onto an
-	// existing local account: it adopts a row only when that row's own address was
-	// proven, or when the row carries no password anybody could already sign in with.
-	// A body that could state it would answer that question for the broker — a row
-	// carrying a chosen password AND a stated proof passes a gate that exists to say
-	// no. Signup records false, the broker records true when an identity provider
-	// proved it, and both write through their own paths; this one carries — and only
+	// EmailVerified is a PROOF the server recorded, not a property a body may state
+	// (see CreateInput.EmailVerified). Signup records false, the broker records true
+	// when an identity provider proved it, and both write through their own paths;
+	// this one carries — and only
 	// for the address it was proven for. A write that changes the address leaves the
 	// new one unproven, or the proof of one address becomes the proof of any.
 	u.EmailVerified = existing.EmailVerified && u.Email == store.NormalizeEmail(existing.Email)

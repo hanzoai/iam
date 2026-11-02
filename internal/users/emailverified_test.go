@@ -3,17 +3,14 @@
 
 package users
 
-// EmailVerified is a proof the SERVER recorded. The federation broker asks it
-// before linking a social identity onto an existing local account: it adopts a row
-// only when that row's own address was proven, or when the row carries no password
-// anybody could already sign in with. A body that could state it would answer that
-// question for the broker — a row carrying a chosen password AND a stated proof
-// passes a check that exists to say no.
+// EmailVerified is a proof the SERVER recorded, and relying parties read it as the
+// account's email_verified claim. A body that could state it would let the sender
+// vouch for an address on the platform's behalf.
 //
 // So the bit is not settable from the body on EITHER write, and on both it is
 // stated by the calling code instead: Create takes CreateInput.EmailVerified,
 // which the federation broker sets and nothing else does; Update carries the
-// stored value. internal/oidc/federation_proof_test.go runs the whole chain.
+// stored value.
 
 import (
 	"context"
@@ -90,8 +87,8 @@ func TestUpdate_CarriesEmailVerified(t *testing.T) {
 // refusing everyone. The federation broker states its provider's proof through
 // the create's own field, the bit is READABLE on the way back, and an ordinary
 // edit that omits it does not un-prove the address. Without this, "ignore the
-// bit" could be satisfied by ignoring it always — which would make every
-// federated account unlinkable on its second sign-in.
+// bit" could be satisfied by ignoring it always — and every federated account
+// would report its address unverified.
 func TestProofIsStatedByTheCallingCode(t *testing.T) {
 	ctx := context.Background()
 	api, closeDB := openUsersTestDB(t)
@@ -130,8 +127,8 @@ func TestProofIsStatedByTheCallingCode(t *testing.T) {
 //
 // Carrying the bit across an address change lets an org admin turn a proof of
 // their own address into a proof of anyone's: rewrite the row's email to a
-// stranger's, and the federation broker, asked whether that address was proven,
-// answers yes and links the stranger's social identity onto the row.
+// stranger's, and the account's email_verified claim vouches for the stranger's
+// address.
 func TestUpdate_NewAddressIsUnproven(t *testing.T) {
 	ctx := context.Background()
 	api, closeDB := openUsersTestDB(t)

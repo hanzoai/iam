@@ -7,8 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hanzoai/orm"
-
 	"github.com/hanzoai/iam/pkg/store"
 )
 
@@ -50,11 +48,6 @@ func TestFederation_SignupSwitchDoesNotBlockAnExistingAccount(t *testing.T) {
 	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}}) // signup OFF
 	m := newMockOIDC(t, fedGoogleCID)
 	seedUser(t, db, "alice", m.email, "pw")
-	// The link law needs proof on BOTH sides of the address (linkOrProvision): a row
-	// with a password and an UNPROVEN address is refused, whatever this switch says.
-	// So prove the local side, which leaves the registration switch as the only
-	// thing under test.
-	verifyEmail(t, db, "alice")
 	seedOIDCProvider(t, db, "webapp", m)
 
 	runOIDCLogin(t, app, db, m, "webapp", nil)
@@ -94,16 +87,5 @@ func TestFederation_NoAddressIsRefusedRatherThanNamedAfterTheProvider(t *testing
 		if u, _ := store.GetUserByName(tctx(), db, "hanzo", name); u != nil {
 			t.Fatalf("an account named %q was created from the provider type", name)
 		}
-	}
-}
-
-// verifyEmail marks the account's own address as proven, the state a password
-// signup never reaches on its own.
-func verifyEmail(t *testing.T, db orm.DB, name string) {
-	t.Helper()
-	u := userRow(t, db, name)
-	u.EmailVerified = true
-	if err := u.UpdateCtx(tctx()); err != nil {
-		t.Fatalf("verify email: %v", err)
 	}
 }

@@ -600,26 +600,18 @@ func TestFederation_ReloginBySubjectIsStable(t *testing.T) {
 	}
 }
 
-// proveEmail marks a seeded account's address as PROVEN — the state a row reaches
-// by having its address verified. Linkability turns on it, so the tests that are
-// about something else say so explicitly rather than inheriting it.
-func proveEmail(t *testing.T, db orm.DB, name string) {
-	t.Helper()
-	u := userRow(t, db, name)
-	u.EmailVerified = true
-	if err := u.UpdateCtx(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// A verified IdP email that matches an EXISTING account whose address was ALSO
-// proven LINKS to it (sets the connector column) instead of creating a duplicate.
-// Both sides proved the address, so both are the same person.
+// A verified IdP email that matches an EXISTING account whose address is verified
+// too LINKS to it (sets the connector column) instead of creating a duplicate, and
+// leaves its password as it was.
 func TestFederation_LinksExistingAccountByVerifiedEmail(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
 	seedUser(t, db, "alice", "alice@example.com", "pw") // pre-existing password account, same email
-	proveEmail(t, db, "alice")
+	u := userRow(t, db, "alice")
+	u.EmailVerified = true
+	if err := u.UpdateCtx(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	m := newMockOIDC(t, fedGoogleCID)
 	seedOIDCProvider(t, db, "webapp", m)
 
@@ -633,11 +625,13 @@ func TestFederation_LinksExistingAccountByVerifiedEmail(t *testing.T) {
 	if linked == nil || linked.Google != m.sub {
 		t.Fatalf("connector subject not linked onto the existing account: %+v", linked)
 	}
+	if linked.PasswordHash != u.PasswordHash {
+		t.Fatal("the link rewrote the account's password")
+	}
 }
 
-// An account with NO password links even though its own address was never proven:
-// there is no credential on it for an unproven party to keep, so the party that
-// DID prove the address is the only one who can open it.
+// An account with no password and an unverified address links the same way, and
+// is left with no password.
 func TestFederation_LinksAPasswordlessAccountByVerifiedEmail(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
@@ -659,26 +653,137 @@ func TestFederation_LinksAPasswordlessAccountByVerifiedEmail(t *testing.T) {
 	if linked == nil || linked.Google != m.sub || !linked.EmailVerified {
 		t.Fatalf("connector not linked onto the passwordless account: %+v", linked)
 	}
+	if linked.PasswordHash != "" {
+		t.Fatal("the link gave a passwordless account a password")
+	}
 }
 
-// THE takeover. Signup writes EmailVerified:false and nothing a password signup
-// can reach ever sets it, so an attacker who signs up with a stranger's address
-// holds a row with a real digest and an unproven address. When the real owner
-// arrives with a VERIFIED Google identity, adopting that row leaves the attacker's
-// password working on the account the victim now owns — silently, and for good.
-// 218 live rows are in exactly that shape.
-//
-// The link needs proof on BOTH sides. It is refused, the digest is untouched, and
-// no second row appears on the address.
-func TestFederation_WillNotAdoptAnUnprovenAccount(t *testing.T) {
+// A verified IdP address that matches an account made with a password, whose own
+// address was never verified, signs in AS that account: the same row, the
+// provider subject linked, the address now verified. The password keeps signing
+// in, the session the account already held stays live, and the link is audited
+// with the provider subject and no credential.
+func TestFederation_LinksAnUnverifiedAccountWithAPassword(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
-	seedUser(t, db, "victim", "alice@example.com", "the attacker's passphrase")
-	squatted := userRow(t, db, "victim")
-	if squatted.EmailVerified || squatted.PasswordHash == "" {
-		t.Fatalf("premise: the row must carry a digest and an unproven address: %+v", squatted)
+	seedUser(t, db, "alice", "alice@example.com", "pw")
+	before := userRow(t, db, "alice")
+	if before.EmailVerified || before.PasswordHash == "" {
+		t.Fatalf("premise: a password and an unverified address: %+v", before)
 	}
-	m := newMockOIDC(t, fedGoogleCID) // emailVerified: true, the REAL owner
+	session := signIn(t, app, "webapp")
+	m := newMockOIDC(t, fedGoogleCID) // emailVerified: true, alice@example.com
+	seedOIDCProvider(t, db, "webapp", m)
+	count := countUsers(t, db)
+
+	q, cookie := beginAuthorize(t, app, "webapp", fedProvGoogle)
+	m.mu.Lock()
+	m.nonce = q.Get("nonce")
+	m.mu.Unlock()
+	loc := requireRedirect(t, callback(t, app, q.Get("state"), "idp-code-link", cookie), testRedirect)
+	code := mustQuery(t, loc).Get("code")
+	if code == "" {
+		t.Fatalf("a verified address did not sign in to the account that holds it: %q", loc)
+	}
+	resp, tok := exchangeCode(t, app, url.Values{
+		"code": {code}, "client_id": {"webapp"}, "redirect_uri": {testRedirect}, "code_verifier": {fedVerifier},
+	})
+	if resp.StatusCode != 200 {
+		t.Fatalf("code exchange: %d %v", resp.StatusCode, tok)
+	}
+	raw, _ := tok["access_token"].(string)
+	var claims jwt.MapClaims
+	if _, _, err := jwt.NewParser().ParseUnverified(raw, &claims); err != nil {
+		t.Fatal(err)
+	}
+	if claims["owner"] != "hanzo" || claims["name"] != "alice" {
+		t.Fatalf("signed in as %v/%v, want hanzo/alice", claims["owner"], claims["name"])
+	}
+
+	after := userRow(t, db, "alice")
+	if after.Id != before.Id {
+		t.Fatalf("the account's id changed: %q -> %q", before.Id, after.Id)
+	}
+	if after.Google != m.sub || !after.EmailVerified {
+		t.Fatalf("subject %q verified=%v, want %q verified", after.Google, after.EmailVerified, m.sub)
+	}
+	if after.PasswordHash != before.PasswordHash || after.IsAdmin != before.IsAdmin {
+		t.Fatal("the link changed the account's password or admin bit")
+	}
+	if countUsers(t, db) != count {
+		t.Fatalf("a second account appeared on the address (%d -> %d)", count, countUsers(t, db))
+	}
+	if !sessionLives(t, app, session) {
+		t.Fatal("the link ended a session the account already held")
+	}
+	signIn(t, app, "webapp") // the password still signs in
+
+	rows, err := orm.TypedQuery[schema.AuditLog](db).Filter("Action=", schema.ActionFederationLink).GetAll(tctx())
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("link audit rows = %d (%v), want 1", len(rows), err)
+	}
+	row := rows[0]
+	if row.Owner != "hanzo" || row.Organization != "hanzo" || row.User != "hanzo/alice" {
+		t.Fatalf("audit row filed as %s, %s, %s; want hanzo, hanzo, hanzo/alice", row.Owner, row.Organization, row.User)
+	}
+	for _, want := range []string{`"subject":"` + m.sub + `"`, `"provider":"` + fedProvGoogle + `"`, `"client":"webapp"`, `"emailVerified":false`} {
+		if !strings.Contains(row.Object, want) {
+			t.Errorf("audit object %s lacks %s", row.Object, want)
+		}
+	}
+	if strings.Contains(row.Object, before.PasswordHash) {
+		t.Fatal("the audit row carries the password digest")
+	}
+	if !schema.PlatformWritten(row.Action) {
+		t.Fatal("the link audit action is writable by a request")
+	}
+}
+
+// An account a founding application made from a password signup — moved into an
+// org of its own, made its admin, its address never verified — is the account a
+// later sign-in with the same verified address reaches.
+func TestFederation_LinksAFoundedPasswordAccount(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-cloud", redirectURIs: []string{testRedirect}, signup: true, orgChoice: "create"})
+	seedOrg(t, db, "hanzo")
+	m := newMockOIDC(t, fedGoogleCID)
+	const pw = "correct horse battery staple"
+	if _, env := signupReq(t, app, map[string]string{
+		"application": "hanzo-cloud", "organization": "hanzo", "password": pw, "email": m.email,
+	}); env["status"] != "ok" {
+		t.Fatalf("signup: %v", env)
+	}
+	founded, err := store.GetUserByName(tctx(), db, "alice", "alice")
+	if err != nil || founded == nil || founded.EmailVerified || founded.PasswordHash == "" || !founded.IsAdmin {
+		t.Fatalf("premise: a founded admin with a password and an unverified address: %+v %v", founded, err)
+	}
+	seedOIDCProvider(t, db, "hanzo-cloud", m)
+
+	runOIDCLogin(t, app, db, m, "hanzo-cloud", nil)
+	after, _ := store.GetUserByName(tctx(), db, "alice", "alice")
+	if after == nil || after.Id != founded.Id || after.Google != m.sub || !after.EmailVerified {
+		t.Fatalf("the founded account was not the one linked: %+v", after)
+	}
+	if countUsersIn(t, db, "alice") != 1 || countUsers(t, db) != 0 {
+		t.Fatal("the sign-in made a second account")
+	}
+	_, body := do(t, app, formReq("POST", PathLogin, url.Values{
+		"organization": {"hanzo"}, "application": {"hanzo-cloud"},
+		"username": {m.email}, "password": {pw}, "type": {"login"},
+	}))
+	if decode(t, body)["status"] != "ok" {
+		t.Fatalf("the password no longer signs in: %s", body)
+	}
+}
+
+// Two accounts on one address name nobody, so a verified address is refused
+// rather than linked onto either, and no third account is made.
+func TestFederation_AmbiguousAddressIsRefused(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "webapp", signup: true, redirectURIs: []string{testRedirect}})
+	seedUser(t, db, "alice", "alice@example.com", "pw")
+	seedUser(t, db, "alice2", "alice@example.com", "pw2")
+	m := newMockOIDC(t, fedGoogleCID)
 	seedOIDCProvider(t, db, "webapp", m)
 
 	before := countUsers(t, db)
@@ -686,33 +791,51 @@ func TestFederation_WillNotAdoptAnUnprovenAccount(t *testing.T) {
 	m.mu.Lock()
 	m.nonce = q.Get("nonce")
 	m.mu.Unlock()
-	resp := callback(t, app, q.Get("state"), "idp-code-adopt", cookie)
-	loc := requireRedirect(t, resp, testRedirect)
-	qs := mustQuery(t, loc)
-	if qs.Get("code") != "" {
-		t.Fatalf("ACCOUNT TAKEOVER: federation minted a code onto an unproven account: %q", loc)
+	qs := mustQuery(t, requireRedirect(t, callback(t, app, q.Get("state"), "idp-code-two", cookie), testRedirect))
+	if qs.Get("code") != "" || qs.Get("error") != "access_denied" || !strings.Contains(qs.Get("error_description"), "more than one account") {
+		t.Fatalf("want access_denied naming the duplicate address, got %v", qs)
 	}
-	if qs.Get("error") != "access_denied" {
-		t.Fatalf("error = %q, want access_denied with a reason: %q", qs.Get("error"), loc)
+	for _, name := range []string{"alice", "alice2"} {
+		if u := userRow(t, db, name); u.Google != "" || u.EmailVerified {
+			t.Fatalf("%s was linked: %+v", name, u)
+		}
 	}
-
-	after := userRow(t, db, "victim")
-	if after.Google != "" {
-		t.Fatalf("the provider subject was linked onto the unproven account: %q", after.Google)
-	}
-	if after.EmailVerified {
-		t.Fatal("the address was marked proven by a party that did not prove it")
-	}
-	if after.PasswordHash != squatted.PasswordHash {
-		t.Fatal("the digest was rewritten; this refuses, it does not evict")
-	}
-	// And it did NOT fall through to provisioning, which would put a second row on
-	// one address — the ambiguity the lookup refuses to resolve.
 	if countUsers(t, db) != before {
-		t.Fatalf("a duplicate account was provisioned on the same address (%d -> %d)", before, countUsers(t, db))
+		t.Fatal("a third account was made on the address")
 	}
-	if _, err := store.GetUserByEmail(context.Background(), db, "hanzo", "alice@example.com"); err != nil {
-		t.Fatalf("the address is no longer resolvable: %v", err)
+}
+
+// An account in the reserved admin org is never reached by an address: the
+// lookups read the application's org and the accounts registered in it, and
+// neither includes a reserved org. The admin account keeps its state, and the
+// sign-in resolves to an ordinary account in the application's org.
+func TestFederation_NeverLinksAnAdminOrgAccount(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "webapp", signup: true, redirectURIs: []string{testRedirect}})
+	m := newMockOIDC(t, fedGoogleCID)
+	seedUserInOrg(t, db, "admin", "root", m.email, "pw")
+	root, err := orm.Get[schema.User](db, "admin/root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	root.IsAdmin = true
+	root.SignupApplication = "webapp" // registered through this application, as far as the row says
+	if err := root.UpdateCtx(tctx()); err != nil {
+		t.Fatal(err)
+	}
+	seedOIDCProvider(t, db, "webapp", m)
+
+	runOIDCLogin(t, app, db, m, "webapp", nil)
+	after, err := orm.Get[schema.User](db, "admin/root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Google != "" || after.EmailVerified || after.PasswordHash != root.PasswordHash {
+		t.Fatalf("the admin-org account was changed by a social sign-in: %+v", after)
+	}
+	u, err := store.GetUserByConnector(tctx(), db, "hanzo", "google", m.sub)
+	if err != nil || u == nil || u.Owner != "hanzo" || u.IsAdmin {
+		t.Fatalf("the sign-in resolved to %+v (%v), want an ordinary account in hanzo", u, err)
 	}
 }
 
