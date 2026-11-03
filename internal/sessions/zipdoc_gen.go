@@ -7,6 +7,9 @@ import (
 )
 
 func init() {
+	zip.Describe("github.com/hanzoai/iam/internal/sessions DELETE /v1/iam/sessions", zip.Doc{
+		Description: "Retires every live session and every issued token one account\nholds, across every application — \"sign out everywhere.\" A lost browser, a\nstolen phone or a leaked credential is then a single call away from being\ndead server-side: a captured session cookie no longer resolves (sidActive is\nfalse) and a stolen refresh token can no longer mint access.\n\nThe caller retires their own account, or an account in an organization they\nadminister; a SuperAdmin may retire any account. It is idempotent: an account\nwith nothing live reports zero and is not an error.",
+	})
 	zip.Describe("github.com/hanzoai/iam/internal/sessions DELETE /v1/iam/sessions/:owner/:name/:application", zip.Doc{
 		Description: "Signs a person out of one application — the session ends and every\nbrowser carrying it stops being authenticated.\n\nA session that is already gone reports that nothing was deleted rather than an\nerror, so the call is safe to repeat.",
 	})

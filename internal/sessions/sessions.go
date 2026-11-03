@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/hanzoai/orm"
@@ -25,6 +26,7 @@ import (
 
 	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // maxSessionIds caps the retained cookie list per session, matching the v1
@@ -49,6 +51,11 @@ func Route(app *zip.Group, db orm.DB) {
 		zip.WithTags("sessions"), zip.WithOperationID("updateSession"))
 	app.Delete("/v1/iam/sessions/:owner/:name/:application", h.Delete,
 		zip.WithTags("sessions"), zip.WithOperationID("deleteSession"))
+	// Every live session and every issued token one account holds, across every
+	// application — "sign out everywhere." A lost browser or a leaked credential
+	// is a single call away from being dead server-side.
+	app.Delete("/v1/iam/sessions", h.RevokeAll,
+		zip.WithTags("sessions"), zip.WithOperationID("revokeAllSessions"))
 }
 
 // SessionRef identifies one session by its (owner, name, application) key —
@@ -102,6 +109,20 @@ type UpdateSessionIn struct {
 // removed.
 type DeleteSessionOut struct {
 	Deleted bool `json:"deleted"`
+}
+
+// RevokeAllIn addresses the account whose every live session and issued token
+// is retired. Omitting the name means the caller's own account; naming another
+// account requires platform or org-admin authority.
+type RevokeAllIn struct {
+	Owner string `json:"owner,omitempty"`
+	Name  string `json:"name,omitempty"`
+}
+
+// RevokeAllOut reports how many sessions and tokens were retired.
+type RevokeAllOut struct {
+	Sessions int `json:"sessions"`
+	Tokens   int `json:"tokens"`
 }
 
 // List returns who is currently signed in to an organization, newest first, and
@@ -229,6 +250,73 @@ func (h *Sessions) Delete(_ context.Context, in *SessionRef) (*DeleteSessionOut,
 		return nil, err
 	}
 	return &DeleteSessionOut{Deleted: true}, nil
+}
+
+// RevokeAll retires every live session and every issued token one account
+// holds, across every application — "sign out everywhere." A lost browser, a
+// stolen phone or a leaked credential is then a single call away from being
+// dead server-side: a captured session cookie no longer resolves (sidActive is
+// false) and a stolen refresh token can no longer mint access.
+//
+// The caller retires their own account, or an account in an organization they
+// administer; a SuperAdmin may retire any account. It is idempotent: an account
+// with nothing live reports zero and is not an error.
+func (h *Sessions) RevokeAll(ctx context.Context, in *RevokeAllIn) (*RevokeAllOut, error) {
+	p, ok := principal.From(ctx)
+	if !ok {
+		return nil, zip.ErrForbidden("no principal")
+	}
+	owner, err := principal.Scope(ctx, strings.TrimSpace(in.Owner))
+	if err != nil {
+		return nil, err
+	}
+
+	var name string
+	switch {
+	case in.Name != "":
+		name = strings.TrimSpace(in.Name)
+		// The caller retires another account only with platform or org-admin
+		// authority; otherwise only their own account, in their own org.
+		if !p.Sudo && !p.AdminOf(owner) && !(name == p.User && owner == p.Org) {
+			return nil, zip.ErrForbidden("this credential may not retire " + owner + "/" + name)
+		}
+	default:
+		if p.User == "" {
+			return nil, zip.ErrBadRequest("name is required")
+		}
+		name = p.User
+		if owner != p.Org {
+			return nil, zip.ErrForbidden("this credential may only retire its own account")
+		}
+	}
+
+	out := &RevokeAllOut{}
+	// Every (owner, name, application) session row this account holds — one row
+	// per application it is signed in to.
+	rows, err := orm.TypedQuery[schema.Session](h.db).
+		Filter("Owner=", owner).Filter("Name=", name).GetAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, s := range rows {
+		if err := s.Delete(); err != nil {
+			return nil, err
+		}
+		out.Sessions++
+	}
+	// Every token row issued to this account, across every application — the
+	// access grants and refresh chains a stolen token feeds.
+	tokens, err := store.ListTokensByUser(ctx, h.db, owner+"/"+name)
+	if err != nil {
+		return nil, err
+	}
+	for _, t := range tokens {
+		if err := store.DeleteToken(ctx, h.db, t); err != nil {
+			return nil, err
+		}
+		out.Tokens++
+	}
+	return out, nil
 }
 
 // sessionID composes the orm string id from the three key parts, byte-identical

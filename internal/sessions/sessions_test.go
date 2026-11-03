@@ -343,6 +343,136 @@ func TestRoute_Registers(t *testing.T) {
 	Route(app.Group(""), db)
 }
 
+// putToken stages a token row the way the mint stamps one: User is the
+// "owner/name" pair ListTokensByUser resolves and DeleteToken removes by.
+func putToken(t *testing.T, db orm.DB, owner, name, application string) {
+	t.Helper()
+	tok := orm.New[schema.Token](db)
+	tok.SetId(owner + "/" + name)
+	tok.Owner, tok.Name, tok.User = owner, name, owner+"/"+name
+	tok.Application = application
+	tok.CreatedTime = now()
+	if err := tok.Create(); err != nil {
+		t.Fatalf("put token %s/%s/%s: %v", owner, name, application, err)
+	}
+}
+
+func memberOf(org, user string) context.Context {
+	return principal.Bind(context.Background(), &principal.Principal{Org: org, User: user})
+}
+
+// RevokeAll retires every session row (one per application) and every token row
+// one account holds, and reports both counts.
+func TestRevokeAll_RetiresSessionsAndTokens(t *testing.T) {
+	db := newDB(t)
+	h := &Sessions{db: db}
+	ctx := operator()
+
+	putSession(t, db, "hanzo", "alice", "cloud", now(), "s1")
+	putSession(t, db, "hanzo", "alice", "api", now(), "s2")
+	putSession(t, db, "hanzo", "alice", "web", now(), "s3")
+	putSession(t, db, "acme", "zoe", "cloud", now(), "s4") // another account, untouched
+	putToken(t, db, "hanzo", "alice", "cloud")
+
+	out, err := h.RevokeAll(ctx, &RevokeAllIn{Owner: "hanzo", Name: "alice"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Sessions != 3 {
+		t.Fatalf("revoked %d sessions, want 3", out.Sessions)
+	}
+	if out.Tokens != 1 {
+		t.Fatalf("revoked %d tokens, want 1", out.Tokens)
+	}
+
+	// The account is bare across every application.
+	if got, _ := orm.TypedQuery[schema.Session](db).Filter("Owner=", "hanzo").Filter("Name=", "alice").GetAll(ctx); len(got) != 0 {
+		t.Fatalf("sessions remain: %v", got)
+	}
+	if got, _ := store.ListTokensByUser(ctx, db, "hanzo/alice"); len(got) != 0 {
+		t.Fatalf("tokens remain: %v", got)
+	}
+	// The other account's session is untouched.
+	if got, _ := orm.TypedQuery[schema.Session](db).Filter("Owner=", "acme").Filter("Name=", "zoe").GetAll(ctx); len(got) != 1 {
+		t.Fatalf("another account's session was revoked: %v", got)
+	}
+}
+
+// Repeating the call is a safe no-op: nothing live means zero, not an error.
+func TestRevokeAll_Idempotent(t *testing.T) {
+	db := newDB(t)
+	h := &Sessions{db: db}
+	ctx := operator()
+
+	putSession(t, db, "hanzo", "alice", "cloud", now(), "s1")
+	out, err := h.RevokeAll(ctx, &RevokeAllIn{Owner: "hanzo", Name: "alice"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Sessions != 1 || out.Tokens != 0 {
+		t.Fatalf("first pass = %+v, want one session and no tokens", out)
+	}
+	out, err = h.RevokeAll(ctx, &RevokeAllIn{Owner: "hanzo", Name: "alice"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Sessions != 0 || out.Tokens != 0 {
+		t.Fatalf("second pass = %+v, want zero across the board", out)
+	}
+}
+
+// A caller retires their own account with no name named.
+func TestRevokeAll_OwnAccount(t *testing.T) {
+	db := newDB(t)
+	h := &Sessions{db: db}
+	ctx := memberOf("beta", "alice")
+
+	putSession(t, db, "beta", "alice", "cloud", now(), "s1")
+	putToken(t, db, "beta", "alice", "cloud")
+
+	out, err := h.RevokeAll(ctx, &RevokeAllIn{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Sessions != 1 || out.Tokens != 1 {
+		t.Fatalf("own revoke = %+v, want one session and one token", out)
+	}
+}
+
+// A member of one beta may not retire an account in acme.
+func TestRevokeAll_RefusesForeignOrg(t *testing.T) {
+	db := newDB(t)
+	h := &Sessions{db: db}
+	ctx := memberOf("beta", "alice")
+
+	putSession(t, db, "acme", "zoe", "cloud", now(), "s1")
+
+	if _, err := h.RevokeAll(ctx, &RevokeAllIn{Owner: "acme", Name: "zoe"}); err == nil {
+		t.Fatal("a beta member retired an acme account and was not refused")
+	}
+}
+
+// A request with no principal behind it is answered by nobody.
+func TestRevokeAll_NoPrincipalIsRefused(t *testing.T) {
+	db := newDB(t)
+	h := &Sessions{db: db}
+
+	if _, err := h.RevokeAll(context.Background(), &RevokeAllIn{Owner: "hanzo", Name: "alice"}); err == nil {
+		t.Fatal("revoAll with no principal was answered; it must be refused")
+	}
+}
+
+// A machine credential (no person) naming no account has nothing to retire.
+func TestRevokeAll_MachineRequiresName(t *testing.T) {
+	db := newDB(t)
+	h := &Sessions{db: db}
+	ctx := principal.Bind(context.Background(), &principal.Principal{Org: "hanzo"})
+
+	if _, err := h.RevokeAll(ctx, &RevokeAllIn{}); err == nil {
+		t.Fatal("a machine revoking no named account was answered; it must be refused")
+	}
+}
+
 // equalStrings compares two slices, treating nil and empty as equal — a merge
 // that clears returns nil and one that keeps nothing may return either.
 func equalStrings(a, b []string) bool {
