@@ -14,6 +14,8 @@ package users
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -59,6 +61,11 @@ func Route(app *zip.Group, db orm.DB) {
 	app.Get("/v1/iam/users/:owner/:name", a.Get, zip.WithTags("users"))
 	app.Put("/v1/iam/users/:owner/:name", a.Update, zip.WithTags("users"))
 	app.Delete("/v1/iam/users/:owner/:name", a.Delete, zip.WithTags("users"))
+	// Suspend and reactivate an account without deleting it: flipping IsForbidden
+	// blocks every new grant (sign-in, token mint, keys, federation) at once,
+	// while the row — and its audit, consent and membership history — stays.
+	app.Post("/v1/iam/users/:owner/:name/forbid", a.Forbid, zip.WithTags("users"))
+	app.Post("/v1/iam/users/:owner/:name/re-enable", a.Reenable, zip.WithTags("users"))
 }
 
 // Ref identifies one user by its natural key.
@@ -116,6 +123,14 @@ type CreateInput struct {
 	// is ignored exactly as a body-supplied Id is.
 	Type  string `json:"-"`
 	Admin bool   `json:"-"`
+	// Forbidden is the suspension bit. It is off the wire for the same reason
+	// Type and Admin are: suspension is server-owned state, so a create body must
+	// not be able to birth an account every grant already refuses. The calling
+	// CODE states it — SCIM's active:false is the only create path that does —
+	// and a body-supplied isForbidden is ignored exactly as a body-supplied Id
+	// is. A new row is never soft-deleted; IsDeleted is not state a caller
+	// states at all.
+	Forbidden bool `json:"-"`
 	// EmailVerified records that an identity provider PROVED this address. It is
 	// off the wire for the same reason Type and Admin are, and it states here the
 	// rule Update already keeps: an address is proven by the flow that verifies it
@@ -162,6 +177,14 @@ type UpdateInput struct {
 	// surface that makes machines creates its own row. So Type is always carried
 	// from the stored record, like Id and CreatedTime.
 	Admin *bool `json:"-"`
+	// Forbidden is the suspension bit. Nil means "leave it as stored", which is
+	// what every profile edit means. It is off the wire (see CreateInput): a
+	// profile write is not a suspension surface, and a body that could state the
+	// bit would let a routine edit silently reactivate a suspended account — or
+	// suspend one — without the audited Forbid/Reenable path. SCIM's
+	// active:false/true is the one other writer; it states the bit through this
+	// field from code.
+	Forbidden *bool `json:"-"`
 }
 
 // AuthzTarget reports the (owner, name) this create binds — the user entity is
@@ -229,6 +252,15 @@ type DeleteOutput struct {
 	Deleted bool `json:"deleted"`
 }
 
+// ForbidInput addresses one account by its natural key, carried in the URL:
+// POST /v1/iam/users/:owner/:name/forbid and POST /v1/iam/users/:owner/:name/re-enable.
+type ForbidInput struct {
+	// Owner is the organization the account lives in.
+	Owner string `json:"-" url:"owner"`
+	// Name is the account's username within that organization.
+	Name string `json:"-" url:"name"`
+}
+
 // Create adds a person to your organization. Send a password and it becomes the
 // one they sign in with; it is hashed before it is stored and never comes back
 // in any response.
@@ -286,6 +318,11 @@ func (a *API) Create(ctx context.Context, in *CreateInput) (*schema.User, error)
 	// could otherwise point at something it was never granted — Id at a victim's
 	// subject, Type/IsAdmin at the org pool's `billing_account` claim.
 	u.Type, u.IsAdmin = in.Type, in.Admin
+	// Suspension and deletion are server-owned state, stated by the calling code
+	// or not at all (see CreateInput.Forbidden). The value the body carried is
+	// discarded here, exactly like its Id and credential material; a new native
+	// row is never born suspended and never born deleted.
+	u.IsForbidden, u.IsDeleted = in.Forbidden, false
 	// The address proof is the calling code's to state as well, and whatever the
 	// body carried is discarded, for the reason CreateInput.EmailVerified gives.
 	// Update carries the stored value for the same reason.
@@ -446,7 +483,9 @@ func (a *API) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
 //
 // Who they are does not change: their organization, username and the identifier
 // their existing sessions are keyed on all survive the write, so an update never
-// signs anyone out.
+// signs anyone out. Nor does whether they are suspended: that is server-owned
+// state with its own audited verbs (Forbid/Reenable), and a profile write carries
+// the stored value rather than accepting one from the body.
 //
 // A SuperAdmin's account is changed only by a SuperAdmin.
 func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error) {
@@ -491,6 +530,20 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 	// unlock a user mid-attack (F-6).
 	u.SigninWrongTimes = existing.SigninWrongTimes
 	u.LastSigninWrongTime = existing.LastSigninWrongTime
+	// Suspension and deletion are SERVER-OWNED as well, and this is the write that
+	// makes that true: it is a full-row write reached by the typed CRUD update AND
+	// the legacy update-user verb, so without these two lines a routine profile
+	// edit that simply omits the flags — which is what every partial client sends,
+	// and what a masked read of an active row produces, since omitempty drops a
+	// false value — silently REACTIVATES a suspended account. That would make the
+	// audited Forbid/Reenable path optional and let a body suspend or restore an
+	// account without a row in the trail. SCIM is the one caller whose business is
+	// active:false/true, and it states the suspension bit through in.Forbidden
+	// (off the wire, like Admin) from code; Delete is the only writer of IsDeleted.
+	u.IsForbidden, u.IsDeleted = existing.IsForbidden, existing.IsDeleted
+	if in.Forbidden != nil {
+		u.IsForbidden = *in.Forbidden
+	}
 	// The identity CLASS is server-owned too, and for a money reason rather than a
 	// bookkeeping one. Type and IsAdmin are the two facts store.BillingAccount reads
 	// to answer "this principal spends the ORG POOL", which IAM then signs as the
@@ -585,7 +638,7 @@ func (a *API) Update(ctx context.Context, in *UpdateInput) (*schema.User, error)
 
 // Delete removes a person from your organization. Their sessions stop working
 // immediately and the account is gone rather than suspended — to keep the record
-// and only stop sign-in, update the user instead.
+// and only stop sign-in, use Forbid instead.
 //
 // A SuperAdmin's account is removed only by a SuperAdmin.
 func (a *API) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
@@ -617,6 +670,175 @@ func (a *API) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 		return nil, zip.ErrInternal(err.Error())
 	}
 	return &DeleteOutput{Deleted: true}, nil
+}
+
+// Forbid suspends an account — POST /v1/iam/users/:owner/:name/forbid. It flips
+// IsForbidden so every new grant (sign-in, token mint, API keys, federation) is
+// refused at once, while the row and its history stay intact. Reenable is the
+// inverse.
+//
+// A SuperAdmin may suspend or reactivate any account. An org admin may do it to
+// a member of its own org. The admin organization's accounts are SuperAdmin-only,
+// and a plain member may not suspend anyone — not even themself (use the password
+// change or the account-delete surface instead).
+//
+// The call is idempotent — asking for the state the account already holds
+// succeeds and reports it — and every invocation, changed or not, is written to
+// the audit trail under ActionForbidUser with the actor, the target and the
+// answer. A refused invocation is recorded too: the attempt is what an auditor
+// needs to see.
+func (a *API) Forbid(ctx context.Context, in *ForbidInput) (*schema.User, error) {
+	return a.forbid(ctx, in.Owner, in.Name, true)
+}
+
+// Reenable reactivates an account — POST /v1/iam/users/:owner/:name/re-enable.
+// It clears IsForbidden, the inverse of Forbid, so the account may sign in and
+// be issued credentials again. The same authority rules apply, and the act is
+// audited under ActionForbidUser like the suspension it reverses.
+func (a *API) Reenable(ctx context.Context, in *ForbidInput) (*schema.User, error) {
+	return a.forbid(ctx, in.Owner, in.Name, false)
+}
+
+// forbid is the one writer behind Forbid and Reenable.
+//
+// The read, the decision and the write are three steps, and the write is the
+// only one that may race: another writer can change the row between the lookup
+// and the update. So the row is re-read under a transaction/row lock (the same
+// pattern as internal/oidc updateUser and the lockout counter), and only the
+// suspension bit is touched on the fresh row. A stale full-row write here could
+// drop a concurrent profile edit or a lockout count, or restore a suspension the
+// caller never saw.
+func (a *API) forbid(ctx context.Context, owner, name string, forbid bool) (*schema.User, error) {
+	if owner == "" || name == "" {
+		return nil, zip.ErrBadRequest("owner and name are required")
+	}
+	existing, err := a.lookup(ctx, owner, name)
+	if err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	}
+	if existing == nil {
+		recordForbid(ctx, a.db, owner, name, forbid, http.StatusNotFound, "user not found", false)
+		return nil, zip.ErrNotFound("user " + owner + "/" + name + " not found")
+	}
+	if err := authorizeForbid(ctx, existing.Owner); err != nil {
+		recordForbid(ctx, a.db, existing.Owner, existing.Name, forbid, http.StatusForbidden, err.Error(), false)
+		return nil, err
+	}
+
+	// The storage key of THIS row — "owner/name" for a migrated row, a
+	// store-assigned surrogate for a v2-native one — resolved through the same
+	// (owner, name) query path every reader uses, so both key shapes lock and
+	// write the row that was actually found.
+	storageID := existing.Key().Encode()
+	var out *schema.User
+	changed := false
+	err = a.db.RunInTransaction(ctx, func(tx orm.DB) error {
+		fresh, err := orm.GetForUpdate[schema.User](tx, storageID)
+		if err != nil {
+			return err
+		}
+		if fresh.IsForbidden == forbid {
+			out = fresh // idempotent: already in the requested state
+			return nil
+		}
+		fresh.IsForbidden = forbid
+		fresh.UpdatedTime = nowRFC3339()
+		if err := fresh.UpdateCtx(ctx); err != nil {
+			return err
+		}
+		out, changed = fresh, true
+		// The row and the evidence of who changed it commit together. A suspension
+		// that outlives its audit row is exactly what the trail exists to prevent,
+		// so the write fails if the record cannot be appended (store.Append, not
+		// store.Record, for the same reason memberships grant/revoke use it).
+		return store.Append(ctx, tx, forbidRecord(ctx, fresh.Owner, fresh.Name, forbid, http.StatusOK, "", true))
+	})
+	if err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	}
+	if !changed {
+		// An idempotent call changed nothing, but it is still an act worth a row.
+		recordForbid(ctx, a.db, out.Owner, out.Name, forbid, http.StatusOK, "", false)
+	}
+	return out.Mask(), nil
+}
+
+// forbidRecord builds one forbid/re-enable audit row. Owner/Organization name
+// the org the account belongs to — the roster whose access changed — while User
+// names the caller (the audit trail is who acted, not another copy of the
+// target), and Object carries the target and the requested state.
+func forbidRecord(ctx context.Context, owner, name string, forbid bool, status int, why string, changed bool) *schema.AuditLog {
+	verb := "forbid"
+	if !forbid {
+		verb = "re-enable"
+	}
+	object, _ := json.Marshal(map[string]any{
+		"target":    owner + "/" + name,
+		"forbidden": forbid,
+		"changed":   changed,
+	})
+	return &schema.AuditLog{
+		Owner:        owner,
+		Organization: owner,
+		User:         forbidActor(ctx),
+		Action:       schema.ActionForbidUser,
+		Method:       "POST",
+		RequestUri:   "/v1/iam/users/" + owner + "/" + name + "/" + verb,
+		Object:       string(object),
+		Response:     why,
+		StatusCode:   status,
+	}
+}
+
+// recordForbid appends the row for an invocation that has nothing to commit with
+// it — a refusal, a missing account, or an idempotent repeat. Best effort: the
+// answer it records is already being returned, so a failed write must not change
+// it. A successful state change uses store.Append INSIDE the write transaction
+// instead, so the suspension and its evidence cannot diverge.
+func recordForbid(ctx context.Context, db orm.DB, owner, name string, forbid bool, status int, why string, changed bool) {
+	if owner == "" {
+		return
+	}
+	store.Record(ctx, db, forbidRecord(ctx, owner, name, forbid, status, why, changed))
+}
+
+// forbidActor names who asked: "<org>/<name>" for a person, the application's
+// "<owner>/<name>" for a confidential client, or "" for an in-process caller
+// with no principal.
+func forbidActor(ctx context.Context) string {
+	p, ok := principal.From(ctx)
+	switch {
+	case !ok || p == nil:
+		return ""
+	case p.App != nil:
+		return p.App.Owner + "/" + p.App.Name
+	default:
+		return p.Org + "/" + p.User
+	}
+}
+
+// authorizeForbid decides who may suspend or reactivate an account.
+//
+// A SuperAdmin may act on any account. An org admin may act on a member of its
+// own org. The admin organization's accounts are SuperAdmin-only: platform
+// authority is written only by platform authority. A plain member may not
+// suspend anyone, not even themself — and an in-process caller with no principal
+// is refused too, because there is nobody to hold accountable for the act.
+func authorizeForbid(ctx context.Context, owner string) error {
+	p, ok := principal.From(ctx)
+	if !ok || p == nil {
+		return zip.ErrForbidden("no principal")
+	}
+	if p.Sudo && p.App == nil {
+		return nil
+	}
+	if owner == policy.AdminOrg {
+		return zip.ErrForbidden("only a SuperAdmin may change an account's suspension in the admin organization")
+	}
+	if p.AdminOf(owner) {
+		return nil
+	}
+	return zip.ErrForbidden("only a SuperAdmin or this organization's admin may change an account's suspension state")
 }
 
 // Authorize refuses a write to an account in the admin org unless the caller is

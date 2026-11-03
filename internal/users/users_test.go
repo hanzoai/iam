@@ -10,6 +10,9 @@ import (
 
 	"github.com/google/uuid"
 
+	policy "github.com/hanzoai/authz"
+
+	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
@@ -175,5 +178,168 @@ func TestUsers_CredentialIsNotAProfileField(t *testing.T) {
 	}
 	if got.DisplayName != "Ada L" {
 		t.Fatalf("update failed to apply a legitimately mutable field: %q", got.DisplayName)
+	}
+}
+
+func seedTestUser(t *testing.T, ctx context.Context, api *API, owner, name string, isAdmin bool) *schema.User {
+	t.Helper()
+	u, err := api.Create(ctx, &CreateInput{
+		User:  schema.User{Owner: owner, Name: name, Email: name + "@" + owner + ".ai"},
+		Admin: isAdmin,
+	})
+	if err != nil {
+		t.Fatalf("create %s/%s: %v", owner, name, err)
+	}
+	return u
+}
+
+func testUserIsForbidden(t *testing.T, ctx context.Context, api *API, owner, name string) bool {
+	t.Helper()
+	u, err := store.GetUserByName(ctx, api.db, owner, name)
+	if err != nil || u == nil {
+		t.Fatalf("get %s/%s: %v", owner, name, err)
+	}
+	return u.IsForbidden
+}
+
+func acmeAdminCtx(ctx context.Context) context.Context {
+	return principal.Bind(ctx, &principal.Principal{
+		Org:   "acme",
+		User:  "acme-admin",
+		Admin: true,
+		Orgs:  map[string]policy.Role{"acme": policy.Admin},
+	})
+}
+
+func superAdminCtx(ctx context.Context) context.Context {
+	return principal.Bind(ctx, &principal.Principal{
+		Org:  "admin",
+		User: "z",
+		Sudo: true,
+	})
+}
+
+func plainMemberCtx(ctx context.Context) context.Context {
+	return principal.Bind(ctx, &principal.Principal{
+		Org:  "acme",
+		User: "alice",
+	})
+}
+
+// An org admin suspends a member of its own org: every new grant is refused at
+// once while the row stays, and re-enable restores it.
+func TestForbid_AdminSuspendsAndReenablesMember(t *testing.T) {
+	ctx := context.Background()
+	api, closeDB := openUsersTestDB(t)
+	defer closeDB()
+
+	seedTestUser(t, ctx, api, "acme", "acme-admin", true)
+	seedTestUser(t, ctx, api, "acme", "bob", false)
+
+	if _, err := api.Forbid(acmeAdminCtx(ctx), &ForbidInput{Owner: "acme", Name: "bob"}); err != nil {
+		t.Fatalf("forbid: %v", err)
+	}
+	if !testUserIsForbidden(t, ctx, api, "acme", "bob") {
+		t.Fatal("bob was not forbidden")
+	}
+
+	if _, err := api.Reenable(acmeAdminCtx(ctx), &ForbidInput{Owner: "acme", Name: "bob"}); err != nil {
+		t.Fatalf("re-enable: %v", err)
+	}
+	if testUserIsForbidden(t, ctx, api, "acme", "bob") {
+		t.Fatal("bob was not re-enabled")
+	}
+}
+
+// Suspending an account that is already suspended (or re-enabling one that is
+// not) is idempotent: it reports the current state and is not an error.
+func TestForbid_Idempotent(t *testing.T) {
+	ctx := context.Background()
+	api, closeDB := openUsersTestDB(t)
+	defer closeDB()
+
+	seedTestUser(t, ctx, api, "acme", "acme-admin", true)
+	seedTestUser(t, ctx, api, "acme", "bob", false)
+
+	if _, err := api.Forbid(acmeAdminCtx(ctx), &ForbidInput{Owner: "acme", Name: "bob"}); err != nil {
+		t.Fatalf("first forbid: %v", err)
+	}
+	if _, err := api.Forbid(acmeAdminCtx(ctx), &ForbidInput{Owner: "acme", Name: "bob"}); err != nil {
+		t.Fatalf("repeat forbid: %v", err)
+	}
+	if !testUserIsForbidden(t, ctx, api, "acme", "bob") {
+		t.Fatal("bob was not forbidden")
+	}
+
+	if _, err := api.Reenable(acmeAdminCtx(ctx), &ForbidInput{Owner: "acme", Name: "bob"}); err != nil {
+		t.Fatalf("first re-enable: %v", err)
+	}
+	if _, err := api.Reenable(acmeAdminCtx(ctx), &ForbidInput{Owner: "acme", Name: "bob"}); err != nil {
+		t.Fatalf("repeat re-enable: %v", err)
+	}
+	if testUserIsForbidden(t, ctx, api, "acme", "bob") {
+		t.Fatal("bob was not re-enabled")
+	}
+}
+
+// A plain member may not suspend anyone — not even themself.
+func TestForbid_RefusesPlainMember(t *testing.T) {
+	ctx := context.Background()
+	api, closeDB := openUsersTestDB(t)
+	defer closeDB()
+
+	seedTestUser(t, ctx, api, "acme", "acme-admin", true)
+	seedTestUser(t, ctx, api, "acme", "bob", false)
+
+	if _, err := api.Forbid(plainMemberCtx(ctx), &ForbidInput{Owner: "acme", Name: "bob"}); err == nil {
+		t.Fatal("a plain member suspended bob and was not refused")
+	}
+	if testUserIsForbidden(t, ctx, api, "acme", "bob") {
+		t.Fatal("a plain member's forbidden call changed state")
+	}
+}
+
+// A SuperAdmin may suspend any account, in any org.
+func TestForbid_SuperAdminAnyAccount(t *testing.T) {
+	ctx := context.Background()
+	api, closeDB := openUsersTestDB(t)
+	defer closeDB()
+
+	seedTestUser(t, ctx, api, "acme", "bob", false)
+
+	if _, err := api.Forbid(superAdminCtx(ctx), &ForbidInput{Owner: "acme", Name: "bob"}); err != nil {
+		t.Fatalf("superadmin forbid: %v", err)
+	}
+	if !testUserIsForbidden(t, ctx, api, "acme", "bob") {
+		t.Fatal("bob was not forbidden by a SuperAdmin")
+	}
+}
+
+// The admin organization's accounts are SuperAdmin-only: an org admin may not
+// suspend an account that lives there.
+func TestForbid_AdminOrgRequiresSuperAdmin(t *testing.T) {
+	ctx := context.Background()
+	api, closeDB := openUsersTestDB(t)
+	defer closeDB()
+
+	seedTestUser(t, ctx, api, "acme", "acme-admin", true)
+	seedTestUser(t, ctx, api, "admin", "z", false)
+
+	if _, err := api.Forbid(acmeAdminCtx(ctx), &ForbidInput{Owner: "admin", Name: "z"}); err == nil {
+		t.Fatal("an org admin suspended an admin-org account and was not refused")
+	}
+	if testUserIsForbidden(t, ctx, api, "admin", "z") {
+		t.Fatal("an org admin's forbidden call changed state in the admin org")
+	}
+}
+
+// Suspending an account that does not exist is not found, not a silent success.
+func TestForbid_NotFound(t *testing.T) {
+	ctx := context.Background()
+	api, closeDB := openUsersTestDB(t)
+	defer closeDB()
+
+	if _, err := api.Forbid(superAdminCtx(ctx), &ForbidInput{Owner: "acme", Name: "ghost"}); err == nil {
+		t.Fatal("forbid of a missing user was not refused")
 	}
 }

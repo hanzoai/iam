@@ -322,7 +322,9 @@ func createUser(db orm.DB) zip.Handler {
 
 		// applyToUser set IsAdmin only when the caller is a SuperAdmin; state it
 		// through the in-process field, since the user body no longer carries it.
-		created, err := users.New(db).Create(ctx, &users.CreateInput{User: u, Password: password, Admin: u.IsAdmin})
+		created, err := users.New(db).Create(ctx, &users.CreateInput{
+			User: u, Password: password, Admin: u.IsAdmin, Forbidden: u.IsForbidden,
+		})
 		if err != nil {
 			return mapErr(c, err)
 		}
@@ -361,7 +363,9 @@ func replaceUser(db orm.DB) zip.Handler {
 		password := applyToUser(&in, cur, authz.IsSuper(ctx)) // overlay onto the FULL row
 		cur.Owner, cur.Name = owner, name
 
-		updated, err := users.New(db).Update(ctx, &users.UpdateInput{User: *cur, Password: password, Admin: &cur.IsAdmin})
+		updated, err := users.New(db).Update(ctx, &users.UpdateInput{
+			User: *cur, Password: password, Admin: &cur.IsAdmin, Forbidden: &cur.IsForbidden,
+		})
 		if err != nil {
 			return mapErr(c, err)
 		}
@@ -434,7 +438,9 @@ func patchUser(db orm.DB) zip.Handler {
 			password = pw
 		}
 		cur.Owner, cur.Name = owner, name
-		updated, err := users.New(db).Update(ctx, &users.UpdateInput{User: *cur, Password: password, Admin: &cur.IsAdmin})
+		updated, err := users.New(db).Update(ctx, &users.UpdateInput{
+			User: *cur, Password: password, Admin: &cur.IsAdmin, Forbidden: &cur.IsForbidden,
+		})
 		if err != nil {
 			return mapErr(c, err)
 		}

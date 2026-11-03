@@ -91,6 +91,11 @@ const (
 	// issued, the code minted for it, and the token that code became. One action
 	// for all three steps, each row's requestUri naming its step; refusals too.
 	ActionImpersonate = "impersonate"
+	// A SuperAdmin or an org admin suspending or reactivating an account
+	// (forbid / re-enable on /v1/iam/users/:owner/:name): flipping IsForbidden
+	// blocks every new grant for that account at once, so each act — and each
+	// refusal — is recorded.
+	ActionForbidUser = "forbid-user"
 	// A confidential client obtaining a delegated token for a person
 	// (iam LLM.md "Delegation"): the person, the org it bills, the client that
 	// acts, the run it is for and its lifetime. Refusals too, filed under the org
@@ -123,7 +128,8 @@ func PlatformWritten(action string) bool {
 		ActionAssumeOrg, ActionReleaseOrg, ActionListOrgs, ActionSuperAdmin, ActionWorkloadToken,
 		ActionInviteSend, ActionInviteAccept, ActionInviteRefused, ActionInviteSignupRefused,
 		ActionInviteCodeSent, ActionMembershipGrant, ActionMembershipRevoke, ActionImpersonate,
-		ActionDelegate, ActionAddress, ActionWalletSignup, ActionFederationLink:
+		ActionDelegate, ActionAddress, ActionWalletSignup, ActionFederationLink,
+		ActionForbidUser:
 		return true
 	}
 	return false
