@@ -39,6 +39,14 @@ type Mint struct {
 	Reason string
 }
 
+// servesOrg reports whether app may mint a grant for an identity in org.
+func servesOrg(app *schema.Application, org string) bool {
+	if policy.IsReservedOrg(org) {
+		return app != nil && org == app.Organization
+	}
+	return app == nil || org == app.Organization || app.ServesAnyOrg()
+}
+
 // MintFor resolves what a successful authentication returns to the SDK: the
 // user id for a bare portal sign-in, or a fresh PKCE-bound authorization code
 // (persisted) for the OAuth flow. userID is "<org>/<name>" — the caller's own

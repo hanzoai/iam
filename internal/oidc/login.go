@@ -168,14 +168,16 @@ func loginHandler(db orm.DB) zip.Handler {
 					return httpx.Fail(c, http.StatusForbidden, err.Error(), "")
 				}
 				if sc != nil {
-					user, err := store.GetUserByName(ctx, db, sc.Owner, sc.Name)
-					if err != nil {
-						return httpx.Err(c, err.Error())
+					var app *schema.Application
+					if f.Type == "code" {
+						if app, err = ResolveApp(ctx, db, f.ClientId, f.Application); err != nil {
+							return httpx.Err(c, err.Error())
+						}
 					}
-					if user == nil || user.IsForbidden || user.IsDeleted {
-						return httpx.ErrCode(c, "please sign in first", CodeLoginRequired)
+					if _, user := signedIn(c, db, app, "", ""); user != nil {
+						return loginGrant(c, db, user, f)
 					}
-					return loginGrant(c, db, user, f)
+					return httpx.ErrCode(c, "please sign in first", CodeLoginRequired)
 				}
 				// No session, and this flow has no credential to fall back on: the
 				// approval page posts none, by design. Falling through told the human

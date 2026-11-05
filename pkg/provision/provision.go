@@ -249,6 +249,10 @@ type App struct {
 	// password. A POINTER so saying nothing preserves the app's current setting
 	// rather than turning the method off — see Client.EnableCodeSignin.
 	CodeSignin *bool `yaml:"codeSignin"`
+	// SignUp opens the application to self-service registration and
+	// identifier-first address lookup. A POINTER so omitting it preserves the
+	// app's current setting.
+	SignUp *bool `yaml:"signUp"`
 	// ExpireInHours and RefreshExpireInHours are this client's token lifetimes.
 	// Same names as the wire and the stored model, so one value has one name from
 	// document to registration.
@@ -305,6 +309,10 @@ type Client struct {
 	// what it can finish.
 	EnableCodeSignin *bool `json:"enableCodeSignin,omitempty"`
 	IsShared         *bool `json:"isShared,omitempty"`
+	// EnableSignUp opens the application to self-service registration and
+	// identifier-first address lookup. Omitted when nil so the upsert preserves
+	// what the app has.
+	EnableSignUp *bool `json:"enableSignUp,omitempty"`
 }
 
 // App types. A document that names anything else is rejected at Derive rather
@@ -500,6 +508,7 @@ func deriveApp(org Org, a App) (Client, error) {
 		RefreshExpireInHours: stated(a.RefreshExpireInHours),
 		EnableCodeSignin:     a.CodeSignin,
 		IsShared:             shared,
+		EnableSignUp:         a.SignUp,
 	}
 	if c.RedirectUris == nil && a.Type != TypeService {
 		return Client{}, fmt.Errorf("provision: app %s declares no hosts and type %q needs a redirect", id, a.Type)

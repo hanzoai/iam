@@ -155,9 +155,10 @@ func authIdentifier(db orm.DB) zip.TypedHandler[identifierBody, httpx.Answer] {
 		if err != nil {
 			return httpx.Bad(400, err.Error(), ""), nil
 		}
-		// The same gate a code signup passes (codeSignup): an application closed to
-		// strangers, or one in a reserved org, says nothing about who it holds.
-		if app == nil || !app.EnableSignUp || !Registers(app, app.Organization) {
+		// The same gate a code sign-in or signup passes: an application that neither
+		// registers strangers nor sends sign-in codes, or one in a reserved org,
+		// says nothing about who it holds.
+		if app == nil || (!app.EnableSignUp && !sendsCodes(app)) || !Registers(app, app.Organization) {
 			return httpx.Bad(400, "the application does not look up addresses", ""), nil
 		}
 		// The login handler's resolution: the application's org, and its roster

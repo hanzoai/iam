@@ -206,6 +206,10 @@ type registration struct {
 	// bool reads as false on every reconcile that says nothing and would switch
 	// the method off for every app whose caller never mentioned it.
 	EnableCodeSignin *bool `json:"enableCodeSignin"`
+	// EnableSignUp opens the application to self-service registration (password,
+	// email code, OAuth federation, wallet) and identifier-first address lookup.
+	// A POINTER so a reconcile that omits it preserves the stored setting.
+	EnableSignUp *bool `json:"enableSignUp"`
 	// Auth is the `Authorization: Bearer <token>` header, the unified service
 	// token this surface authenticates on. `json:"-"` keeps it off the body and
 	// out of the query string, so the header is the only way to present it.
@@ -295,6 +299,9 @@ func upsertApplication(db orm.DB) zip.TypedHandler[registration, reply] {
 			if in.EnableCodeSignin != nil {
 				existing.EnableCodeSignin = *in.EnableCodeSignin
 			}
+			if in.EnableSignUp != nil {
+				existing.EnableSignUp = *in.EnableSignUp
+			}
 			existing.ExpireInHours = ttl(in.ExpireInHours, existing.ExpireInHours)
 			existing.RefreshExpireInHours = ttl(in.RefreshExpireInHours, existing.RefreshExpireInHours)
 			existing.EnablePassword = true
@@ -341,6 +348,7 @@ func upsertApplication(db orm.DB) zip.TypedHandler[registration, reply] {
 			// it asks for more, so an unstated setting is off rather than inherited
 			// from a default nobody wrote down.
 			a.EnableCodeSignin = in.EnableCodeSignin != nil && *in.EnableCodeSignin
+			a.EnableSignUp = in.EnableSignUp != nil && *in.EnableSignUp
 			a.Model = model
 			a.SetId("admin/" + in.Name)
 			if err := a.CreateCtx(ctx); err != nil {

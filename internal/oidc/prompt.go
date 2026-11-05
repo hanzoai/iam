@@ -173,7 +173,7 @@ func silentGrant(c *zip.Ctx, db orm.DB, app *schema.Application, q authorizeRequ
 		return "", errInteractionRequired
 	}
 
-	sc, user := signedIn(c, db, q.loginHint, param(c, "id_token_hint"))
+	sc, user := signedIn(c, db, app, q.loginHint, param(c, "id_token_hint"))
 	if user == nil {
 		return "", errLoginRequired
 	}
@@ -219,7 +219,7 @@ func silentGrant(c *zip.Ctx, db orm.DB, app *schema.Application, q authorizeRequ
 //
 // The account is re-read, never taken from the cookie: an identity forbidden or
 // deleted since sign-in is refused rather than riding its old session.
-func signedIn(c *zip.Ctx, db orm.DB, loginHint, idTokenHint string) (*sessions.Cookie, *schema.User) {
+func signedIn(c *zip.Ctx, db orm.DB, app *schema.Application, loginHint, idTokenHint string) (*sessions.Cookie, *schema.User) {
 	ctx := c.Context()
 	subject := ""
 	if idTokenHint != "" {
@@ -229,7 +229,7 @@ func signedIn(c *zip.Ctx, db orm.DB, loginHint, idTokenHint string) (*sessions.C
 		}
 		subject = claims.Subject
 	}
-	list := sessions.Accounts(ctx, c.Fiber(), db)
+	list := eligible(app, sessions.Accounts(ctx, c.Fiber(), db))
 	if loginHint == "" && subject == "" && len(list) > 1 {
 		list = list[:1]
 	}
@@ -252,6 +252,27 @@ func signedIn(c *zip.Ctx, db orm.DB, loginHint, idTokenHint string) (*sessions.C
 		found, who = &list[i], user
 	}
 	return found, who
+}
+
+// eligible narrows list to the sessions whose org app can serve when at least
+// one session in list belongs to such an org (e.g. a browser holding both an
+// admin-org session and a brand-org session). When none does, list is returned
+// unchanged so MintFor still sees the active session and reports access_denied
+// rather than login_required.
+func eligible(app *schema.Application, list []sessions.Cookie) []sessions.Cookie {
+	if app == nil || len(list) <= 1 {
+		return list
+	}
+	var kept []sessions.Cookie
+	for _, c := range list {
+		if servesOrg(app, c.Owner) {
+			kept = append(kept, c)
+		}
+	}
+	if len(kept) == 0 {
+		return list
+	}
+	return kept
 }
 
 // names reports whether a login_hint identifies u: its subject, its email
