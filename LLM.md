@@ -1540,3 +1540,10 @@ by an account living in `hanzo` with the same address.
 - Never call Hanzo an "LLM gateway"; never position vs LiteLLM. Full AI cloud, not a proxy.
 - `/v1/` only, never `/api/`. Zen models are our own family — never name upstream models.
 - White-label by domain; never the Hanzo mark on a Lux/Zoo surface.
+
+## Web3 verify-signature (cloud#464)
+- This checkout (hanzoai/iam) has no `idp/web3onboard.go`; native wallet flow is `internal/wallet` (`GET /v1/iam/web3/nonce`, `POST /v1/iam/web3/verify`).
+- `verify.go` parses CAIP-122 signed message, burns single-use server nonce (10m TTL, `burn()` via `GetForUpdate`), checks domain/chain, calls `VerifyProof` (EIP-191 `VerifyEVM` recovers signer and compares case-insensitively to claimed address), identity is recovered `res.Address`, never body.
+- Fixed `store.go:burn/first` to use `orm.IsNotFound` (backend returns `db.ErrNoSuchEntity`/`sql.ErrNoRows`, not `orm.ErrNotFound`) so unknown nonce correctly yields opaque `web3: nonce invalid, already used, or expired` instead of leaking `db: no such entity`.
+- Added `internal/wallet/attack_test.go`: empty payload, forged address/no signature, valid signature by different key, replayed nonce, expired nonce, unknown nonce, happy path with real secp256k1 key.
+- Test output: `ok github.com/hanzoai/iam/internal/wallet 3.291s` (full `./internal/wallet/...`), vet clean.
