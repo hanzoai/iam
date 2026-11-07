@@ -92,7 +92,7 @@ func burn(ctx context.Context, db orm.DB, nonce string, now time.Time) (*schema.
 	err := db.RunInTransaction(ctx, func(tx orm.DB) error {
 		ch, err := orm.GetForUpdate[schema.Challenge](tx, id(nonce))
 		if err != nil {
-			if errors.Is(err, orm.ErrNotFound) {
+			if orm.IsNotFound(err) {
 				return errChallenge
 			}
 			return err
@@ -187,7 +187,7 @@ func bind(ctx context.Context, db orm.DB, w *schema.Wallet) error {
 // this layer; the caller's policy decides what it means.
 func first(q *orm.ModelQuery[schema.Wallet]) (*schema.Wallet, error) {
 	w, err := q.First()
-	if errors.Is(err, orm.ErrNotFound) {
+	if orm.IsNotFound(err) {
 		return nil, nil
 	}
 	return w, err
