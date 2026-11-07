@@ -5,6 +5,10 @@ package oidc
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
+	"errors"
 	"net/http"
 	"net/url"
 	"os"
@@ -77,10 +81,12 @@ func logoutHandler(db orm.DB) zip.Handler {
 		// is a request another page could have sent (sessions.Clear, sessions.End),
 		// which ends nothing and revokes nothing.
 		//
-		// `logout_hint` (RP-Initiated Logout 1.0 §2) names ONE account — by subject,
-		// address or username, as a login_hint does — and only that account is signed
-		// out; everyone else signed in on the browser stays signed in. A hint naming
-		// nobody here ends nothing. Without it, every account here is signed out.
+		// `logout_hint` (RP-Initiated Logout 1.0 §2) names an account — by subject,
+		// address or username, as a login_hint does — and only the accounts it names
+		// are signed out (every one of them: an address two orgs share names both, and
+		// a sign-out errs toward ending more); everyone else on the browser stays
+		// signed in. A hint naming nobody here ends nothing. Without it, every account
+		// here is signed out.
 		ended, err := endSessions(c, db, param(c, "logout_hint"))
 		if err != nil {
 			return httpx.Fail(c, http.StatusForbidden, err.Error(), "")
@@ -141,7 +147,7 @@ func logoutHandler(db orm.DB) zip.Handler {
 		// sign-out at hanzo.id left hanzo.ai's session alive, and the next sign-in
 		// through hanzo.ai quietly reused it. A program's POST is answered here.
 		if c.Method() == http.MethodGet || wantsHTML(c) {
-			if next, ok := nextSignout(c); ok {
+			if next, ok := nextSignout(c, db); ok {
 				return c.Redirect(http.StatusFound, next)
 			}
 		}
@@ -380,7 +386,7 @@ func crossSiteForm(c *zip.Ctx) (string, bool) {
 	return PathLogout + "?" + q.Encode(), true
 }
 
-// endSessions ends the browser's sessions for a sign-out: the one account hint
+// endSessions ends the browser's sessions for a sign-out: every account hint
 // names (sessions.End), or every account when hint is empty (sessions.Clear). It
 // returns the sessions that ended.
 func endSessions(c *zip.Ctx, db orm.DB, hint string) ([]sessions.Cookie, error) {
@@ -388,18 +394,10 @@ func endSessions(c *zip.Ctx, db orm.DB, hint string) ([]sessions.Cookie, error) 
 	if hint == "" {
 		return sessions.Clear(ctx, c.Fiber(), db)
 	}
-	for _, sc := range sessions.Accounts(ctx, c.Fiber(), db) {
+	return sessions.End(ctx, c.Fiber(), db, func(sc sessions.Cookie) bool {
 		u, err := store.GetUserByName(ctx, db, sc.Owner, sc.Name)
-		if err != nil || u == nil || !names(u, hint) {
-			continue
-		}
-		one, err := sessions.End(ctx, c.Fiber(), db, sc.Owner, sc.Name)
-		if err != nil || one == nil {
-			return nil, err
-		}
-		return []sessions.Cookie{*one}, nil
-	}
-	return nil, nil
+		return err == nil && u != nil && names(u, hint)
+	})
 }
 
 // signoutCarried are the end-session parameters a sign-out carries from one
@@ -414,11 +412,13 @@ var signoutCarried = []string{"id_token_hint", "client_id", "post_logout_redirec
 // The origins are the issuer and every sign-in origin IAM_FEDERATION_ORIGIN_MAP
 // names for a host of that issuer — trusted config, never the request, so the walk
 // cannot be pointed anywhere else. `chain` names the origin the sign-out started
-// at; it visits every other origin once, in sorted order, each hop strictly
-// forward, so it ends after at most one hop per origin. A request on a host that
-// is none of them (an alias, which holds no session) starts no walk, and a chain
-// naming an origin outside the set is not followed.
-func nextSignout(c *zip.Ctx) (string, bool) {
+// at, sealed with a MAC over the platform signing key (sealChain), because a
+// request that could name it could skip an origin; an unsealed or foreign chain is
+// read as no chain, and the walk starts from here. It visits every other origin
+// once, in sorted order, each hop strictly forward, so it ends after at most one
+// hop per origin. A request on a host that is none of them (an alias, which holds
+// no session) starts no walk.
+func nextSignout(c *zip.Ctx, db orm.DB) (string, bool) {
 	host := strings.TrimSpace(c.Host())
 	iss, err := resolveIssuer(host)
 	if err != nil {
@@ -434,11 +434,9 @@ func nextSignout(c *zip.Ctx) (string, bool) {
 	if here == "" {
 		return "", false
 	}
-	start := param(c, "chain")
-	if start == "" {
+	start := openChain(c.Context(), db, param(c, "chain"))
+	if !slices.Contains(origins, start) {
 		start = here
-	} else if !slices.Contains(origins, start) {
-		return "", false
 	}
 	rest := slices.DeleteFunc(slices.Clone(origins), func(o string) bool { return o == start })
 	next := ""
@@ -458,15 +456,64 @@ func nextSignout(c *zip.Ctx) (string, bool) {
 			q.Set(k, v)
 		}
 	}
-	q.Set("chain", start)
+	seal, err := sealChain(c.Context(), db, start)
+	if err != nil {
+		return "", false
+	}
+	q.Set("chain", seal)
 	return next + PathLogout + "?" + q.Encode(), true
+}
+
+// chainKey is the MAC key a sign-out walk seals its starting origin with: the
+// session cookie's key, so every replica and every origin of one deployment reads
+// the same seal and nothing new is provisioned.
+func chainKey(ctx context.Context, db orm.DB) ([]byte, error) {
+	cert, err := store.PlatformSigningCert(ctx, db)
+	if err != nil || cert == nil {
+		return nil, errors.New("no platform signing cert to seal a sign-out")
+	}
+	return sessions.SessionKey(cert.PrivateKey), nil
+}
+
+// sealChain is `<origin>~<mac>`: the origin a sign-out started at, and proof that
+// this server wrote it.
+func sealChain(ctx context.Context, db orm.DB, origin string) (string, error) {
+	key, err := chainKey(ctx, db)
+	if err != nil {
+		return "", err
+	}
+	return origin + "~" + chainMAC(key, origin), nil
+}
+
+// openChain is the origin a sealed chain names, or "" when the seal is missing,
+// malformed or not this server's.
+func openChain(ctx context.Context, db orm.DB, sealed string) string {
+	i := strings.LastIndex(sealed, "~")
+	if i <= 0 {
+		return ""
+	}
+	key, err := chainKey(ctx, db)
+	if err != nil {
+		return ""
+	}
+	origin, mac := sealed[:i], sealed[i+1:]
+	if !hmac.Equal([]byte(mac), []byte(chainMAC(key, origin))) {
+		return ""
+	}
+	return origin
+}
+
+func chainMAC(key []byte, origin string) string {
+	m := hmac.New(sha256.New, key)
+	m.Write([]byte("signout-chain\x00" + origin))
+	return base64.RawURLEncoding.EncodeToString(m.Sum(nil))
 }
 
 // signoutOrigins is every origin a browser may hold a session of iss's on: iss
 // itself and each sign-in origin the map names for a host whose issuer is iss,
 // sorted and without repeats.
 func signoutOrigins(iss string) []string {
-	out := []string{iss}
+	out := []string{oneSpelling(iss)}
 	if r := activeFederationResolver.Load(); r != nil {
 		for host, origin := range r.byHost {
 			if hostIss, err := resolveIssuer(host); err == nil && hostIss == iss {
@@ -476,4 +523,15 @@ func signoutOrigins(iss string) []string {
 	}
 	slices.Sort(out)
 	return slices.Compact(out)
+}
+
+// oneSpelling is an issuer in a sign-in origin's spelling (signinOrigin: no
+// default port, host lowercased), so an issuer configured as https://hanzo.id:443
+// and the map's https://hanzo.id are one origin, not two the walk ping-pongs
+// between. An issuer that is no https origin (a dev http one) is kept as written.
+func oneSpelling(iss string) string {
+	if o, err := signinOrigin(iss); err == nil {
+		return o
+	}
+	return iss
 }

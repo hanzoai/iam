@@ -192,6 +192,22 @@ func silentGrant(c *zip.Ctx, db orm.DB, app *schema.Application, q authorizeRequ
 		return "", errLoginRequired
 	}
 
+	// The same request may come back without its prompt — the hosted page
+	// re-entering it once the person has signed in or chosen. What it demanded the
+	// first time still holds (demand.go): a fresh sign-in for prompt=login, a named
+	// account for select_account.
+	d, err := demandOf(db, demandKey(q.clientID, q.redirectURI, q.state, q.codeChallenge))
+	if err != nil {
+		return "", errAccessDenied
+	}
+	hinted := q.loginHint != "" || param(c, "id_token_hint") != ""
+	if d.Choose && !hinted {
+		return "", errAccountSelectionRequired
+	}
+	if !d.met(sc.AuthTime, hinted) {
+		return "", errLoginRequired
+	}
+
 	code, err := MintFor(ctx, db, app, user.Owner+"/"+user.Name, Mint{
 		Type:                "code",
 		RedirectUri:         q.redirectURI,

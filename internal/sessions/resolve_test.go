@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
@@ -59,7 +60,7 @@ func newHarness(t *testing.T) *harness {
 	app := zip.New(zip.Config{AppName: "sessions-resolve-test", DisableStartupMessage: true})
 
 	app.Raw(http.MethodPost, "/open", func(c *zip.Ctx) error {
-		return report(c, Open(context.Background(), c.Fiber(), db, c.Query("owner"), c.Query("name"), c.Query("app")))
+		return report(c, Open(context.Background(), c.Fiber(), db, c.Query("owner"), c.Query("name"), c.Query("app"), c.Query("proved") == "1"))
 	})
 	app.Raw(http.MethodPost, "/set", func(c *zip.Ctx) error {
 		return report(c, Set(context.Background(), c.Fiber(), db, c.Query("owner"), c.Query("name"), c.Query("app")))
@@ -97,11 +98,14 @@ func newHarness(t *testing.T) *harness {
 		return c.String(http.StatusOK, "ok")
 	})
 	app.Raw(http.MethodPost, "/end", func(c *zip.Ctx) error {
-		ended, err := End(context.Background(), c.Fiber(), db, c.Query("owner"), c.Query("name"))
+		ended, err := End(context.Background(), c.Fiber(), db, func(sc Cookie) bool {
+			return sc.Owner == c.Query("owner") && sc.Name == c.Query("name") || sc.Name == c.Query("also")
+		})
 		if err != nil {
 			return c.String(http.StatusForbidden, err.Error())
 		}
-		c.SetHeader("X-Ok", boolStr(ended != nil))
+		c.SetHeader("X-Ok", boolStr(len(ended) > 0))
+		c.SetHeader("X-People", people(ended))
 		return c.String(http.StatusOK, "ok")
 	})
 	app.Raw(http.MethodPost, "/switch", func(c *zip.Ctx) error {
@@ -897,5 +901,48 @@ func TestSwitch_RefusesStrangersAndForgery(t *testing.T) {
 	}
 	if got := h.people(t, value); got != "acme/bob,hanzo/alice" {
 		t.Fatalf("accounts = %q, want acme/bob,hanzo/alice unchanged", got)
+	}
+}
+
+// End takes every session its predicate names, and only those.
+func TestEnd_EveryPersonNamed(t *testing.T) {
+	h := newHarness(t)
+	value := h.open(t, "admin", "alice", "")
+	value = h.open(t, "hanzo", "alice", value)
+	value = h.open(t, "hanzo", "bob", value)
+
+	res := h.do(t, http.MethodPost, "/end?also=alice", value, page...)
+	if got := res.Header.Get("X-People"); got != "hanzo/alice,admin/alice" {
+		t.Fatalf("End ended %q, want both alices", got)
+	}
+	if got := h.people(t, cookieOf(res).Value); got != "hanzo/bob" {
+		t.Fatalf("accounts after End = %q, want hanzo/bob", got)
+	}
+}
+
+// A credential shown again for a person already held is a new sign-in: same sid,
+// and its auth_time is now. A resume from the session is not, and keeps the old one.
+func TestOpen_ProvedRefreshesAuthTime(t *testing.T) {
+	h := newHarness(t)
+	old := Issue(Cookie{Owner: "hanzo", Name: "alice", Application: "cloud", SID: NewSID(), AuthTime: time.Now().Add(-2 * time.Hour).Unix()}, key(), sessionTTL)
+	sc, _ := Verify(old, key())
+	if err := registerSID(h.db, "hanzo", "alice", "cloud", sc.SID); err != nil {
+		t.Fatal(err)
+	}
+
+	if res := h.do(t, http.MethodPost, "/open?owner=hanzo&name=alice&app=cloud", old); cookieOf(res) != nil {
+		t.Fatal("a resume must not re-issue the session")
+	}
+	res := h.do(t, http.MethodPost, "/open?owner=hanzo&name=alice&app=cloud&proved=1", old)
+	ck := cookieOf(res)
+	if ck == nil {
+		t.Fatal("a proved sign-in must re-issue the session with its new auth_time")
+	}
+	got, err := Verify(ck.Value, key())
+	if err != nil || got.SID != sc.SID {
+		t.Fatalf("the proved sign-in must keep the sid: %v", err)
+	}
+	if got.AuthTime <= sc.AuthTime || got.AuthTime < time.Now().Add(-time.Minute).Unix() {
+		t.Fatalf("auth_time = %d, want now (was %d)", got.AuthTime, sc.AuthTime)
 	}
 }

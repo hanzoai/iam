@@ -68,7 +68,12 @@ func Set(ctx context.Context, c fiber.Ctx, db orm.DB, owner, name, application s
 // to the front, so a silent hop across apps does not mint a second sid for every
 // app they open. A different person is added in front of whoever was signed in
 // before, which is how one browser comes to hold several accounts.
-func Open(ctx context.Context, c fiber.Ctx, db orm.DB, owner, name, application string) error {
+//
+// proved says the person just presented a credential, rather than resumed from
+// the session they hold: their session then carries this moment as its auth_time
+// (same sid), which is what a relying party's prompt=login or max_age asks after.
+// A resume must not pass for one, or it would launder an old sign-in past them.
+func Open(ctx context.Context, c fiber.Ctx, db orm.DB, owner, name, application string, proved bool) error {
 	// When they last proved themselves is recorded here for the same reason the
 	// session is: this is the one place a human has just done it, whatever they did
 	// it with. Before the live-session check, because the fact being recorded is
@@ -79,8 +84,11 @@ func Open(ctx context.Context, c fiber.Ctx, db orm.DB, owner, name, application 
 		if sc.Owner != owner || sc.Name != name {
 			continue
 		}
-		if i == 0 || !fromIssuer(c) {
+		if !fromIssuer(c) || (i == 0 && !proved) {
 			return nil
+		}
+		if proved {
+			sc.AuthTime = time.Now().Unix()
 		}
 		front := append([]Cookie{sc}, list[:i]...)
 		return write(ctx, c, db, append(front, list[i+1:]...))
@@ -433,31 +441,34 @@ func Clear(ctx context.Context, c fiber.Ctx, db orm.DB) ([]Cookie, error) {
 	return list, nil
 }
 
-// End signs ONE person out of this browser and leaves everyone else signed in on
-// it: their sid is revoked server-side and the cookie is rewritten without them.
-// It is Clear narrowed to one account, judged by the same rule (Request.ends), so
-// a request another page sent that is not a navigation ends nothing.
+// End signs out of this browser every session `named` picks, and leaves everyone
+// else signed in on it: each sid is revoked server-side and the cookie is
+// rewritten without them. It is Clear narrowed to some accounts, judged by the
+// same rule (Request.ends), so a request another page sent that is not a
+// navigation ends nothing.
 //
-// Returns the session that ended, or nil when the browser held no live session
-// for (owner, name): nobody else is signed out in its place.
-func End(ctx context.Context, c fiber.Ctx, db orm.DB, owner, name string) (*Cookie, error) {
+// Returns the sessions that ended; none when `named` picked nobody the browser
+// holds, and then nobody else is signed out in their place.
+func End(ctx context.Context, c fiber.Ctx, db orm.DB, named func(Cookie) bool) ([]Cookie, error) {
 	if c.Cookies(CookieName) != "" && !RequestOf(c).ends() {
 		return nil, ErrForgeable
 	}
 	list := Accounts(ctx, c, db)
 	kept := make([]Cookie, 0, len(list))
-	var ended *Cookie
-	for i := range list {
-		if list[i].Owner == owner && list[i].Name == name {
-			ended = &list[i]
+	var ended []Cookie
+	for _, sc := range list {
+		if named(sc) {
+			ended = append(ended, sc)
 			continue
 		}
-		kept = append(kept, list[i])
+		kept = append(kept, sc)
 	}
-	if ended == nil {
+	if len(ended) == 0 {
 		return nil, nil
 	}
-	revokeSID(db, ended.Owner, ended.Name, ended.Application, ended.SID)
+	for _, sc := range ended {
+		revokeSID(db, sc.Owner, sc.Name, sc.Application, sc.SID)
+	}
 	return ended, write(ctx, c, db, kept)
 }
 

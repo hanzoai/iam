@@ -140,8 +140,21 @@ joined by `~`, current first). Five rules sit on top of it:
   or query). `prompt=login` is refused `login_required`; `select_account` without
   a chosen `loginHint`, or several accounts and no hint, is refused
   `account_selection_required` (`CodeAccountSelectionRequired`); a `loginHint`
-  answers only that account. `type=device` approves as the current account, which
-  is the one the approval page shows.
+  answers only that account. `type=device` approves as the account its
+  `loginHint` names (the one the approval page showed), else the current one.
+- **What authorize demanded is kept by the server** (`demand.go`). Handing a
+  request to the hosted page records a LoginChallenge of kind `prompt`, named by
+  sha256(client, redirect, state, PKCE challenge), holding `prompt=login`,
+  `select_account` (or several-accounts-none-named) and `max_age`, for 30 minutes.
+  The session branch and a silent re-entry of the same request both read it, so a
+  page that forwards nothing (hanzo.ai's resume did, for the CLI) is held to it:
+  login is met only by a sign-in made after the request's second, choose only by a
+  named account, max_age by `freshEnough`. A store fault refuses. A page that
+  alters any of the four values gets a code no client asked for.
+- **auth_time moves only on a proof.** `sessions.Open(..., proved)`: a credential
+  shown again for a held person restamps their session's auth_time (same sid); a
+  resume (`resumeGrant`) does not, so a resume cannot launder an old sign-in past
+  max_age or prompt=login.
 - **Switch:** `PUT /v1/iam/accounts {"current":"<sub>"}` moves an account already
   signed in here to the front (`sessions.Switch`, same sid and auth_time) and
   answers the list. Same-origin JSON only (`Forgeable`, checked before the lookup,
@@ -150,11 +163,15 @@ joined by `~`, current first). Five rules sit on top of it:
   (`TestAccounts_SwitchCarriesNoStandingAcross`). A page holding a bearer for the
   old account must drop it on switch.
 - **Sign out one:** end-session with `logout_hint` (RP-Initiated Logout §2: sub,
-  address or username) ends that account only (`sessions.End`); a hint naming
-  nobody here ends nothing. No hint ends every account (`sessions.Clear`).
+  address or username) ends every account it names and no other (`sessions.End`):
+  an address two orgs share names both, so a SuperAdmin `admin/alice` is never
+  the one left behind. A hint naming nobody here ends nothing. No hint ends every
+  account (`sessions.Clear`).
 - **Sign out on every sign-in origin:** a navigating end-session walks the issuer
   and every origin `IAM_FEDERATION_ORIGIN_MAP` names for it, sorted, once each
-  (`nextSignout`, `chain=<origin it started at>`), carrying `id_token_hint`,
+  (`nextSignout`, `chain=<origin it started at>~<MAC over the session key>`; an
+  unsealed chain is no chain, so a crafted link cannot skip an origin; the issuer
+  is compared in sign-in-origin spelling, so `:443` is not a second stop), carrying `id_token_hint`,
   `client_id`, `post_logout_redirect_uri`, `state`, `logout_hint`, `everywhere`.
   The last hop validates and returns the browser. Each origin must route
   `/v1/iam/oauth/logout` to IAM (hanzo.ai does, `infra/sites`).

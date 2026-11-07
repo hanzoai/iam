@@ -197,6 +197,14 @@ func authorizeHandler(db orm.DB) zip.Handler {
 		// clean, re-encoded request. The login page posts credentials to
 		// /v1/iam/login, which mints the code.
 		q.prompt = p.forwarded()
+		// What the request demanded is recorded here, where it was validated, so a
+		// page that resumes from a session without forwarding it is still held to it
+		// (demand.go). A demand that cannot be recorded is not handed on unenforced.
+		if d := (demand{Login: p.login || p.unrecognized, Choose: p.selectAccount, MaxAge: param(c, "max_age"), Since: nowFunc().Unix()}); d.needed() {
+			if err := rememberDemand(ctx, db, demandKey(q.clientID, q.redirectURI, q.state, q.codeChallenge), d); err != nil {
+				return authorizeUserError(c, "internal error")
+			}
+		}
 		return c.Redirect(302, hostedLoginTarget(app)+"?"+authorizeForwardQuery(q, method))
 	}
 }

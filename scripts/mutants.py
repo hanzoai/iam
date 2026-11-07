@@ -231,7 +231,7 @@ MUTANTS = [
      "TestAccounts_SwitchMakesASignedInAccountCurrent", PO),
 
     ("end: signing out one account signs out everyone", [
-        ("internal/sessions/resolve.go", "\t\tif list[i].Owner == owner && list[i].Name == name {\n\t\t\tended = &list[i]", "\t\tif true {\n\t\t\tended = &list[i]")],
+        ("internal/sessions/resolve.go", "\t\tif named(sc) {\n", "\t\tif true {\n")],
      "TestEnd_SignsOutOnlyThatPerson", "./internal/sessions/"),
 
     ("logout: logout_hint is ignored", [
@@ -240,11 +240,58 @@ MUTANTS = [
 
     # The sign-in origin keeps its own session after the issuer's sign-out.
     ("logout: the other sign-in origin is never visited", [
-        ("internal/oidc/logout.go", "if next, ok := nextSignout(c); ok {", "if next, ok := nextSignout(c); false && ok {")],
+        ("internal/oidc/logout.go", "if next, ok := nextSignout(c, db); ok {", "if next, ok := nextSignout(c, db); false && ok {")],
      "TestLogout_VisitsEachSigninOriginOnce", PO),
 
-    # A chain naming a foreign origin is followed.
-    ("logout: a chain outside the issuer's origins is followed", [
-        ("internal/oidc/logout.go", "\t} else if !slices.Contains(origins, start) {\n", "\t} else if false {\n")],
+
+    # An address two orgs share: ending only the first leaves the other (a
+    # SuperAdmin admin/alice beside hanzo/alice) signed in.
+    ("end: a hint naming two accounts ends one", [
+        ("internal/sessions/resolve.go", "\t\t\tended = append(ended, sc)\n\t\t\tcontinue\n", "\t\t\tif len(ended) == 0 {\n\t\t\t\tended = append(ended, sc)\n\t\t\t\tcontinue\n\t\t\t}\n")],
+     "TestEnd_EveryPersonNamed", "./internal/sessions/"),
+
+    # An unsealed chain is trusted: a link naming hanzo.ai as the start skips it.
+    ("logout: an unsealed chain is followed", [
+        ("internal/oidc/logout.go", "\tstart := openChain(c.Context(), db, param(c, \"chain\"))\n", "\tstart := param(c, \"chain\")\n")],
      "TestLogout_VisitsEachSigninOriginOnce", PO),
+
+    # Two spellings of one host make two stops, and the walk never ends.
+    ("logout: the issuer keeps its own spelling", [
+        ("internal/oidc/logout.go", "\tout := []string{oneSpelling(iss)}\n", "\tout := []string{iss}\n")],
+     "TestLogout_OneSpellingPerOrigin", PO),
+
+    # A device approved as whoever is current when the post arrives.
+    ("device: the account the page named is ignored", [
+        ("internal/oidc/login.go", "\t\t\t\t\t\tif f.LoginHint != \"\" {\n\t\t\t\t\t\t\t_, user, _ = signedIn(c, db, nil, f.LoginHint, \"\")\n\t\t\t\t\t\t}\n", "")],
+     "TestDevice_ApprovesTheAccountThePageNamed", PO),
+
+    # ---- What authorize demanded holds however the page resumes. ----
+
+    ("demand: authorize records nothing", [
+        ("internal/oidc/authorize.go", "Since: nowFunc().Unix()}); d.needed() {", "Since: nowFunc().Unix()}); false && d.needed() {")],
+     "TestDemand_HoldsWhenThePageForwardsNothing", PO),
+
+    ("demand: the session branch ignores a recorded prompt=login or max_age", [
+        ("internal/oidc/login.go", "\t\t\t\t\tif user != nil && !d.met(chosen.AuthTime, f.LoginHint != \"\") {\n", "\t\t\t\t\tif false && user != nil && !d.met(chosen.AuthTime, f.LoginHint != \"\") {\n")],
+     "TestDemand_HoldsWhenThePageForwardsNothing", PO),
+
+    ("demand: the session branch ignores a recorded select_account", [
+        ("internal/oidc/login.go", "(p.selectAccount || d.Choose) && f.LoginHint == \"\"", "p.selectAccount && f.LoginHint == \"\"")],
+     "TestDemand_HoldsWhenThePageForwardsNothing", PO),
+
+    ("demand: a re-entered request is answered past its demand", [
+        ("internal/oidc/prompt.go", "\tif !d.met(sc.AuthTime, hinted) {\n", "\tif false && !d.met(sc.AuthTime, hinted) {\n")],
+     "TestDemand_HoldsWhenThePageForwardsNothing", PO),
+
+    ("demand: a demand never expires", [
+        ("internal/oidc/demand.go", "row.Kind != KindPrompt || nowFunc().Unix() > row.ExpireIn", "row.Kind != KindPrompt")],
+     "TestDemand_Expires", PO),
+
+    ("open: a proved sign-in keeps the old auth_time", [
+        ("internal/sessions/resolve.go", "\t\tif proved {\n\t\t\tsc.AuthTime = time.Now().Unix()\n\t\t}\n", "")],
+     "TestOpen_ProvedRefreshesAuthTime", "./internal/sessions/"),
+
+    ("open: a resume restamps auth_time", [
+        ("internal/oidc/login.go", "\treturn grant(c, db, user, f, false)\n", "\treturn grant(c, db, user, f, true)\n")],
+     "TestDemand_AResumeIsNoNewSignIn", PO),
 ]

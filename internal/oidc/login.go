@@ -176,9 +176,16 @@ func loginHandler(db orm.DB) zip.Handler {
 				}
 				if sc != nil {
 					if f.Type == "device" {
-						// The approval page shows the CURRENT account and approves as it.
-						if user := sessionUser(ctx, db, sc); user != nil {
-							return loginGrant(c, db, user, f)
+						// The approval is for the account the page showed: the one its
+						// loginHint names, else the current one. A hint naming nobody
+						// signed in here approves nothing, so an account switched in
+						// another tab between showing and approving is not the one bound.
+						user := sessionUser(ctx, db, sc)
+						if f.LoginHint != "" {
+							_, user, _ = signedIn(c, db, nil, f.LoginHint, "")
+						}
+						if user != nil {
+							return resumeGrant(c, db, user, f)
 						}
 						return httpx.ErrCode(c, "please sign in first", CodeLoginRequired)
 					}
@@ -189,21 +196,30 @@ func loginHandler(db orm.DB) zip.Handler {
 					// The authorize request's own instructions hold here as they do at
 					// authorize: prompt=login is owed a fresh credential, so no session
 					// answers it; prompt=select_account is owed the person's choice, so
-					// only a session the page names (loginHint) answers it; and with
-					// several people signed in here and none named, nobody is picked.
+					// only a session the page names (loginHint) answers it; max_age is
+					// owed a sign-in that recent; and with several people signed in here
+					// and none named, nobody is picked. What authorize recorded counts
+					// whether or not the page forwarded it (demand.go).
 					p := parsePrompt(f.Prompt)
+					d, err := demandOf(db, demandKey(f.ClientId, f.RedirectUri, f.State, f.CodeChallenge))
+					if err != nil {
+						return httpx.Fail(c, http.StatusInternalServerError, "server_error", "")
+					}
 					if p.login {
 						return httpx.ErrCode(c, "sign in again to continue", CodeLoginRequired)
 					}
-					if p.selectAccount && f.LoginHint == "" {
+					if (p.selectAccount || d.Choose) && f.LoginHint == "" {
 						return httpx.ErrCode(c, "choose an account to continue", CodeAccountSelectionRequired)
 					}
-					_, user, many := signedIn(c, db, app, f.LoginHint, "")
+					chosen, user, many := signedIn(c, db, app, f.LoginHint, "")
 					if many {
 						return httpx.ErrCode(c, "choose an account to continue", CodeAccountSelectionRequired)
 					}
+					if user != nil && !d.met(chosen.AuthTime, f.LoginHint != "") {
+						return httpx.ErrCode(c, "sign in again to continue", CodeLoginRequired)
+					}
 					if user != nil {
-						return loginGrant(c, db, user, f)
+						return resumeGrant(c, db, user, f)
 					}
 					return httpx.ErrCode(c, "please sign in first", CodeLoginRequired)
 				}
@@ -381,6 +397,18 @@ func codeLogin(ctx context.Context, db orm.DB, f loginForm, user *schema.User) (
 // finish alike — so the checks between "this is the user" and "here is the grant"
 // are stated once and cannot be true of one path and false of another.
 func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
+	return grant(c, db, user, f, true)
+}
+
+// resumeGrant is loginGrant for a person who presented no credential and was
+// answered from the session they hold: the same mint, and their session keeps the
+// auth_time of the sign-in it records.
+func resumeGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
+	return grant(c, db, user, f, false)
+}
+
+// grant is the one minting tail; proved says whether a credential was just shown.
+func grant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm, proved bool) error {
 	ctx := c.Context()
 
 	// An account an operator archived (isForbidden) or deleted gets no grant, and is
@@ -435,7 +463,7 @@ func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
 	// sessions.Open is that rule, and it is where the wallet endpoint and the
 	// return from another identity provider read it from too. Best-effort — a
 	// session failure never blocks a valid login.
-	_ = sessions.Open(ctx, c.Fiber(), db, user.Owner, user.Name, f.Application)
+	_ = sessions.Open(ctx, c.Fiber(), db, user.Owner, user.Name, f.Application, proved)
 
 	// One return, one meaning: MintFor already yields the user id for a bare portal
 	// sign-in and the authorization code for the code flow, so the SDK reads `data`

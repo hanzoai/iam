@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
@@ -301,8 +302,8 @@ func TestLogout_VisitsEachSigninOriginOnce(t *testing.T) {
 			t.Fatalf("%s was not carried to the next origin: %q", k, next)
 		}
 	}
-	if carried.Get("chain") != "https://hanzo.id" {
-		t.Fatalf("chain = %q, want the origin the sign-out started at", carried.Get("chain"))
+	if !strings.HasPrefix(carried.Get("chain"), "https://hanzo.id~") {
+		t.Fatalf("chain = %q, want the origin the sign-out started at, sealed", carried.Get("chain"))
 	}
 	if got := namesOn(t, app, cookie); got != "bob" {
 		t.Fatalf("the first hop did not end alice here: %q", got)
@@ -320,16 +321,20 @@ func TestLogout_VisitsEachSigninOriginOnce(t *testing.T) {
 	req = navigate(formReqNoBody("GET", PathLogout+"?client_id=web"))
 	req.Host = "hanzo.ai"
 	first, _ := do(t, app, req)
-	if loc := first.Header.Get("Location"); !strings.HasPrefix(loc, "https://hanzo.id"+PathLogout+"?") || !strings.Contains(loc, "chain=https%3A%2F%2Fhanzo.ai") {
+	if loc := first.Header.Get("Location"); !strings.HasPrefix(loc, "https://hanzo.id"+PathLogout+"?") || !strings.Contains(loc, "chain=https%3A%2F%2Fhanzo.ai~") {
 		t.Fatalf("a hanzo.ai sign-out went to %q, want hanzo.id's end-session", loc)
 	}
 
-	// A chain naming an origin outside the issuer's set is not followed, and a
-	// program's POST is answered where it is.
-	req = navigate(formReqNoBody("GET", PathLogout+"?chain=https%3A%2F%2Fevil.example"))
-	req.Host = "hanzo.ai"
-	evil, _ := do(t, app, req)
-	requireSignedOut(t, evil, "")
+	// A chain this server did not seal is no chain: a link naming the origin it
+	// claims to have started at cannot skip that origin, nor point the walk
+	// anywhere else. The walk starts over from here.
+	for _, forged := range []string{"https://hanzo.ai", "https://evil.example", "https://hanzo.ai~AAAA"} {
+		resp := logout(t, app, "", "", url.Values{"chain": {forged}, "client_id": {"web"}, "post_logout_redirect_uri": {"https://web.example/bye"}}.Encode())
+		if loc := resp.Header.Get("Location"); !strings.HasPrefix(loc, "https://hanzo.ai"+PathLogout+"?") {
+			t.Fatalf("chain %q at hanzo.id went to %q, want hanzo.ai's end-session", forged, loc)
+		}
+	}
+	// And a program's POST is answered where it is.
 	post := formReq("POST", PathLogout, url.Values{})
 	post.Header.Set("Accept", "application/json")
 	if resp, body := do(t, app, post); resp.StatusCode != 200 || decode(t, body)["status"] != "ok" {
@@ -342,4 +347,212 @@ func TestLogout_VisitsEachSigninOriginOnce(t *testing.T) {
 func TestLogout_NoSigninOriginsNoWalk(t *testing.T) {
 	app, _, cookie := twoPeople(t)
 	requireSignedOut(t, logout(t, app, cookie, "", ""), "")
+}
+
+// An address two orgs share names both accounts, and a sign-out by it ends both:
+// a SuperAdmin admin/alice beside hanzo/alice is never the one left signed in.
+func TestLogout_HintEndsEveryAccountItNames(t *testing.T) {
+	app, db := newServer(t)
+	twoApps(t, db)
+	a := orm.New[schema.Application](db)
+	a.Owner, a.Name, a.ClientId, a.Organization, a.EnablePassword = "admin", "admin-portal", "admin-portal", "admin", true
+	a.Cert = "cert-portal"
+	a.SetId("admin/admin-portal")
+	if err := a.CreateCtx(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	seedUserInOrg(t, db, "admin", "alice", "alice@hanzo.ai", "pw")
+	seedUserInOrg(t, db, "hanzo", "bob", "bob@hanzo.ai", "pw")
+	form := url.Values{"organization": {"admin"}, "application": {"admin-portal"}, "username": {"alice"}, "password": {"pw"}, "type": {"login"}}
+	resp, body := do(t, app, formReq("POST", PathLogin, form))
+	if decode(t, body)["status"] != "ok" {
+		t.Fatalf("admin sign-in: %s", body)
+	}
+	cookie := signInOn(t, app, signInOn(t, app, cookieKV(resp.Header.Get("Set-Cookie")), "alice"), "bob")
+	if got := len(accountsOn(t, app, cookie)); got != 3 {
+		t.Fatalf("want three accounts, got %d", got)
+	}
+
+	out := logout(t, app, cookie, "", url.Values{"logout_hint": {"alice@hanzo.ai"}}.Encode())
+	if got := namesOn(t, app, cookieKV(out.Header.Get("Set-Cookie"))); got != "bob" {
+		t.Fatalf("after signing out alice@hanzo.ai the browser holds %q, want only bob", got)
+	}
+}
+
+// One origin, however the issuer is spelled: an issuer written with :443 beside a
+// map naming the same host is one stop on the walk, and the walk ends.
+func TestLogout_OneSpellingPerOrigin(t *testing.T) {
+	if err := bootFederation(t, "https://hanzo.id:443", "", `{"hanzo.ai":"https://hanzo.ai","hanzo.id":"https://hanzo.id"}`); err != nil {
+		t.Fatalf("boot: %v", err)
+	}
+	if got := strings.Join(signoutOrigins("https://hanzo.id:443"), ","); got != "https://hanzo.ai,https://hanzo.id" {
+		t.Fatalf("origins = %q, want each host once", got)
+	}
+	app, _, cookie := twoPeople(t)
+	host, path := "hanzo.id", PathLogout
+	for hops := 0; ; hops++ {
+		if hops > 2 {
+			t.Fatal("the sign-out walk does not end")
+		}
+		req := navigate(formReqNoBody("GET", path))
+		req.Host = host
+		req.Header.Set("Cookie", cookie)
+		resp, _ := do(t, app, req)
+		u, err := url.Parse(resp.Header.Get("Location"))
+		if err != nil || u.Path != PathLogout {
+			return
+		}
+		host, path = u.Host, u.RequestURI()
+	}
+}
+
+// A device is approved as the account its page showed and named, not whoever
+// happens to be current when the approval arrives.
+func TestDevice_ApprovesTheAccountThePageNamed(t *testing.T) {
+	app, db, cookie := twoPeople(t) // bob current
+	seedApp(t, db, appOpts{clientID: "cli", grants: deviceGrants})
+	_, dev := requestDevice(t, app, "cli", "openid")
+	req := fromPage(jsonReq("POST", PathLogin, map[string]string{"type": "device", "userCode": dev["user_code"].(string), "loginHint": subOf(t, app, cookie, "alice")}))
+	req.Header.Set("Cookie", cookie)
+	if _, raw := do(t, app, req); decode(t, raw)["status"] != "ok" {
+		t.Fatalf("approve: %s", raw)
+	}
+	_, tok := pollDevice(t, app, "cli", dev["device_code"].(string))
+	at, _ := tok["access_token"].(string)
+	if at == "" {
+		t.Fatalf("poll: %v", tok)
+	}
+	if got := verifiedClaims(t, db, at).Name; got != "alice" {
+		t.Fatalf("the page named alice and the device was approved as %q", got)
+	}
+}
+
+// demandedThenResumed sends the authorize request q from a browser holding
+// cookie — so IAM records what it demands and hands it to the page — and then
+// resumes it from the session the way a page that forwards nothing does: the
+// same request, no prompt, no max_age.
+func demandedThenResumed(t *testing.T, app *zip.App, cookie string, q url.Values, extra map[string]string) map[string]any {
+	t.Helper()
+	requireRedirect(t, authorizeWith(t, app, q, cookie, nil), hostedLoginPath)
+	body := map[string]string{
+		"type": "code", "clientId": q.Get("client_id"), "redirectUri": q.Get("redirect_uri"), "state": q.Get("state"),
+		"scope": q.Get("scope"), "nonce": q.Get("nonce"), "codeChallenge": q.Get("code_challenge"), "codeChallengeMethod": "S256",
+	}
+	for k, v := range extra {
+		body[k] = v
+	}
+	req := fromPage(jsonReq("POST", PathLogin, body))
+	req.Header.Set("Cookie", cookie)
+	_, raw := do(t, app, req)
+	return decode(t, raw)
+}
+
+// What the authorize request demanded holds however the page resumes it. A page
+// that drops prompt=login, prompt=select_account or max_age — as hanzo.ai's resume
+// did for the CLI — does not get a code from the session it found.
+func TestDemand_HoldsWhenThePageForwardsNothing(t *testing.T) {
+	app, db := newServer(t)
+	twoApps(t, db)
+	cookie := signInOn(t, app, "", "alice")
+	alice := subOf(t, app, cookie, "alice")
+	base := silentQuery("verifier-demand-holds-0123456789012345678901234567")
+
+	login := url.Values{}
+	for k, v := range base {
+		login[k] = v
+	}
+	login.Set("prompt", "login")
+	if env := demandedThenResumed(t, app, cookie, login, map[string]string{"loginHint": alice}); env["code"] != CodeLoginRequired {
+		t.Fatalf("prompt=login answered from the old session: %v", env)
+	}
+
+	choose := url.Values{}
+	for k, v := range base {
+		choose[k] = v
+	}
+	choose.Set("state", "st-choose")
+	choose.Set("prompt", "select_account")
+	if env := demandedThenResumed(t, app, cookie, choose, nil); env["code"] != CodeAccountSelectionRequired {
+		t.Fatalf("select_account answered without a choice: %v", env)
+	}
+	if env := demandedThenResumed(t, app, cookie, choose, map[string]string{"loginHint": alice}); env["status"] != "ok" {
+		t.Fatalf("the chosen account must be answered: %v", env)
+	}
+
+	aged := url.Values{}
+	for k, v := range base {
+		aged[k] = v
+	}
+	aged.Set("state", "st-aged")
+	aged.Set("max_age", "0")
+	if env := demandedThenResumed(t, app, cookie, aged, nil); env["code"] != CodeLoginRequired {
+		t.Fatalf("max_age=0 answered from the old session: %v", env)
+	}
+
+	// The same request re-entering authorize without its prompt is held too.
+	login.Del("prompt")
+	if loc := requireRedirect(t, authorizeWith(t, app, login, cookie, nil), hostedLoginPath); strings.Contains(loc, "code=") {
+		t.Fatalf("prompt=login re-entered without it was answered: %q", loc)
+	}
+	// A request that demanded nothing is single sign-on, as before.
+	plain := silentQuery("verifier-demand-plain-012345678901234567890123456")
+	plain.Set("state", "st-plain")
+	codeFromLocation(t, requireRedirect(t, authorizeWith(t, app, plain, cookie, nil), secondRedirect))
+}
+
+// prompt=login is met by a sign-in made after the request: the person types the
+// password on the page, and the request then completes.
+func TestDemand_LoginIsMetByAFreshSignIn(t *testing.T) {
+	app, db := newServer(t)
+	twoApps(t, db)
+	cookie := signInOn(t, app, "", "alice")
+	q := silentQuery("verifier-demand-fresh-0123456789012345678901234567")
+	q.Set("prompt", "login")
+	// The request is made two seconds before the person signs in again.
+	prior := nowFunc
+	nowFunc = func() time.Time { return prior().Add(-2 * time.Second) }
+	requireRedirect(t, authorizeWith(t, app, q, cookie, nil), hostedLoginPath)
+	nowFunc = prior
+	fresh := signInOn(t, app, cookie, "alice")
+
+	q.Del("prompt")
+	q.Set("login_hint", "alice")
+	codeFromLocation(t, requireRedirect(t, authorizeWith(t, app, q, fresh, nil), secondRedirect))
+}
+
+// A demand lives as long as a sign-in screen stays open, and no longer.
+func TestDemand_Expires(t *testing.T) {
+	app, db := newServer(t)
+	twoApps(t, db)
+	cookie := signInOn(t, app, "", "alice")
+	q := silentQuery("verifier-demand-expires-01234567890123456789012345")
+	q.Set("prompt", "select_account")
+	if env := demandedThenResumed(t, app, cookie, q, nil); env["code"] != CodeAccountSelectionRequired {
+		t.Fatalf("select_account answered without a choice: %v", env)
+	}
+	prior := nowFunc
+	nowFunc = func() time.Time { return prior().Add(demandTTL + time.Minute) }
+	t.Cleanup(func() { nowFunc = prior })
+	q.Del("prompt")
+	codeFromLocation(t, requireRedirect(t, authorizeWith(t, app, q, cookie, nil), secondRedirect))
+}
+
+// A resume from the session is no new sign-in: it mints, and the session keeps
+// the auth_time of the sign-in it records, so it cannot pass a later max_age.
+func TestDemand_AResumeIsNoNewSignIn(t *testing.T) {
+	app, db := newServer(t)
+	twoApps(t, db)
+	cookie := signInOn(t, app, "", "alice")
+	req := fromPage(jsonReq("POST", PathLogin, map[string]string{
+		"type": "code", "clientId": "second", "redirectUri": secondRedirect, "state": "st-resume",
+		"codeChallenge": pkce.Challenge("verifier-resume-no-new-signin-0123456789012345678"), "codeChallengeMethod": "S256",
+	}))
+	req.Header.Set("Cookie", cookie)
+	resp, raw := do(t, app, req)
+	if decode(t, raw)["status"] != "ok" {
+		t.Fatalf("resume: %s", raw)
+	}
+	if set := resp.Header.Get("Set-Cookie"); set != "" {
+		t.Fatalf("a resume re-issued the session, which would restamp its auth_time: %q", set)
+	}
 }
