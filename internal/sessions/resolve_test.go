@@ -96,6 +96,22 @@ func newHarness(t *testing.T) *harness {
 		c.SetHeader("X-Ok", boolStr(len(ended) > 0))
 		return c.String(http.StatusOK, "ok")
 	})
+	app.Raw(http.MethodPost, "/end", func(c *zip.Ctx) error {
+		ended, err := End(context.Background(), c.Fiber(), db, c.Query("owner"), c.Query("name"))
+		if err != nil {
+			return c.String(http.StatusForbidden, err.Error())
+		}
+		c.SetHeader("X-Ok", boolStr(ended != nil))
+		return c.String(http.StatusOK, "ok")
+	})
+	app.Raw(http.MethodPost, "/switch", func(c *zip.Ctx) error {
+		ok, err := Switch(context.Background(), c.Fiber(), db, c.Query("owner"), c.Query("name"))
+		if err != nil {
+			return c.String(http.StatusForbidden, err.Error())
+		}
+		c.SetHeader("X-Ok", boolStr(ok))
+		return c.String(http.StatusOK, "ok")
+	})
 	app.Raw(http.MethodGet, "/accounts", func(c *zip.Ctx) error {
 		c.SetHeader("X-People", people(Accounts(context.Background(), c.Fiber(), db)))
 		return c.String(http.StatusOK, "ok")
@@ -762,4 +778,124 @@ func mustVerify(t *testing.T, value string) *Cookie {
 		t.Fatalf("verify %q: %v", value, err)
 	}
 	return c
+}
+
+// Ending one person signs out exactly that person: their sid is dead server-side,
+// the cookie is rewritten without them, and everyone else stays signed in.
+func TestEnd_SignsOutOnlyThatPerson(t *testing.T) {
+	h := newHarness(t)
+	value := h.open(t, "hanzo", "alice", "")
+	aliceSid := h.do(t, http.MethodGet, "/current", value).Header.Get("X-Sid")
+	value = h.open(t, "acme", "bob", value)
+	bobSid := h.do(t, http.MethodGet, "/current", value).Header.Get("X-Sid")
+
+	res := h.do(t, http.MethodPost, "/end?owner=hanzo&name=alice", value, page...)
+	if res.Header.Get("X-Ok") != "true" {
+		t.Fatal("ending a person the browser holds must report it ended")
+	}
+	if sidActive(h.db, "hanzo", "alice", "cloud", aliceSid) {
+		t.Fatal("the ended person's sid must be revoked")
+	}
+	if !sidActive(h.db, "acme", "bob", "cloud", bobSid) {
+		t.Fatal("ending alice revoked bob's session")
+	}
+	ck := cookieOf(res)
+	if ck == nil || ck.MaxAge <= 0 {
+		t.Fatal("End must rewrite the cookie with the people left, not expire it")
+	}
+	if got := h.people(t, ck.Value); got != "acme/bob" {
+		t.Fatalf("accounts after End = %q, want acme/bob", got)
+	}
+	// The captured old cookie no longer carries alice either.
+	if got := h.people(t, value); got != "acme/bob" {
+		t.Fatalf("the old cookie still resolves %q", got)
+	}
+}
+
+// Ending the last person expires the cookie; ending someone the browser does not
+// hold signs nobody out.
+func TestEnd_LastPersonAndStranger(t *testing.T) {
+	h := newHarness(t)
+	value := h.open(t, "hanzo", "alice", "")
+
+	res := h.do(t, http.MethodPost, "/end?owner=acme&name=mallory", value, page...)
+	if res.Header.Get("X-Ok") != "false" || cookieOf(res) != nil {
+		t.Fatal("ending a person the browser does not hold must change nothing")
+	}
+	if got := h.people(t, value); got != "hanzo/alice" {
+		t.Fatalf("accounts = %q, want hanzo/alice untouched", got)
+	}
+
+	res = h.do(t, http.MethodPost, "/end?owner=hanzo&name=alice", value, page...)
+	if ck := cookieOf(res); res.Header.Get("X-Ok") != "true" || ck == nil || ck.MaxAge >= 0 {
+		t.Fatal("ending the last person must expire the cookie")
+	}
+	if got := h.people(t, value); got != "" {
+		t.Fatalf("accounts after ending the last person = %q, want none", got)
+	}
+}
+
+// A fetch another page sent ends nobody (the same rule Clear keeps).
+func TestEnd_RefusesAForgedRequest(t *testing.T) {
+	h := newHarness(t)
+	value := h.open(t, "hanzo", "alice", "")
+	res := h.do(t, http.MethodPost, "/end?owner=hanzo&name=alice", value, "Sec-Fetch-Site", "cross-site", "Sec-Fetch-Mode", "cors", "Sec-Fetch-Dest", "empty")
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", res.StatusCode)
+	}
+	if got := h.people(t, value); got != "hanzo/alice" {
+		t.Fatalf("a forged end signed out %q", got)
+	}
+}
+
+// Switching moves a held person to the front with the session they had; nobody is
+// signed in or out, and the current reader answers with them.
+func TestSwitch_MakesAHeldPersonCurrent(t *testing.T) {
+	h := newHarness(t)
+	value := h.open(t, "hanzo", "alice", "")
+	aliceSid := h.do(t, http.MethodGet, "/current", value).Header.Get("X-Sid")
+	value = h.open(t, "acme", "bob", value)
+
+	res := h.do(t, http.MethodPost, "/switch?owner=hanzo&name=alice", value, page...)
+	if res.Header.Get("X-Ok") != "true" {
+		t.Fatal("switching to a held person must report it")
+	}
+	ck := cookieOf(res)
+	if ck == nil {
+		t.Fatal("switching must rewrite the cookie in the new order")
+	}
+	if got := h.people(t, ck.Value); got != "hanzo/alice,acme/bob" {
+		t.Fatalf("accounts = %q, want hanzo/alice,acme/bob", got)
+	}
+	cur := h.do(t, http.MethodGet, "/current", ck.Value)
+	if cur.Header.Get("X-Name") != "alice" || cur.Header.Get("X-Sid") != aliceSid {
+		t.Fatal("the current session after a switch must be alice's own, same sid")
+	}
+}
+
+// A person the browser does not hold cannot be switched to, the current person is
+// a no-op, and a request another page could have sent changes nothing.
+func TestSwitch_RefusesStrangersAndForgery(t *testing.T) {
+	h := newHarness(t)
+	value := h.open(t, "hanzo", "alice", "")
+	value = h.open(t, "acme", "bob", value)
+
+	if res := h.do(t, http.MethodPost, "/switch?owner=admin&name=root", value, page...); res.Header.Get("X-Ok") != "false" || cookieOf(res) != nil {
+		t.Fatal("switching to someone not signed in here must change nothing")
+	}
+	if res := h.do(t, http.MethodPost, "/switch?owner=acme&name=bob", value, page...); res.Header.Get("X-Ok") != "true" || cookieOf(res) != nil {
+		t.Fatal("switching to the current person is a no-op that writes nothing")
+	}
+	for _, forged := range [][]string{
+		{"Sec-Fetch-Site", "same-site", "Content-Type", "application/json"},
+		{"Sec-Fetch-Site", "same-origin", "Content-Type", "application/x-www-form-urlencoded"},
+	} {
+		res := h.do(t, http.MethodPost, "/switch?owner=hanzo&name=alice", value, forged...)
+		if res.StatusCode != http.StatusForbidden || cookieOf(res) != nil {
+			t.Fatalf("%v: status=%d, want 403 and no cookie", forged, res.StatusCode)
+		}
+	}
+	if got := h.people(t, value); got != "acme/bob,hanzo/alice" {
+		t.Fatalf("accounts = %q, want acme/bob,hanzo/alice unchanged", got)
+	}
 }

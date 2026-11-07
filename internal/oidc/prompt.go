@@ -145,6 +145,9 @@ const (
 	errLoginRequired       = "login_required"
 	errInteractionRequired = "interaction_required"
 	errAccessDenied        = "access_denied"
+	// errAccountSelectionRequired: several people are signed in on this browser
+	// and nothing in the request names one, so the person has to choose.
+	errAccountSelectionRequired = "account_selection_required"
 )
 
 // silentGrant answers "may this request be completed from the session alone?"
@@ -173,7 +176,10 @@ func silentGrant(c *zip.Ctx, db orm.DB, app *schema.Application, q authorizeRequ
 		return "", errInteractionRequired
 	}
 
-	sc, user := signedIn(c, db, app, q.loginHint, param(c, "id_token_hint"))
+	sc, user, many := signedIn(c, db, app, q.loginHint, param(c, "id_token_hint"))
+	if many {
+		return "", errAccountSelectionRequired
+	}
 	if user == nil {
 		return "", errLoginRequired
 	}
@@ -209,7 +215,11 @@ func silentGrant(c *zip.Ctx, db orm.DB, app *schema.Application, q authorizeRequ
 // is for, and returns their session and their account. Nil means nobody here
 // answers it.
 //
-// With no hint it is the most recent sign-in. A login_hint names a person by
+// With no hint it is the one person signed in here whom the application can
+// serve. When there are SEVERAL and nothing names one, it picks nobody and says so
+// (many): which account a code is for is the person's choice, and answering with
+// the most recent sign-in is how a sign-in silently completed as somebody else's
+// account on a shared browser. A login_hint names a person by
 // subject, email address or username; an id_token_hint names one by the subject
 // of a token this issuer signed (OIDC Core §3.1.2.1). A hint that names nobody
 // signed in here answers nil rather than someone else: a code for a different
@@ -219,20 +229,18 @@ func silentGrant(c *zip.Ctx, db orm.DB, app *schema.Application, q authorizeRequ
 //
 // The account is re-read, never taken from the cookie: an identity forbidden or
 // deleted since sign-in is refused rather than riding its old session.
-func signedIn(c *zip.Ctx, db orm.DB, app *schema.Application, loginHint, idTokenHint string) (*sessions.Cookie, *schema.User) {
+func signedIn(c *zip.Ctx, db orm.DB, app *schema.Application, loginHint, idTokenHint string) (*sessions.Cookie, *schema.User, bool) {
 	ctx := c.Context()
 	subject := ""
 	if idTokenHint != "" {
 		claims, err := verifyHint(ctx, db, idTokenHint)
 		if err != nil {
-			return nil, nil
+			return nil, nil, false
 		}
 		subject = claims.Subject
 	}
+	hinted := loginHint != "" || subject != ""
 	list := eligible(app, sessions.Accounts(ctx, c.Fiber(), db))
-	if loginHint == "" && subject == "" && len(list) > 1 {
-		list = list[:1]
-	}
 	var found *sessions.Cookie
 	var who *schema.User
 	for i := range list {
@@ -247,11 +255,13 @@ func signedIn(c *zip.Ctx, db orm.DB, app *schema.Application, loginHint, idToken
 			continue
 		}
 		if who != nil {
-			return nil, nil
+			// Two people answer: a hint that names both is no answer, and no hint
+			// at all is a choice the person makes.
+			return nil, nil, !hinted
 		}
 		found, who = &list[i], user
 	}
-	return found, who
+	return found, who, false
 }
 
 // eligible narrows list to the sessions whose org app can serve when at least

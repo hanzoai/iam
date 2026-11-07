@@ -184,4 +184,67 @@ MUTANTS = [
         (A, "\tif err := refusePlatformAction(log.Action); err != nil {\n\t\treturn nil, err\n\t}\n\tif err := log.DeleteCtx",
             "\tif err := log.DeleteCtx")],
      "TestDeleteRefusesAPlatformRow", PA),
+
+    # ---- Which account a sign-in is for: the person's choice, never a guess. ----
+
+    # Several accounts and no hint fall back to the most recent sign-in: the code
+    # silently goes to whoever signed in last on a shared browser.
+    ("choose: several accounts answer with the most recent", [
+        ("internal/oidc/prompt.go", "\t\t\treturn nil, nil, !hinted\n", "\t\t\treturn found, who, false && hinted\n")],
+     "TestChoose_TwoAccountsAndNoHintAskTheChooser", PO),
+
+    # Refused but not asked: the page gets no select_account and draws a bare form.
+    ("choose: the page is not asked for the chooser", [
+        ("internal/oidc/authorize.go", "\t\t\t\tp.selectAccount = true\n", "")],
+     "TestChoose_TwoAccountsAndNoHintAskTheChooser", PO),
+
+    # prompt=none is told login_required instead of account_selection_required.
+    ("choose: prompt=none loses account_selection_required", [
+        ("internal/oidc/prompt.go", "\tif many {\n\t\treturn \"\", errAccountSelectionRequired\n", "\tif many && false {\n\t\treturn \"\", errAccountSelectionRequired\n")],
+     "TestChoose_PromptNoneWithTwoAccountsIsAccountSelectionRequired", PO),
+
+    # A page's resume spends a session past prompt=login.
+    ("choose: the session branch ignores prompt=login", [
+        ("internal/oidc/login.go", "\t\t\t\t\tif p.login {\n", "\t\t\t\t\tif false && p.login {\n")],
+     "TestChoose_SessionBranchAnswersOnlyTheNamedAccount", PO),
+
+    # A page's resume answers select_account with the one session there.
+    ("choose: the session branch ignores select_account", [
+        ("internal/oidc/login.go", "\t\t\t\t\tif p.selectAccount && f.LoginHint == \"\" {\n", "\t\t\t\t\tif false {\n")],
+     "TestChoose_SessionBranchSelectAccountWithOneAccount", PO),
+
+    # The SDK posts the authorize request on the query; dropping prompt there
+    # forgets what the client asked for.
+    ("choose: prompt on the query is not read", [
+        ("internal/oidc/login.go", "\tadopt(&f.Prompt, \"prompt\")\n", "")],
+     "TestChoose_SessionBranchSelectAccountWithOneAccount", PO),
+
+    # ---- Switching and signing out one account. ----
+
+    ("switch: a sibling host reorders the accounts", [
+        ("internal/sessions/resolve.go", "\tif Forgeable(RequestOf(c)) {\n\t\treturn false, ErrForgeable\n\t}\n\tlist := Accounts(ctx, c, db)\n\tfor i, sc := range list {",
+            "\tlist := Accounts(ctx, c, db)\n\tfor i, sc := range list {")],
+     "TestSwitch_RefusesStrangersAndForgery", "./internal/sessions/"),
+
+    ("switch: a forged request learns which subjects are signed in", [
+        ("internal/oidc/getaccount.go", "\t\tif sessions.Forgeable(sessions.RequestOf(c.Fiber())) {\n\t\t\treturn httpx.Fail(c, http.StatusForbidden, sessions.ErrForgeable.Error(), \"\")\n\t\t}\n", "")],
+     "TestAccounts_SwitchMakesASignedInAccountCurrent", PO),
+
+    ("end: signing out one account signs out everyone", [
+        ("internal/sessions/resolve.go", "\t\tif list[i].Owner == owner && list[i].Name == name {\n\t\t\tended = &list[i]", "\t\tif true {\n\t\t\tended = &list[i]")],
+     "TestEnd_SignsOutOnlyThatPerson", "./internal/sessions/"),
+
+    ("logout: logout_hint is ignored", [
+        ("internal/oidc/logout.go", "endSessions(c, db, param(c, \"logout_hint\"))", "endSessions(c, db, \"\")")],
+     "TestLogout_HintSignsOutOneAccount", PO),
+
+    # The sign-in origin keeps its own session after the issuer's sign-out.
+    ("logout: the other sign-in origin is never visited", [
+        ("internal/oidc/logout.go", "if next, ok := nextSignout(c); ok {", "if next, ok := nextSignout(c); false && ok {")],
+     "TestLogout_VisitsEachSigninOriginOnce", PO),
+
+    # A chain naming a foreign origin is followed.
+    ("logout: a chain outside the issuer's origins is followed", [
+        ("internal/oidc/logout.go", "\t} else if !slices.Contains(origins, start) {\n", "\t} else if false {\n")],
+     "TestLogout_VisitsEachSigninOriginOnce", PO),
 ]

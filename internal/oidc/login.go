@@ -65,6 +65,13 @@ type loginForm struct {
 	CodeChallenge       string `json:"codeChallenge"`
 	CodeChallengeMethod string `json:"codeChallengeMethod"`
 	Resource            string `json:"resource"`
+	// Prompt is the authorize request's OIDC `prompt`, and LoginHint the account it
+	// is for — the subject a page's account chooser picked, or the client's own
+	// login_hint. Both are read only by the session branch: a request that asked for
+	// a fresh credential (login) or for the person to choose (select_account) is
+	// never answered from a session nobody named.
+	Prompt    string `json:"prompt"`
+	LoginHint string `json:"loginHint"`
 
 	// The second factor (present on the finishing request). Challenge names the
 	// outstanding ceremony; a browser returns it in the cookie the gate set and
@@ -168,13 +175,34 @@ func loginHandler(db orm.DB) zip.Handler {
 					return httpx.Fail(c, http.StatusForbidden, err.Error(), "")
 				}
 				if sc != nil {
-					var app *schema.Application
-					if f.Type == "code" {
-						if app, err = ResolveApp(ctx, db, f.ClientId, f.Application); err != nil {
-							return httpx.Err(c, err.Error())
+					if f.Type == "device" {
+						// The approval page shows the CURRENT account and approves as it.
+						if user := sessionUser(ctx, db, sc); user != nil {
+							return loginGrant(c, db, user, f)
 						}
+						return httpx.ErrCode(c, "please sign in first", CodeLoginRequired)
 					}
-					if _, user := signedIn(c, db, app, "", ""); user != nil {
+					app, err := ResolveApp(ctx, db, f.ClientId, f.Application)
+					if err != nil {
+						return httpx.Err(c, err.Error())
+					}
+					// The authorize request's own instructions hold here as they do at
+					// authorize: prompt=login is owed a fresh credential, so no session
+					// answers it; prompt=select_account is owed the person's choice, so
+					// only a session the page names (loginHint) answers it; and with
+					// several people signed in here and none named, nobody is picked.
+					p := parsePrompt(f.Prompt)
+					if p.login {
+						return httpx.ErrCode(c, "sign in again to continue", CodeLoginRequired)
+					}
+					if p.selectAccount && f.LoginHint == "" {
+						return httpx.ErrCode(c, "choose an account to continue", CodeAccountSelectionRequired)
+					}
+					_, user, many := signedIn(c, db, app, f.LoginHint, "")
+					if many {
+						return httpx.ErrCode(c, "choose an account to continue", CodeAccountSelectionRequired)
+					}
+					if user != nil {
 						return loginGrant(c, db, user, f)
 					}
 					return httpx.ErrCode(c, "please sign in first", CodeLoginRequired)
@@ -585,4 +613,16 @@ func adoptQuery(c *zip.Ctx, f *loginForm) {
 	adopt(&f.Resource, "resource")
 	adopt(&f.CodeChallenge, "code_challenge", "codeChallenge")
 	adopt(&f.CodeChallengeMethod, "code_challenge_method", "codeChallengeMethod")
+	adopt(&f.Prompt, "prompt")
+	adopt(&f.LoginHint, "login_hint", "loginHint")
+}
+
+// sessionUser re-reads the account a session names: nil when it has since been
+// forbidden or deleted, so a session never outlives the account it was opened for.
+func sessionUser(ctx context.Context, db orm.DB, sc *sessions.Cookie) *schema.User {
+	u, err := store.GetUserByName(ctx, db, sc.Owner, sc.Name)
+	if err != nil || u == nil || u.IsForbidden || u.IsDeleted {
+		return nil
+	}
+	return u
 }

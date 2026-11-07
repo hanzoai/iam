@@ -106,9 +106,10 @@ names hosts that sign in somewhere other than their issuer:
   route registration (`routeFederation`), LOGGED, and every host signs in at its
   issuer; it never stops the process (cloud runs `strategy: Recreate`).
 - Off its issuer's host, authorize never answers silently from a session: that
-  origin's `__Host-hanzo_session` is not ended by the issuer's sign-out, so the
-  page asks "continue as" and `prompt=none` is `login_required`. Cross-origin
-  sign-out (ending hanzo.ai's session from hanzo.id and the reverse) is not built.
+  origin holds its own `__Host-hanzo_session`, so the page asks "continue as" and
+  `prompt=none` is `login_required`. A navigating sign-out on either origin visits
+  the other and ends the same sessions there (see "Several accounts on one
+  browser"); a program's JSON POST to logout ends only the origin it reached.
 - The binding, challenge and remember cookies are `__Host-` (`__Host-hanzo_fed`,
   `__Host-hanzo_challenge`, `__Host-hanzo_mfa_remember`), so no sibling of a
   sign-in origin with siblings (*.hanzo.ai) can plant one.
@@ -122,6 +123,49 @@ names hosts that sign in somewhere other than their issuer:
   "header-immune" wording elsewhere in `issuer.go`, `token.go` and `webauthn.go` is
   true of `iam serve` only. A caller can still only select a configured value, for
   its own requests.
+
+## Several accounts on one browser — chosen, switched, signed out one at a time
+
+The session cookie holds one signed session per person (`internal/sessions`,
+joined by `~`, current first). Five rules sit on top of it:
+
+- **Nobody is guessed.** `signedIn` (prompt.go) answers the one account the
+  request names (`login_hint`, `id_token_hint`), or the ONE account the app can
+  serve. Several and none named is `many`: authorize forwards the hosted page
+  `prompt=select_account`, and `prompt=none` gets `account_selection_required`
+  (OIDC Core §3.1.2.6). The most-recent-sign-in fallback is gone: it is how a
+  CLI sign-in on a shared browser completed as the wrong account.
+- **The session branch of `POST /v1/iam/login` keeps the authorize request's
+  word.** A page's credential-less resume carries `prompt` and `loginHint` (body
+  or query). `prompt=login` is refused `login_required`; `select_account` without
+  a chosen `loginHint`, or several accounts and no hint, is refused
+  `account_selection_required` (`CodeAccountSelectionRequired`); a `loginHint`
+  answers only that account. `type=device` approves as the current account, which
+  is the one the approval page shows.
+- **Switch:** `PUT /v1/iam/accounts {"current":"<sub>"}` moves an account already
+  signed in here to the front (`sessions.Switch`, same sid and auth_time) and
+  answers the list. Same-origin JSON only (`Forgeable`, checked before the lookup,
+  so another page learns nothing). Each session still resolves to its own row, so
+  no org, role or SuperAdmin standing crosses accounts
+  (`TestAccounts_SwitchCarriesNoStandingAcross`). A page holding a bearer for the
+  old account must drop it on switch.
+- **Sign out one:** end-session with `logout_hint` (RP-Initiated Logout §2: sub,
+  address or username) ends that account only (`sessions.End`); a hint naming
+  nobody here ends nothing. No hint ends every account (`sessions.Clear`).
+- **Sign out on every sign-in origin:** a navigating end-session walks the issuer
+  and every origin `IAM_FEDERATION_ORIGIN_MAP` names for it, sorted, once each
+  (`nextSignout`, `chain=<origin it started at>`), carrying `id_token_hint`,
+  `client_id`, `post_logout_redirect_uri`, `state`, `logout_hint`, `everywhere`.
+  The last hop validates and returns the browser. Each origin must route
+  `/v1/iam/oauth/logout` to IAM (hanzo.ai does, `infra/sites`).
+
+Where the chooser renders is the hosted page's job: the id SPA's `Login` phase
+`choose`. **hanzo.id's edge sends `/login/oauth/authorize` with a `state` to
+hanzo.ai/login** (universe `infra/sites/sites.yaml`, route `hanzo-id`), and
+hanzo.ai's panel resumes for a loopback platform client without reading
+`prompt`; that is why a `prompt=select_account` CLI sign-in completed silently in
+production. The session-branch rules above refuse that resume when several
+accounts are signed in or when the page forwards `prompt`.
 
 ## A principal is `owner`/`name` — org and USERNAME, on every surface
 

@@ -433,6 +433,65 @@ func Clear(ctx context.Context, c fiber.Ctx, db orm.DB) ([]Cookie, error) {
 	return list, nil
 }
 
+// End signs ONE person out of this browser and leaves everyone else signed in on
+// it: their sid is revoked server-side and the cookie is rewritten without them.
+// It is Clear narrowed to one account, judged by the same rule (Request.ends), so
+// a request another page sent that is not a navigation ends nothing.
+//
+// Returns the session that ended, or nil when the browser held no live session
+// for (owner, name): nobody else is signed out in its place.
+func End(ctx context.Context, c fiber.Ctx, db orm.DB, owner, name string) (*Cookie, error) {
+	if c.Cookies(CookieName) != "" && !RequestOf(c).ends() {
+		return nil, ErrForgeable
+	}
+	list := Accounts(ctx, c, db)
+	kept := make([]Cookie, 0, len(list))
+	var ended *Cookie
+	for i := range list {
+		if list[i].Owner == owner && list[i].Name == name {
+			ended = &list[i]
+			continue
+		}
+		kept = append(kept, list[i])
+	}
+	if ended == nil {
+		return nil, nil
+	}
+	revokeSID(db, ended.Owner, ended.Name, ended.Application, ended.SID)
+	return ended, write(ctx, c, db, kept)
+}
+
+// Switch makes a person this browser already holds the CURRENT one: their session
+// moves to the front, the same session (same sid, same auth_time), and nobody is
+// signed in or out. Every reader that asks "who is signed in here" (Current,
+// Resolve) answers with them from then on.
+//
+// It authorizes nothing new. The person's session already resolves on this
+// browser; the order only decides which of the sessions it holds a reader takes
+// when it is not told. Each session still resolves to its own account row, so no
+// role, org or SuperAdmin standing crosses from one account to another.
+//
+// It is a change of state on the cookie's authority, so a request another page
+// could have sent changes nothing (Forgeable). Reports false when the browser
+// holds no live session for (owner, name).
+func Switch(ctx context.Context, c fiber.Ctx, db orm.DB, owner, name string) (bool, error) {
+	if Forgeable(RequestOf(c)) {
+		return false, ErrForgeable
+	}
+	list := Accounts(ctx, c, db)
+	for i, sc := range list {
+		if sc.Owner != owner || sc.Name != name {
+			continue
+		}
+		if i == 0 {
+			return true, nil
+		}
+		front := append([]Cookie{sc}, list[:i]...)
+		return true, write(ctx, c, db, append(front, list[i+1:]...))
+	}
+	return false, nil
+}
+
 // Rekey follows the most recent session across a change of that user's OWNING
 // org. An IAM identity IS (owner, name), so moving a user between orgs re-keys it
 // and strands every credential that names the old pair — the session cookie above

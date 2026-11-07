@@ -59,6 +59,12 @@ const (
 // never sends. An error must describe the thing the caller can actually do.
 const CodeLoginRequired = "login_required"
 
+// CodeAccountSelectionRequired is the `code` beside a session sign-in refused
+// because several people are signed in on this browser and the request named none
+// of them, or asked the person to choose (prompt=select_account): the page shows
+// its account chooser and posts again naming the one picked (loginHint).
+const CodeAccountSelectionRequired = "account_selection_required"
+
 // CodeAccountNotPermitted is the `code` beside a sign-in refused because the
 // account itself may not sign in — archived by an operator (isForbidden) or
 // deleted — after its credential was proven. The client says the account is

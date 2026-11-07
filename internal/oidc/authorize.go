@@ -62,16 +62,18 @@ type authorizeRequest struct {
 //
 // If the person is ALREADY signed in here, it does not ask them again: it
 // returns them to the application with a one-time code and they never see this
-// page. Otherwise it shows the right way to sign in for the application they are
-// signing in to, or hands off to another identity provider if that is what they
-// pick.
+// page. When SEVERAL people are signed in on the browser and the request names
+// none of them, it asks which one, with the account chooser. Otherwise it shows
+// the right way to sign in for the application they are signing in to, or hands
+// off to another identity provider if that is what they pick.
 //
 // A client can say what it wants with `prompt`: `none` means answer without any
-// screen at all — with the code if a session exists, with an error if not, but
-// never with a page; `login` means ask for the password again even if a session
-// exists; `select_account` means let the person choose among the accounts signed
-// in on this browser, or sign in to another. `login_hint` names which of those
-// accounts the request is for.
+// screen at all — with the code if a session exists, with an error if not
+// (`account_selection_required` when several accounts are signed in and none is
+// named), but never with a page; `login` means ask for the password again even if
+// a session exists; `select_account` means let the person choose among the
+// accounts signed in on this browser, or sign in to another. `login_hint` names
+// which of those accounts the request is for.
 //
 // It returns only to an address the application has registered. That check
 // happens before anything else, so a request naming an unregistered address is
@@ -181,6 +183,11 @@ func authorizeHandler(db orm.DB) zip.Handler {
 			}
 			if p.none {
 				return authorizeErrorRedirect(c, q, refusal, "no interaction was permitted and the request could not be answered from an existing session")
+			}
+			// Several people are signed in here and the request named none of them:
+			// the page asks which one, exactly as if the client had said so.
+			if refusal == errAccountSelectionRequired {
+				p.selectAccount = true
 			}
 		}
 

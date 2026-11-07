@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/hanzoai/orm"
@@ -31,16 +32,20 @@ const PathSignIn = "/login"
 // It ACTUALLY signs you out — worth stating, because a logout that computes a
 // redirect and answers {"status":"ok"} while ending no session and revoking no
 // token is worse than none: the person on the shared machine believes it worked.
-// Three things happen here, in this order:
+// Four things happen here, in this order:
 //
 //  1. The browser session dies — sid revoked server-side AND the cookie expired
-//     (sessions.Clear). Server-side revocation is the load-bearing half: a copy
-//     of the cookie taken before logout must not still resolve.
+//     (sessions.Clear), or, when `logout_hint` names one account, that account's
+//     session alone (sessions.End), leaving everyone else signed in on the
+//     browser. Server-side revocation is the load-bearing half: a copy of the
+//     cookie taken before logout must not still resolve.
 //  2. The relying party's tokens are revoked when an id_token_hint names it, so
 //     the refresh token cannot mint a fresh access token after the human left.
 //     Revocation state is authoritative — a JWT's `exp` still reads valid for
 //     days, so expiry is necessary but never sufficient.
-//  3. Only then is a redirect considered, and only to a REGISTERED uri.
+//  3. A navigating sign-out visits each of the issuer's other sign-in origins and
+//     ends the same sessions there (nextSignout), because each holds its own.
+//  4. Only then is a redirect considered, and only to a REGISTERED uri.
 //
 // The open-redirect guard: a redirect happens only when a VERIFIED
 // id_token_hint (or client_id) identifies the application and that application
@@ -66,12 +71,17 @@ func logoutHandler(db orm.DB) zip.Handler {
 			return c.Redirect(http.StatusSeeOther, again)
 		}
 
-		// (1) End every session the browser holds. First: it must happen whether or
+		// (1) End the sessions the browser holds. First: it must happen whether or
 		// not a hint is supplied, whether or not a redirect is asked for, and
 		// whether or not any of what follows succeeds. The one thing that stops it
-		// is a request another page could have sent (sessions.Clear), which ends
-		// nothing and revokes nothing.
-		ended, err := sessions.Clear(ctx, c.Fiber(), db)
+		// is a request another page could have sent (sessions.Clear, sessions.End),
+		// which ends nothing and revokes nothing.
+		//
+		// `logout_hint` (RP-Initiated Logout 1.0 §2) names ONE account — by subject,
+		// address or username, as a login_hint does — and only that account is signed
+		// out; everyone else signed in on the browser stays signed in. A hint naming
+		// nobody here ends nothing. Without it, every account here is signed out.
+		ended, err := endSessions(c, db, param(c, "logout_hint"))
 		if err != nil {
 			return httpx.Fail(c, http.StatusForbidden, err.Error(), "")
 		}
@@ -123,7 +133,20 @@ func logoutHandler(db orm.DB) zip.Handler {
 			revokeShared(ctx, db, user, application, app)
 		}
 
-		// (3) Redirect only to an address the identified application registered.
+		// (3) The same person holds a session of their own on each of this issuer's
+		// sign-in origins (hanzo.ai signing in for hanzo.id), and one origin cannot
+		// end another's host-only cookie. So a sign-out the browser is navigating
+		// through visits each of them in turn, ending the same sessions there, and
+		// only the last returns the browser where the client asked. Without it a
+		// sign-out at hanzo.id left hanzo.ai's session alive, and the next sign-in
+		// through hanzo.ai quietly reused it. A program's POST is answered here.
+		if c.Method() == http.MethodGet || wantsHTML(c) {
+			if next, ok := nextSignout(c); ok {
+				return c.Redirect(http.StatusFound, next)
+			}
+		}
+
+		// (4) Redirect only to an address the identified application registered.
 		if redirect := param(c, "post_logout_redirect_uri"); redirect != "" && app != nil && app.IsRedirectUriValid(redirect) {
 			if state := param(c, "state"); state != "" {
 				sep := "?"
@@ -355,4 +378,102 @@ func crossSiteForm(c *zip.Ctx) (string, bool) {
 		return PathLogout, true
 	}
 	return PathLogout + "?" + q.Encode(), true
+}
+
+// endSessions ends the browser's sessions for a sign-out: the one account hint
+// names (sessions.End), or every account when hint is empty (sessions.Clear). It
+// returns the sessions that ended.
+func endSessions(c *zip.Ctx, db orm.DB, hint string) ([]sessions.Cookie, error) {
+	ctx := c.Context()
+	if hint == "" {
+		return sessions.Clear(ctx, c.Fiber(), db)
+	}
+	for _, sc := range sessions.Accounts(ctx, c.Fiber(), db) {
+		u, err := store.GetUserByName(ctx, db, sc.Owner, sc.Name)
+		if err != nil || u == nil || !names(u, hint) {
+			continue
+		}
+		one, err := sessions.End(ctx, c.Fiber(), db, sc.Owner, sc.Name)
+		if err != nil || one == nil {
+			return nil, err
+		}
+		return []sessions.Cookie{*one}, nil
+	}
+	return nil, nil
+}
+
+// signoutCarried are the end-session parameters a sign-out carries from one
+// sign-in origin to the next, so the last one ends the same sessions and returns
+// the browser where the client asked.
+var signoutCarried = []string{"id_token_hint", "client_id", "post_logout_redirect_uri", "state", "logout_hint", "everywhere"}
+
+// nextSignout is the end-session address on the next of this issuer's sign-in
+// origins a navigating sign-out still has to visit, or false when this origin is
+// the last.
+//
+// The origins are the issuer and every sign-in origin IAM_FEDERATION_ORIGIN_MAP
+// names for a host of that issuer — trusted config, never the request, so the walk
+// cannot be pointed anywhere else. `chain` names the origin the sign-out started
+// at; it visits every other origin once, in sorted order, each hop strictly
+// forward, so it ends after at most one hop per origin. A request on a host that
+// is none of them (an alias, which holds no session) starts no walk, and a chain
+// naming an origin outside the set is not followed.
+func nextSignout(c *zip.Ctx) (string, bool) {
+	host := strings.TrimSpace(c.Host())
+	iss, err := resolveIssuer(host)
+	if err != nil {
+		return "", false
+	}
+	origins := signoutOrigins(iss)
+	here := ""
+	for _, o := range origins {
+		if u, err := url.Parse(o); err == nil && sameAddress(u.Host, host) {
+			here = o
+		}
+	}
+	if here == "" {
+		return "", false
+	}
+	start := param(c, "chain")
+	if start == "" {
+		start = here
+	} else if !slices.Contains(origins, start) {
+		return "", false
+	}
+	rest := slices.DeleteFunc(slices.Clone(origins), func(o string) bool { return o == start })
+	next := ""
+	if here == start {
+		if len(rest) > 0 {
+			next = rest[0]
+		}
+	} else if i := slices.Index(rest, here); i >= 0 && i+1 < len(rest) {
+		next = rest[i+1]
+	}
+	if next == "" {
+		return "", false
+	}
+	q := url.Values{}
+	for _, k := range signoutCarried {
+		if v := param(c, k); v != "" {
+			q.Set(k, v)
+		}
+	}
+	q.Set("chain", start)
+	return next + PathLogout + "?" + q.Encode(), true
+}
+
+// signoutOrigins is every origin a browser may hold a session of iss's on: iss
+// itself and each sign-in origin the map names for a host whose issuer is iss,
+// sorted and without repeats.
+func signoutOrigins(iss string) []string {
+	out := []string{iss}
+	if r := activeFederationResolver.Load(); r != nil {
+		for host, origin := range r.byHost {
+			if hostIss, err := resolveIssuer(host); err == nil && hostIss == iss {
+				out = append(out, origin)
+			}
+		}
+	}
+	slices.Sort(out)
+	return slices.Compact(out)
 }
