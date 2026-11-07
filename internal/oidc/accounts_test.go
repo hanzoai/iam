@@ -100,7 +100,6 @@ func TestSilent_LoginHintPicksAmongTheAccounts(t *testing.T) {
 	app, db, cookie := twoPeople(t)
 
 	cases := []struct{ hint, want string }{
-		{"", "bob"},
 		{"alice@hanzo.ai", "alice"},
 		{"ALICE@hanzo.ai", "alice"},
 		{"alice", "alice"},

@@ -282,7 +282,7 @@ func check(db orm.DB, limit Cap) zip.Handler {
 		// it a bare wallet sign-in returned a user id and no session, and the portal
 		// sent the person to a page whose bootstrap found nobody signed in and
 		// bounced them back to the credential form.
-		_ = sessions.Open(ctx, c.Fiber(), db, user.Owner, user.Name, app.Name)
+		_ = sessions.Open(ctx, c.Fiber(), db, user.Owner, user.Name, app.Name, true)
 
 		// A NEW binding — and only a new one — is anchored. Signing in with a
 		// wallet already on file changes nothing, so re-anchoring would add a

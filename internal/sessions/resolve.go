@@ -68,7 +68,12 @@ func Set(ctx context.Context, c fiber.Ctx, db orm.DB, owner, name, application s
 // to the front, so a silent hop across apps does not mint a second sid for every
 // app they open. A different person is added in front of whoever was signed in
 // before, which is how one browser comes to hold several accounts.
-func Open(ctx context.Context, c fiber.Ctx, db orm.DB, owner, name, application string) error {
+//
+// proved says the person just presented a credential, rather than resumed from
+// the session they hold: their session then carries this moment as its auth_time
+// (same sid), which is what a relying party's prompt=login or max_age asks after.
+// A resume must not pass for one, or it would launder an old sign-in past them.
+func Open(ctx context.Context, c fiber.Ctx, db orm.DB, owner, name, application string, proved bool) error {
 	// When they last proved themselves is recorded here for the same reason the
 	// session is: this is the one place a human has just done it, whatever they did
 	// it with. Before the live-session check, because the fact being recorded is
@@ -79,8 +84,11 @@ func Open(ctx context.Context, c fiber.Ctx, db orm.DB, owner, name, application 
 		if sc.Owner != owner || sc.Name != name {
 			continue
 		}
-		if i == 0 || !fromIssuer(c) {
+		if !fromIssuer(c) || (i == 0 && !proved) {
 			return nil
+		}
+		if proved {
+			sc.AuthTime = time.Now().Unix()
 		}
 		front := append([]Cookie{sc}, list[:i]...)
 		return write(ctx, c, db, append(front, list[i+1:]...))
@@ -431,6 +439,68 @@ func Clear(ctx context.Context, c fiber.Ctx, db orm.DB) ([]Cookie, error) {
 		revokeSID(db, sc.Owner, sc.Name, sc.Application, sc.SID)
 	}
 	return list, nil
+}
+
+// End signs out of this browser every session `named` picks, and leaves everyone
+// else signed in on it: each sid is revoked server-side and the cookie is
+// rewritten without them. It is Clear narrowed to some accounts, judged by the
+// same rule (Request.ends), so a request another page sent that is not a
+// navigation ends nothing.
+//
+// Returns the sessions that ended; none when `named` picked nobody the browser
+// holds, and then nobody else is signed out in their place.
+func End(ctx context.Context, c fiber.Ctx, db orm.DB, named func(Cookie) bool) ([]Cookie, error) {
+	if c.Cookies(CookieName) != "" && !RequestOf(c).ends() {
+		return nil, ErrForgeable
+	}
+	list := Accounts(ctx, c, db)
+	kept := make([]Cookie, 0, len(list))
+	var ended []Cookie
+	for _, sc := range list {
+		if named(sc) {
+			ended = append(ended, sc)
+			continue
+		}
+		kept = append(kept, sc)
+	}
+	if len(ended) == 0 {
+		return nil, nil
+	}
+	for _, sc := range ended {
+		revokeSID(db, sc.Owner, sc.Name, sc.Application, sc.SID)
+	}
+	return ended, write(ctx, c, db, kept)
+}
+
+// Switch makes a person this browser already holds the CURRENT one: their session
+// moves to the front, the same session (same sid, same auth_time), and nobody is
+// signed in or out. Every reader that asks "who is signed in here" (Current,
+// Resolve) answers with them from then on.
+//
+// It authorizes nothing new. The person's session already resolves on this
+// browser; the order only decides which of the sessions it holds a reader takes
+// when it is not told. Each session still resolves to its own account row, so no
+// role, org or SuperAdmin standing crosses from one account to another.
+//
+// It is a change of state on the cookie's authority, so a request another page
+// could have sent changes nothing (Forgeable). Reports false when the browser
+// holds no live session for (owner, name).
+func Switch(ctx context.Context, c fiber.Ctx, db orm.DB, owner, name string) (bool, error) {
+	if Forgeable(RequestOf(c)) {
+		return false, ErrForgeable
+	}
+	list := Accounts(ctx, c, db)
+	for i, sc := range list {
+		if sc.Owner != owner || sc.Name != name {
+			continue
+		}
+		if i == 0 {
+			return true, nil
+		}
+		front := append([]Cookie{sc}, list[:i]...)
+		return true, write(ctx, c, db, append(front, list[i+1:]...))
+	}
+	return false, nil
 }
 
 // Rekey follows the most recent session across a change of that user's OWNING

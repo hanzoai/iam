@@ -184,4 +184,114 @@ MUTANTS = [
         (A, "\tif err := refusePlatformAction(log.Action); err != nil {\n\t\treturn nil, err\n\t}\n\tif err := log.DeleteCtx",
             "\tif err := log.DeleteCtx")],
      "TestDeleteRefusesAPlatformRow", PA),
+
+    # ---- Which account a sign-in is for: the person's choice, never a guess. ----
+
+    # Several accounts and no hint fall back to the most recent sign-in: the code
+    # silently goes to whoever signed in last on a shared browser.
+    ("choose: several accounts answer with the most recent", [
+        ("internal/oidc/prompt.go", "\t\t\treturn nil, nil, !hinted\n", "\t\t\treturn found, who, false && hinted\n")],
+     "TestChoose_TwoAccountsAndNoHintAskTheChooser", PO),
+
+    # Refused but not asked: the page gets no select_account and draws a bare form.
+    ("choose: the page is not asked for the chooser", [
+        ("internal/oidc/authorize.go", "\t\t\t\tp.selectAccount = true\n", "")],
+     "TestChoose_TwoAccountsAndNoHintAskTheChooser", PO),
+
+    # prompt=none is told login_required instead of account_selection_required.
+    ("choose: prompt=none loses account_selection_required", [
+        ("internal/oidc/prompt.go", "\tif many {\n\t\treturn \"\", errAccountSelectionRequired\n", "\tif many && false {\n\t\treturn \"\", errAccountSelectionRequired\n")],
+     "TestChoose_PromptNoneWithTwoAccountsIsAccountSelectionRequired", PO),
+
+    # A page's resume spends a session past prompt=login.
+    ("choose: the session branch ignores prompt=login", [
+        ("internal/oidc/login.go", "\t\t\t\t\tif p.login {\n", "\t\t\t\t\tif false && p.login {\n")],
+     "TestChoose_SessionBranchAnswersOnlyTheNamedAccount", PO),
+
+    # A page's resume answers select_account with the one session there.
+    ("choose: the session branch ignores select_account", [
+        ("internal/oidc/login.go", "\t\t\t\t\tif p.selectAccount && f.LoginHint == \"\" {\n", "\t\t\t\t\tif false {\n")],
+     "TestChoose_SessionBranchSelectAccountWithOneAccount", PO),
+
+    # The SDK posts the authorize request on the query; dropping prompt there
+    # forgets what the client asked for.
+    ("choose: prompt on the query is not read", [
+        ("internal/oidc/login.go", "\tadopt(&f.Prompt, \"prompt\")\n", "")],
+     "TestChoose_SessionBranchSelectAccountWithOneAccount", PO),
+
+    # ---- Switching and signing out one account. ----
+
+    ("switch: a sibling host reorders the accounts", [
+        ("internal/sessions/resolve.go", "\tif Forgeable(RequestOf(c)) {\n\t\treturn false, ErrForgeable\n\t}\n\tlist := Accounts(ctx, c, db)\n\tfor i, sc := range list {",
+            "\tlist := Accounts(ctx, c, db)\n\tfor i, sc := range list {")],
+     "TestSwitch_RefusesStrangersAndForgery", "./internal/sessions/"),
+
+    ("switch: a forged request learns which subjects are signed in", [
+        ("internal/oidc/getaccount.go", "\t\tif sessions.Forgeable(sessions.RequestOf(c.Fiber())) {\n\t\t\treturn httpx.Fail(c, http.StatusForbidden, sessions.ErrForgeable.Error(), \"\")\n\t\t}\n", "")],
+     "TestAccounts_SwitchMakesASignedInAccountCurrent", PO),
+
+    ("end: signing out one account signs out everyone", [
+        ("internal/sessions/resolve.go", "\t\tif named(sc) {\n", "\t\tif true {\n")],
+     "TestEnd_SignsOutOnlyThatPerson", "./internal/sessions/"),
+
+    ("logout: logout_hint is ignored", [
+        ("internal/oidc/logout.go", "endSessions(c, db, param(c, \"logout_hint\"))", "endSessions(c, db, \"\")")],
+     "TestLogout_HintSignsOutOneAccount", PO),
+
+    # The sign-in origin keeps its own session after the issuer's sign-out.
+    ("logout: the other sign-in origin is never visited", [
+        ("internal/oidc/logout.go", "if next, ok := nextSignout(c, db); ok {", "if next, ok := nextSignout(c, db); false && ok {")],
+     "TestLogout_VisitsEachSigninOriginOnce", PO),
+
+
+    # An address two orgs share: ending only the first leaves the other (a
+    # SuperAdmin admin/alice beside hanzo/alice) signed in.
+    ("end: a hint naming two accounts ends one", [
+        ("internal/sessions/resolve.go", "\t\t\tended = append(ended, sc)\n\t\t\tcontinue\n", "\t\t\tif len(ended) == 0 {\n\t\t\t\tended = append(ended, sc)\n\t\t\t\tcontinue\n\t\t\t}\n")],
+     "TestEnd_EveryPersonNamed", "./internal/sessions/"),
+
+    # An unsealed chain is trusted: a link naming hanzo.ai as the start skips it.
+    ("logout: an unsealed chain is followed", [
+        ("internal/oidc/logout.go", "\tstart := openChain(c.Context(), db, param(c, \"chain\"))\n", "\tstart := param(c, \"chain\")\n")],
+     "TestLogout_VisitsEachSigninOriginOnce", PO),
+
+    # Two spellings of one host make two stops, and the walk never ends.
+    ("logout: the issuer keeps its own spelling", [
+        ("internal/oidc/logout.go", "\tout := []string{oneSpelling(iss)}\n", "\tout := []string{iss}\n")],
+     "TestLogout_OneSpellingPerOrigin", PO),
+
+    # A device approved as whoever is current when the post arrives.
+    ("device: the account the page named is ignored", [
+        ("internal/oidc/login.go", "\t\t\t\t\t\tif f.LoginHint != \"\" {\n\t\t\t\t\t\t\t_, user, _ = signedIn(c, db, nil, f.LoginHint, \"\")\n\t\t\t\t\t\t}\n", "")],
+     "TestDevice_ApprovesTheAccountThePageNamed", PO),
+
+    # ---- What authorize demanded holds however the page resumes. ----
+
+    ("demand: authorize records nothing", [
+        ("internal/oidc/authorize.go", "Since: nowFunc().Unix()}); d.needed() {", "Since: nowFunc().Unix()}); false && d.needed() {")],
+     "TestDemand_HoldsWhenThePageForwardsNothing", PO),
+
+    ("demand: the session branch ignores a recorded prompt=login or max_age", [
+        ("internal/oidc/login.go", "\t\t\t\t\tif user != nil && !d.met(chosen.AuthTime, f.LoginHint != \"\") {\n", "\t\t\t\t\tif false && user != nil && !d.met(chosen.AuthTime, f.LoginHint != \"\") {\n")],
+     "TestDemand_HoldsWhenThePageForwardsNothing", PO),
+
+    ("demand: the session branch ignores a recorded select_account", [
+        ("internal/oidc/login.go", "(p.selectAccount || d.Choose) && f.LoginHint == \"\"", "p.selectAccount && f.LoginHint == \"\"")],
+     "TestDemand_HoldsWhenThePageForwardsNothing", PO),
+
+    ("demand: a re-entered request is answered past its demand", [
+        ("internal/oidc/prompt.go", "\tif !d.met(sc.AuthTime, hinted) {\n", "\tif false && !d.met(sc.AuthTime, hinted) {\n")],
+     "TestDemand_HoldsWhenThePageForwardsNothing", PO),
+
+    ("demand: a demand never expires", [
+        ("internal/oidc/demand.go", "row.Kind != KindPrompt || nowFunc().Unix() > row.ExpireIn", "row.Kind != KindPrompt")],
+     "TestDemand_Expires", PO),
+
+    ("open: a proved sign-in keeps the old auth_time", [
+        ("internal/sessions/resolve.go", "\t\tif proved {\n\t\t\tsc.AuthTime = time.Now().Unix()\n\t\t}\n", "")],
+     "TestOpen_ProvedRefreshesAuthTime", "./internal/sessions/"),
+
+    ("open: a resume restamps auth_time", [
+        ("internal/oidc/login.go", "\treturn grant(c, db, user, f, false)\n", "\treturn grant(c, db, user, f, true)\n")],
+     "TestDemand_AResumeIsNoNewSignIn", PO),
 ]
