@@ -205,7 +205,11 @@ func authorizeHandler(db orm.DB) zip.Handler {
 				return authorizeUserError(c, "internal error")
 			}
 		}
-		return c.Redirect(302, hostedLoginTarget(app)+"?"+authorizeForwardQuery(q, method))
+		iss, err := tokenIssuer(c)
+		if err != nil {
+			return authorizeUserError(c, "internal error")
+		}
+		return c.Redirect(302, hostedLoginTarget(app, iss)+"?"+authorizeForwardQuery(q, method))
 	}
 }
 
@@ -253,10 +257,18 @@ func oversize(c *zip.Ctx) string {
 }
 
 // hostedLoginTarget is the login URL a validated request is delegated to — the
-// application's own SigninUrl when set, else the default hosted-login route.
-func hostedLoginTarget(app *schema.Application) string {
+// application's own SigninUrl when it names an origin the operator configured as a
+// sign-in origin of this issuer, else the default hosted-login route. The value is
+// an organization's to write for its own applications, so it is followed only where
+// IAM itself signs people in: stored raw it made the issuer an open redirector, a 302
+// to wherever a tenant's application said.
+func hostedLoginTarget(app *schema.Application, iss string) string {
 	if app.SigninUrl != "" {
-		return app.SigninUrl
+		if u, err := url.Parse(strings.TrimSpace(app.SigninUrl)); err == nil && u.Scheme == "https" && u.User == nil {
+			if origin, err := signinOrigin("https://" + u.Host); err == nil && configuredSignin(origin, normalizeIssuer(iss)) {
+				return app.SigninUrl
+			}
+		}
 	}
 	// Relative on purpose. signinRelocation has already moved a request that
 	// arrived on an alias to its sign-in origin, before anything is minted or

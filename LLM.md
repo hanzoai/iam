@@ -946,12 +946,33 @@ Only the origin is taken; the page is `/login/oauth/device[/<userCode>]` on it. 
 JSON endpoints do not move. Declared per app in the provision document
 (`signin:` -> upsert `signinUrl`, a pointer: omitted preserves, `""` clears), so it
 moves the app's hosted-login page too (`hostedLoginTarget` reads the same field).
-**Deny** is `POST /v1/iam/login {type:"device_deny", userCode}`, a verb of its own and
-never a flag on `device` (an older server ignores a flag and approves; it refuses an
-unknown verb), on the approval's own seam (session, same-origin JSON via `sessions.Writer`, `loginHint`, tenant
-boundary): the row is marked `Denied`, the device's next poll is `access_denied`
-once, and the code is dead (`expired_token`) after; an approve, a look-up or a second
-deny finds it spent (`pending`).
+**Deny** is `POST /v1/iam/login {type:"device_deny", userCode}`, a verb of its own on the
+approval's own seam (session, same-origin JSON via `sessions.Writer`, `loginHint`, tenant
+boundary). The flag `deny` is READ too, on any device body: a body that says deny is a
+refusal and never an approval (the page's first spelling, `{type:"device", deny:true}`,
+is still sent by stale tabs; ambiguity fails to the side that signs nobody in). Approve,
+refuse and the poll's burn decide on the row as the lock holder reads it
+(`store.WithToken`: GetForUpdate), so one outcome stands and a request is minted once;
+`pending` is the one live-code predicate. The device's next poll is `access_denied` once,
+then `expired_token`.
+**What a stranger may ask** (`device_guard.go`): the start needs no credential, so the
+scope is pinned (`grantedScope`: the application's declared scopes, else the standard
+OIDC set; `openid admin kms:write *` is `openid`; past 2048 bytes is `invalid_scope`), the
+start is budgeted per client and per address (429 `slow_down`; in-process, a brake not a
+meter), unapproved expired rows are swept (`PurgeDeviceCodes`, a batch a minute), and a
+pending poll sooner than 4 s after the last is `slow_down`. The row records where it was
+started (`RequestIp` from CF-Connecting-IP via `httpx.Client`, never a client-written XFF
+hop; `RequestCountry` from CF-IPCountry; `Requested`), and `device/info` shows that and the
+pinned scope beside the application's name, so a person approving a stranger's request can
+see it is a stranger's. Wrong codes are counted per account (`deviceMisses`, 10 per 15 min,
+logged once): past it every answer is the one opaque refusal. That refusal also covers a
+code that is live but not the caller's tenant. `mayApprove`: a SuperAdmin crosses tenants
+only for `Platform` applications. TTL is 10 min. On the brand's own site the code rides the
+URL FRAGMENT (`verification_uri_complete` = `<origin>/login/oauth/device#<code>`), which
+reaches no server, log, Referer or CDN analytics; the issuer's own SPA keeps the path form.
+`signinUrl` is validated on create and update (`schema.CheckSigninUrl`) and authorize
+follows it only to an origin IAM signs people in at (`hostedLoginTarget`), else the default
+hosted login.
 
 ## Workload grant — the cluster already vouches for the pod
 

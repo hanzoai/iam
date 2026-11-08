@@ -76,6 +76,17 @@ type Token struct {
 	// code is burned (device.go); until then it cannot be approved.
 	Denied bool `json:"denied,omitempty" url:"-"`
 
+	// Where and when a device authorization was STARTED, shown to the person asked to
+	// approve it: the device is the requester's, not theirs, and the one thing a
+	// stranger's request cannot hide is that it comes from somewhere else. RequestIp is
+	// the address the edge saw connect, RequestCountry the edge's two-letter answer
+	// for it, Requested the unix second. Polled is the last poll in unix milliseconds,
+	// which is what the interval of RFC 8628 §3.5 is held to.
+	RequestIp      string `json:"requestIp,omitempty" url:"-"`
+	RequestCountry string `json:"requestCountry,omitempty" url:"-"`
+	Requested      int64  `json:"requested,omitempty" url:"-"`
+	Polled         int64  `json:"polled,omitempty" url:"-"`
+
 	// RedirectUri binds the authorization code to the exact redirect URI of the
 	// authorize request (RFC 6749 §4.1.3): the token endpoint refuses a code
 	// redeemed with a different redirect_uri, closing code-injection across a

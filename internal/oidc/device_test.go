@@ -110,8 +110,8 @@ func TestDevice_RequestShape(t *testing.T) {
 	if deviceCode == "" || userCode == "" {
 		t.Fatalf("device_code/user_code must be non-empty: %v", m)
 	}
-	if m["expires_in"] != float64(900) {
-		t.Errorf("expires_in = %v, want 900", m["expires_in"])
+	if m["expires_in"] != float64(600) {
+		t.Errorf("expires_in = %v, want 600", m["expires_in"])
 	}
 	if m["interval"] != float64(5) {
 		t.Errorf("interval = %v, want 5", m["interval"])
@@ -186,7 +186,16 @@ func TestDevice_PollPendingIsRepeatable(t *testing.T) {
 	_, da := requestDevice(t, app, "hanzo-app", "openid")
 	deviceCode := da["device_code"].(string)
 
+	// A poll finds the request pending, and again after the interval each time: a
+	// device that obeys the interval is never told to slow down (see
+	// TestDevice_PollingFasterThanTheIntervalIsToldSlowDown).
+	clock := nowFunc()
+	prior := nowFunc
+	nowFunc = func() time.Time { return clock }
+	t.Cleanup(func() { nowFunc = prior })
+
 	for i := range 3 {
+		clock = clock.Add(devicePollInterval * time.Second)
 		resp, m := pollDevice(t, app, "hanzo-app", deviceCode)
 		if resp.StatusCode != 400 {
 			t.Fatalf("poll %d: status %d, want 400", i, resp.StatusCode)
@@ -325,7 +334,9 @@ func TestDevice_ApprovalTenantBoundary(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			app, db := newServer(t)
-			seedApp(t, db, appOpts{clientID: "hanzo-app", grants: deviceGrants, orgChoice: tc.orgChoice}) // org "hanzo"
+			// A platform application: a SuperAdmin crosses tenants for those alone
+			// (TestDevice_ASuperAdminDoesNotCrossIntoATenantsApplication).
+			seedApp(t, db, appOpts{clientID: "hanzo-app", platform: true, grants: deviceGrants, orgChoice: tc.orgChoice}) // org "hanzo"
 			seedUserInOrg(t, db, tc.org, "eve", "eve@"+tc.org+".example", "pw")
 			if tc.operator {
 				if _, err := store.EnsureMembership(tctx(), db, tc.org+"/eve", policy.AdminOrg, store.RoleAdmin); err != nil {

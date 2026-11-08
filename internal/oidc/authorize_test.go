@@ -399,3 +399,34 @@ func TestAuthorize_CarriesSignupToTheHostedLogin(t *testing.T) {
 		t.Fatalf("signup=yes forwarded as %q, want empty", got.Get("signup"))
 	}
 }
+
+// An application's signinUrl is an organization's to write, and authorize redirects to
+// it: followed only where IAM itself signs people in, never to wherever it says. The
+// issuer was an open redirector for any tenant's application.
+func TestAuthorize_SigninUrlIsFollowedOnlyWhereIamSignsPeopleIn(t *testing.T) {
+	app, db := newServer(t)
+	installIssuerResolver(t, "https://hanzo.id", testIssuerMap)
+	installFederationResolver(t, `{"hanzo.ai":"https://hanzo.ai"}`)
+
+	for _, c := range []struct{ client, signin, want string }{
+		{"acme-1", "https://evil.example/phish", hostedLoginPath + "?"},
+		{"acme-2", "http://hanzo.ai/login", hostedLoginPath + "?"},
+		{"acme-3", "https://hanzo.ai@evil.example/login", hostedLoginPath + "?"},
+		{"acme-4", "https://hanzo.ai.evil.example/login", hostedLoginPath + "?"},
+		{"acme-5", "https://lux.id/login", hostedLoginPath + "?"},
+		{"hanzo-cli", "https://hanzo.ai/login", "https://hanzo.ai/login?"},
+		{"hanzo-id", "https://hanzo.id/login/custom", "https://hanzo.id/login/custom?"},
+		{"plain", "", hostedLoginPath + "?"},
+	} {
+		seedApp(t, db, appOpts{clientID: c.client, redirectURIs: []string{testRedirect}, signin: c.signin})
+		q := url.Values{
+			"response_type": {"code"}, "client_id": {c.client}, "redirect_uri": {testRedirect},
+			"state": {"s"}, "code_challenge": {pkce.Challenge("verifier-abcdefghijklmnopqrstuvwxyz-012345")},
+		}
+		req := formReqNoBody("GET", authorizeURL(q))
+		resp, _ := do(t, app, req)
+		if loc := resp.Header.Get("Location"); resp.StatusCode != 302 || !strings.HasPrefix(loc, c.want) {
+			t.Errorf("%s with signinUrl %q: %d to %q, want a 302 to %q", c.client, c.signin, resp.StatusCode, loc, c.want)
+		}
+	}
+}

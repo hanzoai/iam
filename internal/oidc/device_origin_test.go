@@ -44,7 +44,9 @@ func TestDeviceOrigin_HanzoSignsInAtHanzoAi(t *testing.T) {
 		if verify != "https://hanzo.ai/login/oauth/device" {
 			t.Errorf("%s: verification_uri = %q", host, verify)
 		}
-		if complete != "https://hanzo.ai/login/oauth/device/"+code {
+		// On the brand's own site the code rides the fragment: no server, log,
+		// analytics or Referer ever sees it.
+		if complete != "https://hanzo.ai/login/oauth/device#"+code {
 			t.Errorf("%s: verification_uri_complete = %q", host, complete)
 		}
 	}
@@ -122,7 +124,7 @@ func TestDeviceOrigin_OnlyTheOriginIsTaken(t *testing.T) {
 	seedApp(t, db, appOpts{clientID: "hanzo-cli", platform: true, grants: deviceGrants, signin: "https://HANZO.ai:443/anything/else?next=https://evil.example#frag"})
 
 	verify, complete, code := deviceLinks(t, app, "hanzo.id", "hanzo-cli")
-	if verify != "https://hanzo.ai"+PathDeviceVerify || complete != verify+"/"+code {
+	if verify != "https://hanzo.ai"+PathDeviceVerify || complete != verify+"#"+code {
 		t.Fatalf("links = %q, %q", verify, complete)
 	}
 }
