@@ -448,7 +448,7 @@ func approveDevice(c *zip.Ctx, db orm.DB, user *schema.User, userCode string) er
 // denyDevice is the person's refusal of a pending device authorization: the
 // device's next poll is told access_denied (RFC 8628 §3.5) and the code is dead,
 // where closing the tab would leave it approvable by anyone holding it for the
-// rest of its life. It rides the same seam as the approval (login.go type=device),
+// rest of its life. It rides the same seam as the approval (login.go, type=device_deny),
 // so the session, the same-origin rule, the account the page showed and the
 // tenant boundary are the approval's by construction, and it answers refusals in
 // the approval's one opaque sentence.

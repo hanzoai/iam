@@ -55,9 +55,11 @@ type loginForm struct {
 	// UserCode is the RFC 8628 code the device displays, transcribed by the human
 	// approving it (type=device).
 	UserCode string `json:"userCode"`
-	// Deny, with type=device, refuses the device authorization instead of approving
-	// it (denyDevice).
-	Deny bool `json:"deny"`
+	// Deny is a refusal of the device authorization (denyDevice), set from the verb
+	// "device_deny" and from nothing else: it has no wire name, because a flag beside
+	// type "device" is read as an approval by an IAM that predates it, where an
+	// unknown verb is refused.
+	Deny bool `json:"-"`
 
 	// PKCE authorize passthrough (present when type=code).
 	ClientId            string `json:"clientId"`
@@ -86,6 +88,12 @@ type loginForm struct {
 	Challenge         string `json:"challenge"`
 }
 
+// typeDeviceDeny is the login verb that refuses a device authorization. It is a
+// verb of its own and never a flag on "device": a server that does not know a verb
+// refuses the request (nothing is signed in), where one that does not know a flag
+// approves.
+const typeDeviceDeny = "device_deny"
+
 // routeLogin registers POST /v1/iam/login.
 func routeLogin(r *zip.Group, db orm.DB) {
 	r.Raw(http.MethodPost, PathLogin, loginHandler(db))
@@ -104,6 +112,9 @@ func loginHandler(db orm.DB) zip.Handler {
 			return httpx.Err(c, "invalid request body")
 		}
 		adoptQuery(c, &f)
+		if f.Type == typeDeviceDeny {
+			f.Type, f.Deny = "device", true
+		}
 		ctx := c.Context()
 
 		// A post carrying no fresh credential but naming an outstanding challenge is

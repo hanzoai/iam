@@ -946,8 +946,9 @@ Only the origin is taken; the page is `/login/oauth/device[/<userCode>]` on it. 
 JSON endpoints do not move. Declared per app in the provision document
 (`signin:` -> upsert `signinUrl`, a pointer: omitted preserves, `""` clears), so it
 moves the app's hosted-login page too (`hostedLoginTarget` reads the same field).
-**Deny** is `POST /v1/iam/login {type:"device", userCode, deny:true}`, the approval's
-own seam (session, same-origin JSON via `sessions.Writer`, `loginHint`, tenant
+**Deny** is `POST /v1/iam/login {type:"device_deny", userCode}`, a verb of its own and
+never a flag on `device` (an older server ignores a flag and approves; it refuses an
+unknown verb), on the approval's own seam (session, same-origin JSON via `sessions.Writer`, `loginHint`, tenant
 boundary): the row is marked `Denied`, the device's next poll is `access_denied`
 once, and the code is dead (`expired_token`) after; an approve, a look-up or a second
 deny finds it spent (`pending`).

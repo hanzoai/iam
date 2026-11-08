@@ -183,7 +183,7 @@ func TestDeviceDeny_EndsTheRequest(t *testing.T) {
 		t.Fatalf("before the answer the device waits: %d %v", r.StatusCode, m)
 	}
 
-	req := fromPage(jsonReq("POST", PathLogin, map[string]any{"type": "device", "userCode": userCode, "deny": true}))
+	req := fromPage(jsonReq("POST", PathLogin, map[string]any{"type": "device_deny", "userCode": userCode}))
 	req.Header.Set("Cookie", cookie)
 	_, body := do(t, app, req)
 	if decode(t, body)["status"] != "ok" {
@@ -227,7 +227,7 @@ func TestDeviceDeny_NotToAnotherClient(t *testing.T) {
 	deviceCode, _ := out["device_code"].(string)
 	userCode, _ := out["user_code"].(string)
 
-	req := fromPage(jsonReq("POST", PathLogin, map[string]any{"type": "device", "userCode": userCode, "deny": true}))
+	req := fromPage(jsonReq("POST", PathLogin, map[string]any{"type": "device_deny", "userCode": userCode}))
 	req.Header.Set("Cookie", cookie)
 	do(t, app, req)
 
@@ -250,13 +250,13 @@ func TestDeviceDeny_HeldToTheApprovalsRules(t *testing.T) {
 	userCode := mintDeviceCode(t, app, "hanzo-cli")
 
 	// No session: the page's cue to sign in, and the code is untouched.
-	_, body := do(t, app, fromPage(jsonReq("POST", PathLogin, map[string]any{"type": "device", "userCode": userCode, "deny": true})))
+	_, body := do(t, app, fromPage(jsonReq("POST", PathLogin, map[string]any{"type": "device_deny", "userCode": userCode})))
 	if env := decode(t, body); env["code"] != CodeLoginRequired {
 		t.Fatalf("an anonymous deny must ask for a sign-in: %v", env)
 	}
 
 	// A page on another origin carrying the cookie cannot refuse a stranger's code.
-	forged := jsonReq("POST", PathLogin, map[string]any{"type": "device", "userCode": userCode, "deny": true})
+	forged := jsonReq("POST", PathLogin, map[string]any{"type": "device_deny", "userCode": userCode})
 	forged.Header.Set("Cookie", cookie)
 	forged.Header.Set("Sec-Fetch-Site", "same-site")
 	resp, _ := do(t, app, forged)
@@ -270,7 +270,7 @@ func TestDeviceDeny_HeldToTheApprovalsRules(t *testing.T) {
 	}
 
 	// An unknown code and a spent one read the same.
-	unknown := fromPage(jsonReq("POST", PathLogin, map[string]any{"type": "device", "userCode": "ZZZZZZZZ", "deny": true}))
+	unknown := fromPage(jsonReq("POST", PathLogin, map[string]any{"type": "device_deny", "userCode": "ZZZZZZZZ"}))
 	unknown.Header.Set("Cookie", cookie)
 	_, ub := do(t, app, unknown)
 	ue := decode(t, ub)
@@ -300,7 +300,7 @@ func TestDeviceDeny_TenantBoundary(t *testing.T) {
 	}
 	theirs := cookieKV(resp.Header.Get("Set-Cookie"))
 
-	req := fromPage(jsonReq("POST", PathLogin, map[string]any{"type": "device", "userCode": userCode, "deny": true}))
+	req := fromPage(jsonReq("POST", PathLogin, map[string]any{"type": "device_deny", "userCode": userCode}))
 	req.Header.Set("Cookie", theirs)
 	_, rb := do(t, app, req)
 	if env := decode(t, rb); env["status"] != "error" {
@@ -345,5 +345,26 @@ func TestDeviceInfo_SaysWhoseTheApplicationIs(t *testing.T) {
 		if data["platform"] != platform || data["organization"] != "hanzo" {
 			t.Errorf("%s: platform=%v organization=%v, want %v and hanzo", id, data["platform"], data["organization"], platform)
 		}
+	}
+}
+
+// A flag is not a verb. A body that says type "device" and carries `deny` is an
+// approval request like any other and the flag is nothing: the refusal exists under
+// its own type only, which an older server refuses instead of approving.
+func TestDeviceDeny_OnlyTheVerbRefuses(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "s3cret", redirectURIs: []string{testRedirect}})
+	seedDeviceApp(t, db, "hanzo-cli")
+	cookie := signIn(t, app, "hanzo-console")
+
+	_, out := requestDevice(t, app, "hanzo-cli", "openid")
+	deviceCode, _ := out["device_code"].(string)
+	userCode, _ := out["user_code"].(string)
+
+	req := fromPage(jsonReq("POST", PathLogin, map[string]any{"type": "device", "userCode": userCode, "deny": true}))
+	req.Header.Set("Cookie", cookie)
+	do(t, app, req)
+	if _, m := pollDevice(t, app, "hanzo-cli", deviceCode); m["error"] == "access_denied" {
+		t.Fatalf("a deny flag on type device refused: the verb is the only refusal")
 	}
 }
