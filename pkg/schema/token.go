@@ -71,6 +71,11 @@ type Token struct {
 	CodeExpireIn        int64  `json:"codeExpireIn" url:"-"`
 	Resource            string `json:"resource" url:"-"` // RFC 8707 resource indicator
 
+	// Denied records that the person a device authorization (UserCode set) was shown
+	// to refused it. The device's next poll is told access_denied once and the
+	// code is burned (device.go); until then it cannot be approved.
+	Denied bool `json:"denied,omitempty" url:"-"`
+
 	// RedirectUri binds the authorization code to the exact redirect URI of the
 	// authorize request (RFC 6749 §4.1.3): the token endpoint refuses a code
 	// redeemed with a different redirect_uri, closing code-injection across a

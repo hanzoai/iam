@@ -42,8 +42,9 @@ const (
 	// the approval page must show a human before they authorize it.
 	PathDeviceInfo = "/v1/iam/oauth/device/info"
 	// PathDeviceVerify is the user-facing device-approval PAGE (a route in the
-	// hosted SPA), not an API path: RFC 8628's verification_uri is somewhere a
-	// human opens and signs in, which the JSON token API can never be.
+	// hosted SPA, on the application's sign-in origin: verificationOrigin), not an
+	// API path: RFC 8628's verification_uri is somewhere a human opens and signs
+	// in, which the JSON token API can never be.
 	PathDeviceVerify = "/login/oauth/device"
 )
 

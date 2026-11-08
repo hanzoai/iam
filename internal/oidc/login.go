@@ -55,6 +55,9 @@ type loginForm struct {
 	// UserCode is the RFC 8628 code the device displays, transcribed by the human
 	// approving it (type=device).
 	UserCode string `json:"userCode"`
+	// Deny, with type=device, refuses the device authorization instead of approving
+	// it (denyDevice).
+	Deny bool `json:"deny"`
 
 	// PKCE authorize passthrough (present when type=code).
 	ClientId            string `json:"clientId"`
@@ -427,6 +430,9 @@ func grant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm, proved bool) e
 	// blessed capability — so the reserved-org confinement MintFor enforces (which
 	// binds a SuperAdmin to its own-org app) does NOT apply to it; it precedes it.
 	if f.Type == "device" {
+		if f.Deny {
+			return denyDevice(c, db, user, f.UserCode)
+		}
 		return approveDevice(c, db, user, f.UserCode)
 	}
 

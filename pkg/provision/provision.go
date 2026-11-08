@@ -253,6 +253,12 @@ type App struct {
 	// identifier-first address lookup. A POINTER so omitting it preserves the
 	// app's current setting.
 	SignUp *bool `yaml:"signUp"`
+	// Signin is where this app's people sign in when that is not the issuer: an
+	// absolute https URL on an origin the operator configured as a sign-in origin
+	// of the issuer (IAM_FEDERATION_ORIGIN_MAP). It moves the page a person opens
+	// to approve a device sign-in, and the hosted login of an authorize request,
+	// for this app alone. A POINTER so omitting it preserves what the app has.
+	Signin *string `yaml:"signin"`
 	// ExpireInHours and RefreshExpireInHours are this client's token lifetimes.
 	// Same names as the wire and the stored model, so one value has one name from
 	// document to registration.
@@ -313,6 +319,9 @@ type Client struct {
 	// identifier-first address lookup. Omitted when nil so the upsert preserves
 	// what the app has.
 	EnableSignUp *bool `json:"enableSignUp,omitempty"`
+	// SigninUrl is where this app's people sign in, when not at the issuer.
+	// Omitted when nil so the upsert preserves what the app has.
+	SigninUrl *string `json:"signinUrl,omitempty"`
 }
 
 // App types. A document that names anything else is rejected at Derive rather
@@ -489,6 +498,11 @@ func deriveApp(org Org, a App) (Client, error) {
 	if err := checkLifetimes(org, name, a); err != nil {
 		return Client{}, err
 	}
+	if a.Signin != nil {
+		if err := schema.CheckSigninUrl(*a.Signin); err != nil {
+			return Client{}, fmt.Errorf("provision: app %s/%s signin: %w", org.Name, name, err)
+		}
+	}
 
 	shared := a.IsShared
 	if shared == nil {
@@ -509,6 +523,7 @@ func deriveApp(org Org, a App) (Client, error) {
 		EnableCodeSignin:     a.CodeSignin,
 		IsShared:             shared,
 		EnableSignUp:         a.SignUp,
+		SigninUrl:            a.Signin,
 	}
 	if c.RedirectUris == nil && a.Type != TypeService {
 		return Client{}, fmt.Errorf("provision: app %s declares no hosts and type %q needs a redirect", id, a.Type)

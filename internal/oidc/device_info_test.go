@@ -71,6 +71,11 @@ func TestDeviceInfo_NamesTheCodesClient(t *testing.T) {
 	if s, _ := data["displayName"].(string); s == "" {
 		t.Fatal("device info must carry a human-readable name to display")
 	}
+	// And the person an approval would be made as, with the subject that pins it.
+	acct, _ := data["account"].(map[string]any)
+	if acct["email"] != "alice@hanzo.ai" || acct["name"] == "" || acct["sub"] == "" {
+		t.Fatalf("device info must name the account it would approve as: %v", acct)
+	}
 }
 
 // The user_code is 40 bits and is the one secret in this flow. An unauthenticated

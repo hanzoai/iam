@@ -929,6 +929,25 @@ for password and refresh); besides being unregistrable, that guaranteed renewal
 could never work, because a device_code is redeemable only by the client it was
 issued to and a refresh token was being presented under a different id.
 
+**Where the person opens the link** (`verificationOrigin`, device.go). The device
+response's `verification_uri` and `verification_uri_complete` are on the origin of
+the application's `signinUrl` when that origin is a sign-in origin the operator
+configured for the request's issuer (`IAM_FEDERATION_ORIGIN_MAP` values whose host
+resolves to the same issuer), else on the issuer. The application says, the
+operator decides: `signinUrl` is a field an organization writes for its own
+applications, so it can only select among configured origins, and an origin of
+another brand (a host the issuer map folds elsewhere) is refused exactly as the boot
+check refuses a map that would send one there. Only the origin is taken; the page is
+`/login/oauth/device[/<userCode>]` on it. Discovery, the issuer and the token and
+JSON endpoints do not move. Declared per app in the provision document
+(`signin:` -> upsert `signinUrl`, a pointer: omitted preserves, `""` clears), so it
+moves the app's hosted-login page too (`hostedLoginTarget` reads the same field).
+**Deny** is `POST /v1/iam/login {type:"device", userCode, deny:true}`, the approval's
+own seam (session, same-origin JSON via `sessions.Writer`, `loginHint`, tenant
+boundary): the row is marked `Denied`, the device's next poll is `access_denied`
+once, and the code is dead (`expired_token`) after; an approve, a look-up or a second
+deny finds it spent (`pending`).
+
 ## Workload grant — the cluster already vouches for the pod
 
 `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer` (RFC 7523,

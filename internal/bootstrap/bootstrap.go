@@ -210,6 +210,13 @@ type registration struct {
 	// email code, OAuth federation, wallet) and identifier-first address lookup.
 	// A POINTER so a reconcile that omits it preserves the stored setting.
 	EnableSignUp *bool `json:"enableSignUp"`
+	// SigninUrl is where this application's people sign in, when that is not the
+	// issuer: the origin of the page IAM sends them to for the approval of a
+	// device sign-in, and the hosted login of an authorize request. An absolute
+	// https URL, or "" to say the issuer. A POINTER so a reconcile that omits it
+	// preserves what the application has. IAM prints it only for an origin the
+	// operator configured as a sign-in origin of the issuer (oidc verificationOrigin).
+	SigninUrl *string `json:"signinUrl"`
 	// Auth is the `Authorization: Bearer <token>` header, the unified service
 	// token this surface authenticates on. `json:"-"` keeps it off the body and
 	// out of the query string, so the header is the only way to present it.
@@ -262,6 +269,12 @@ func upsertApplication(db orm.DB) zip.TypedHandler[registration, reply] {
 			return bad, nil
 		}
 
+		if in.SigninUrl != nil {
+			if err := schema.CheckSigninUrl(*in.SigninUrl); err != nil {
+				return refuse(400, "signinUrl: "+err.Error()), nil
+			}
+		}
+
 		existing, err := store.GetApplicationByName(ctx, db, "admin", in.Name)
 		if err != nil {
 			return refuse(500, "server_error"), nil
@@ -301,6 +314,9 @@ func upsertApplication(db orm.DB) zip.TypedHandler[registration, reply] {
 			}
 			if in.EnableSignUp != nil {
 				existing.EnableSignUp = *in.EnableSignUp
+			}
+			if in.SigninUrl != nil {
+				existing.SigninUrl = *in.SigninUrl
 			}
 			existing.ExpireInHours = ttl(in.ExpireInHours, existing.ExpireInHours)
 			existing.RefreshExpireInHours = ttl(in.RefreshExpireInHours, existing.RefreshExpireInHours)
@@ -349,6 +365,9 @@ func upsertApplication(db orm.DB) zip.TypedHandler[registration, reply] {
 			// from a default nobody wrote down.
 			a.EnableCodeSignin = in.EnableCodeSignin != nil && *in.EnableCodeSignin
 			a.EnableSignUp = in.EnableSignUp != nil && *in.EnableSignUp
+			if in.SigninUrl != nil {
+				a.SigninUrl = *in.SigninUrl
+			}
 			a.Model = model
 			a.SetId("admin/" + in.Name)
 			if err := a.CreateCtx(ctx); err != nil {
