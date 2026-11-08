@@ -348,23 +348,38 @@ func TestDeviceInfo_SaysWhoseTheApplicationIs(t *testing.T) {
 	}
 }
 
-// A flag is not a verb. A body that says type "device" and carries `deny` is an
-// approval request like any other and the flag is nothing: the refusal exists under
-// its own type only, which an older server refuses instead of approving.
-func TestDeviceDeny_OnlyTheVerbRefuses(t *testing.T) {
-	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "s3cret", redirectURIs: []string{testRedirect}})
-	seedDeviceApp(t, db, "hanzo-cli")
-	cookie := signIn(t, app, "hanzo-console")
+// The refusal is never read as an approval, whichever way it is spelled. The page's
+// first spelling was a `deny` flag beside type "device"; a tab or a cached bundle
+// still sends it, so it refuses, and the verb refuses. A body that says deny anywhere
+// signs nobody in.
+func TestDeviceDeny_NeverMintsForADenier(t *testing.T) {
+	for name, body := range map[string]map[string]any{
+		"the flag beside device":       {"type": "device", "deny": true},
+		"the verb":                     {"type": "device_deny"},
+		"the verb with the flag false": {"type": "device_deny", "deny": false},
+		"the verb with the flag true":  {"type": "device_deny", "deny": true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			app, db := newServer(t)
+			seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "s3cret", redirectURIs: []string{testRedirect}})
+			seedDeviceApp(t, db, "hanzo-cli")
+			cookie := signIn(t, app, "hanzo-console")
 
-	_, out := requestDevice(t, app, "hanzo-cli", "openid")
-	deviceCode, _ := out["device_code"].(string)
-	userCode, _ := out["user_code"].(string)
+			_, out := requestDevice(t, app, "hanzo-cli", "openid")
+			deviceCode, _ := out["device_code"].(string)
+			body["userCode"] = out["user_code"]
 
-	req := fromPage(jsonReq("POST", PathLogin, map[string]any{"type": "device", "userCode": userCode, "deny": true}))
-	req.Header.Set("Cookie", cookie)
-	do(t, app, req)
-	if _, m := pollDevice(t, app, "hanzo-cli", deviceCode); m["error"] == "access_denied" {
-		t.Fatalf("a deny flag on type device refused: the verb is the only refusal")
+			req := fromPage(jsonReq("POST", PathLogin, body))
+			req.Header.Set("Cookie", cookie)
+			do(t, app, req)
+
+			r, m := pollDevice(t, app, "hanzo-cli", deviceCode)
+			if m["access_token"] != nil || r.StatusCode == 200 {
+				t.Fatalf("a body that says deny minted a token for the denier: %v", m)
+			}
+			if m["error"] != "access_denied" {
+				t.Fatalf("the device must be told access_denied, got %v", m)
+			}
+		})
 	}
 }

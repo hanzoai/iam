@@ -55,11 +55,12 @@ type loginForm struct {
 	// UserCode is the RFC 8628 code the device displays, transcribed by the human
 	// approving it (type=device).
 	UserCode string `json:"userCode"`
-	// Deny is a refusal of the device authorization (denyDevice), set from the verb
-	// "device_deny" and from nothing else: it has no wire name, because a flag beside
-	// type "device" is read as an approval by an IAM that predates it, where an
-	// unknown verb is refused.
-	Deny bool `json:"-"`
+	// Deny refuses the device authorization instead of approving it (denyDevice).
+	// The verb "device_deny" is the refusal; the flag is read too, on type "device",
+	// because the approval page once sent `deny:true` beside it and a tab or a cached
+	// bundle still does. A body that says deny anywhere is a refusal and never an
+	// approval: ambiguity fails to the side that signs nobody in.
+	Deny bool `json:"deny"`
 
 	// PKCE authorize passthrough (present when type=code).
 	ClientId            string `json:"clientId"`
