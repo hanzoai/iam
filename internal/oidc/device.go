@@ -119,6 +119,12 @@ func routeDevice(r *zip.Group, db orm.DB) {
 type deviceInfo struct {
 	ClientId    string `json:"clientId"`
 	DisplayName string `json:"displayName"`
+	// Platform says the application is one the platform itself declares, and
+	// Organization whose it is otherwise. A name is the application's own word for
+	// itself, so a page that shows one must also say whether it is Hanzo's: a
+	// tenant can register an application and name it anything.
+	Platform     bool   `json:"platform"`
+	Organization string `json:"organization"`
 	// Account is the person the page is signed in as, which is who an approval
 	// binds the device to. The page shows it and returns Sub as the approval's
 	// loginHint, so the account approved is the one that was looked at and not
@@ -206,9 +212,11 @@ func deviceInfoHandler(db orm.DB) zip.Handler {
 			who = user.Name
 		}
 		return httpx.Ok(c, deviceInfo{
-			ClientId:    app.ClientId,
-			DisplayName: label,
-			Account:     deviceAccount{Sub: subjectOf(user), Name: who, Email: user.Email},
+			ClientId:     app.ClientId,
+			DisplayName:  label,
+			Platform:     app.Platform,
+			Organization: app.Organization,
+			Account:      deviceAccount{Sub: subjectOf(user), Name: who, Email: user.Email},
 		})
 	}
 }
@@ -490,9 +498,15 @@ func pending(row *schema.Token) bool {
 // Only an origin is taken from it. The path is the approval page's, never the
 // SigninUrl's, and the userinfo, query and fragment of a SigninUrl never reach a
 // link.
+//
+// Only an application the platform declares (schema.Application.Platform, which
+// only a SuperAdmin may set) is sent to the brand's own site. The approval page
+// shows the application's name, which its registrant chose, so a tenant's
+// application on the brand's host would borrow the brand's standing for a name of
+// its own choosing; it keeps the issuer's page, as every application did.
 func verificationOrigin(app *schema.Application, iss string) string {
 	iss = normalizeIssuer(iss)
-	if app == nil || strings.TrimSpace(app.SigninUrl) == "" {
+	if app == nil || !app.Platform || strings.TrimSpace(app.SigninUrl) == "" {
 		return iss
 	}
 	u, err := url.Parse(strings.TrimSpace(app.SigninUrl))

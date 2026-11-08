@@ -37,7 +37,7 @@ func TestDeviceOrigin_HanzoSignsInAtHanzoAi(t *testing.T) {
 	app, db := newServer(t)
 	installIssuerResolver(t, "https://hanzo.id", testIssuerMap)
 	installFederationResolver(t, `{"hanzo.ai":"https://hanzo.ai"}`)
-	seedApp(t, db, appOpts{clientID: "hanzo-cli", grants: deviceGrants, signin: "https://hanzo.ai/login"})
+	seedApp(t, db, appOpts{clientID: "hanzo-cli", platform: true, grants: deviceGrants, signin: "https://hanzo.ai/login"})
 
 	for _, host := range []string{"hanzo.id", "iam.hanzo.ai"} {
 		verify, complete, code := deviceLinks(t, app, host, "hanzo-cli")
@@ -56,7 +56,7 @@ func TestDeviceOrigin_TheIssuerStays(t *testing.T) {
 	app, db := newServer(t)
 	installIssuerResolver(t, "https://hanzo.id", testIssuerMap)
 	installFederationResolver(t, `{"hanzo.ai":"https://hanzo.ai"}`)
-	seedApp(t, db, appOpts{clientID: "hanzo-cli", grants: deviceGrants, signin: "https://hanzo.ai/login"})
+	seedApp(t, db, appOpts{clientID: "hanzo-cli", platform: true, grants: deviceGrants, signin: "https://hanzo.ai/login"})
 
 	req := formReqNoBody("GET", PathDiscovery)
 	_, body := do(t, app, req)
@@ -72,7 +72,7 @@ func TestDeviceOrigin_NoSigninUrlIsTheIssuer(t *testing.T) {
 	app, db := newServer(t)
 	installIssuerResolver(t, "https://hanzo.id", testIssuerMap)
 	installFederationResolver(t, `{"hanzo.ai":"https://hanzo.ai"}`)
-	seedApp(t, db, appOpts{clientID: "hanzo-cli", grants: deviceGrants})
+	seedApp(t, db, appOpts{clientID: "hanzo-cli", platform: true, grants: deviceGrants})
 
 	verify, complete, code := deviceLinks(t, app, "hanzo.id", "hanzo-cli")
 	if verify != "https://hanzo.id"+PathDeviceVerify || complete != verify+"/"+code {
@@ -103,7 +103,7 @@ func TestDeviceOrigin_OnlyAConfiguredOriginIsUsed(t *testing.T) {
 			app, db := newServer(t)
 			installIssuerResolver(t, "https://hanzo.id", testIssuerMap)
 			installFederationResolver(t, c.federate)
-			seedApp(t, db, appOpts{clientID: "hanzo-cli", grants: deviceGrants, signin: c.signin})
+			seedApp(t, db, appOpts{clientID: "hanzo-cli", platform: true, grants: deviceGrants, signin: c.signin})
 
 			verify, _, _ := deviceLinks(t, app, "hanzo.id", "hanzo-cli")
 			if verify != "https://hanzo.id"+PathDeviceVerify {
@@ -119,7 +119,7 @@ func TestDeviceOrigin_OnlyTheOriginIsTaken(t *testing.T) {
 	app, db := newServer(t)
 	installIssuerResolver(t, "https://hanzo.id", testIssuerMap)
 	installFederationResolver(t, `{"hanzo.ai":"https://hanzo.ai"}`)
-	seedApp(t, db, appOpts{clientID: "hanzo-cli", grants: deviceGrants, signin: "https://HANZO.ai:443/anything/else?next=https://evil.example#frag"})
+	seedApp(t, db, appOpts{clientID: "hanzo-cli", platform: true, grants: deviceGrants, signin: "https://HANZO.ai:443/anything/else?next=https://evil.example#frag"})
 
 	verify, complete, code := deviceLinks(t, app, "hanzo.id", "hanzo-cli")
 	if verify != "https://hanzo.ai"+PathDeviceVerify || complete != verify+"/"+code {
@@ -140,11 +140,11 @@ func TestDeviceOrigin_BrandsNeverCrossShow(t *testing.T) {
 	installIssuerResolver(t, "https://hanzo.id", issuers)
 	installFederationResolver(t, `{"hanzo.ai":"https://hanzo.ai","lux.network":"https://lux.network"}`)
 
-	seedApp(t, db, appOpts{clientID: "hanzo-cli", grants: deviceGrants, signin: "https://hanzo.ai/login"})
-	seedApp(t, db, appOpts{clientID: "lux-cli", grants: deviceGrants, signin: "https://lux.network/login"})
-	seedApp(t, db, appOpts{clientID: "hanzo-wrong", grants: deviceGrants, signin: "https://lux.network/login"})
-	seedApp(t, db, appOpts{clientID: "lux-wrong", grants: deviceGrants, signin: "https://hanzo.ai/login"})
-	seedApp(t, db, appOpts{clientID: "lux-plain", grants: deviceGrants})
+	seedApp(t, db, appOpts{clientID: "hanzo-cli", platform: true, grants: deviceGrants, signin: "https://hanzo.ai/login"})
+	seedApp(t, db, appOpts{clientID: "lux-cli", platform: true, grants: deviceGrants, signin: "https://lux.network/login"})
+	seedApp(t, db, appOpts{clientID: "hanzo-wrong", platform: true, grants: deviceGrants, signin: "https://lux.network/login"})
+	seedApp(t, db, appOpts{clientID: "lux-wrong", platform: true, grants: deviceGrants, signin: "https://hanzo.ai/login"})
+	seedApp(t, db, appOpts{clientID: "lux-plain", platform: true, grants: deviceGrants})
 
 	for _, c := range []struct{ host, client, want string }{
 		{"hanzo.id", "hanzo-cli", "https://hanzo.ai"},
@@ -308,5 +308,42 @@ func TestDeviceDeny_TenantBoundary(t *testing.T) {
 	}
 	if env := deviceInfoGet(t, app, userCode, mine); env["status"] != "ok" {
 		t.Fatalf("the code was lost to a stranger: %v", env)
+	}
+}
+
+// A name is the application's own word for itself and its registrant chose it, so
+// the brand's site is for the platform's applications alone. A tenant's application
+// that declares the same signinUrl, on an origin the operator did configure, keeps
+// the issuer's page.
+func TestDeviceOrigin_ATenantsApplicationKeepsTheIssuer(t *testing.T) {
+	app, db := newServer(t)
+	installIssuerResolver(t, "https://hanzo.id", testIssuerMap)
+	installFederationResolver(t, `{"hanzo.ai":"https://hanzo.ai"}`)
+	seedApp(t, db, appOpts{clientID: "acme-cli", grants: deviceGrants, signin: "https://hanzo.ai/login"})
+	seedApp(t, db, appOpts{clientID: "hanzo-cli", platform: true, grants: deviceGrants, signin: "https://hanzo.ai/login"})
+
+	if verify, _, _ := deviceLinks(t, app, "hanzo.id", "acme-cli"); verify != "https://hanzo.id"+PathDeviceVerify {
+		t.Fatalf("a tenant's application was sent to the brand's site: %q", verify)
+	}
+	if verify, _, _ := deviceLinks(t, app, "hanzo.id", "hanzo-cli"); verify != "https://hanzo.ai"+PathDeviceVerify {
+		t.Fatalf("the platform's application was not: %q", verify)
+	}
+}
+
+// The approval page says whose application is asking and whether it is Hanzo's.
+func TestDeviceInfo_SaysWhoseTheApplicationIs(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "s3cret", redirectURIs: []string{testRedirect}})
+	seedApp(t, db, appOpts{clientID: "hanzo-cli", platform: true, grants: deviceGrants})
+	seedApp(t, db, appOpts{clientID: "acme-cli", grants: deviceGrants})
+	seedUserInOrg(t, db, "hanzo", "alice", "alice@hanzo.ai", "pw")
+	cookie := signIn(t, app, "hanzo-console")
+
+	for id, platform := range map[string]bool{"hanzo-cli": true, "acme-cli": false} {
+		env := deviceInfoGet(t, app, mintDeviceCode(t, app, id), cookie)
+		data, _ := env["data"].(map[string]any)
+		if data["platform"] != platform || data["organization"] != "hanzo" {
+			t.Errorf("%s: platform=%v organization=%v, want %v and hanzo", id, data["platform"], data["organization"], platform)
+		}
 	}
 }

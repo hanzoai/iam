@@ -937,8 +937,12 @@ resolves to the same issuer), else on the issuer. The application says, the
 operator decides: `signinUrl` is a field an organization writes for its own
 applications, so it can only select among configured origins, and an origin of
 another brand (a host the issuer map folds elsewhere) is refused exactly as the boot
-check refuses a map that would send one there. Only the origin is taken; the page is
-`/login/oauth/device[/<userCode>]` on it. Discovery, the issuer and the token and
+check refuses a map that would send one there. Only an application the platform declares
+(`Application.Platform`, SuperAdmin-written) is sent there: the approval page shows the
+application's name, which its registrant chose, so a tenant's application keeps the
+issuer's page rather than borrow the brand's standing for a name of its own choosing
+(`device/info` also says `platform` and `organization`, so the page can say whose it is).
+Only the origin is taken; the page is `/login/oauth/device[/<userCode>]` on it. Discovery, the issuer and the token and
 JSON endpoints do not move. Declared per app in the provision document
 (`signin:` -> upsert `signinUrl`, a pointer: omitted preserves, `""` clears), so it
 moves the app's hosted-login page too (`hostedLoginTarget` reads the same field).
