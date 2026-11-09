@@ -217,6 +217,8 @@ func TestPublicRoutesNeedNoBearer(t *testing.T) {
 		{"POST", "/v1/iam/login"},
 		{"GET", "/v1/iam/oauth/authorize"},
 		{"POST", "/v1/iam/oauth/token"},
+		// An agent registers before it holds anything (WorkOS auth.md service_auth).
+		{"POST", "/v1/iam/oauth/agent/identity"},
 		{"GET", "/v1/iam/get-app-login"},
 		{"GET", "/v1/iam/auth/methods"},
 		{"POST", "/v1/iam/auth/identifier"},

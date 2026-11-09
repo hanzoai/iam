@@ -109,6 +109,11 @@ const (
 	// Object names the provider, the subject, the client and whether the account's
 	// address was verified before the link; never a credential.
 	ActionFederationLink = "federation-link"
+	// An agent registration a person approved becoming a service account in that
+	// person's org (internal/oidc agent.go): filed under the org, User the approver,
+	// Object the registration, the account and the client it came through. It is the
+	// record of who let a program act and spend in the org.
+	ActionAgentClaim = "agent-claim"
 )
 
 // PlatformWritten reports whether action names a record the platform writes
@@ -123,7 +128,7 @@ func PlatformWritten(action string) bool {
 		ActionAssumeOrg, ActionReleaseOrg, ActionListOrgs, ActionSuperAdmin, ActionWorkloadToken,
 		ActionInviteSend, ActionInviteAccept, ActionInviteRefused, ActionInviteSignupRefused,
 		ActionInviteCodeSent, ActionMembershipGrant, ActionMembershipRevoke, ActionImpersonate,
-		ActionDelegate, ActionAddress, ActionWalletSignup, ActionFederationLink:
+		ActionDelegate, ActionAddress, ActionWalletSignup, ActionFederationLink, ActionAgentClaim:
 		return true
 	}
 	return false

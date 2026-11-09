@@ -610,13 +610,24 @@ func namesRepository(claims *assertionClaims) bool {
 		who == claims.RepositoryOwner+"@"+claims.RepositoryOwnerID+"/"+name+"@"+claims.RepositoryID
 }
 
-// grantsSupported is the grant list discovery advertises. Every entry is
-// implemented AND reachable here: the workload grant appears only where a cluster
-// issuer is configured, because a deployment without one does not offer it and a
-// document that says otherwise sends clients at a grant that refuses them.
-func grantsSupported() []string {
+// grantsSupported is the grant list discovery advertises for the issuer iss. Every
+// entry is implemented AND reachable here: the workload grant appears only where a
+// cluster issuer is configured, because a deployment without one does not offer it
+// and a document that says otherwise sends clients at a grant that refuses them.
+// Agent registration (agent.go) is the same rule per issuer: where iss offers it,
+// the claim poll's grant, and jwt-bearer, which is how its assertion is exchanged
+// whether or not any cluster is configured.
+func grantsSupported(iss string) []string {
 	g := []string{"authorization_code", "refresh_token", "client_credentials", "password", grantTypeTokenExchange, deviceGrant}
+	bearer := false
 	if set, err := clusters(); err == nil && len(set) > 0 {
+		bearer = true
+	}
+	if agentOffered(iss) {
+		g = append(g, agentClaimGrant)
+		bearer = true
+	}
+	if bearer {
 		g = append(g, grantTypeAssertion)
 	}
 	return g

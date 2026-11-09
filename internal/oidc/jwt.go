@@ -422,7 +422,21 @@ func (s *Signer) SignID(app *schema.Application, id Identity, scope, nonce strin
 // signClaims is the single choke point that turns a claim set into a signed
 // compact JWS under this signer's fixed (method, key, kid).
 func (s *Signer) signClaims(claims Claims) (string, error) {
+	return s.signTyped(claims, "")
+}
+
+// signTyped signs claims under this signer's fixed (method, key, kid), with the
+// JOSE `typ` header set to typ when it is not empty. Only a token that is not a
+// Claims set takes a typ of its own: an agent's identity assertion (agent.go),
+// whose `oauth-id-jag+jwt` is what tells the jwt-bearer grant it is IAM's.
+func (s *Signer) signTyped(claims jwt.Claims, typ string) (string, error) {
+	if s == nil {
+		return "", errors.New("jwt: nil signer")
+	}
 	tok := jwt.NewWithClaims(s.method, claims)
+	if typ != "" {
+		tok.Header["typ"] = typ
+	}
 	if s.kid != "" {
 		tok.Header["kid"] = s.kid
 	}

@@ -125,6 +125,18 @@ func (b *budget) spend(key string, now time.Time) int {
 // within counts one event under key and reports whether it was inside the limit.
 func (b *budget) within(key string, now time.Time) bool { return b.spend(key, now) <= b.limit }
 
+// left is how long key's window has to run, for a Retry-After: zero when key holds
+// no window that is still open.
+func (b *budget) left(key string, now time.Time) time.Duration {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	t := b.seen[key]
+	if t == nil || now.After(t.until) {
+		return 0
+	}
+	return t.until.Sub(now)
+}
+
 // spent reports whether key is already over its limit, counting nothing.
 func (b *budget) spent(key string, now time.Time) bool {
 	b.mu.Lock()
@@ -139,11 +151,15 @@ var (
 	deviceMisses        = newBudget(deviceMissWindow, deviceMissesPerAccount)
 )
 
-// resetDeviceBudgets empties every counter, for a test that starts many.
+// resetDeviceBudgets empties every counter, for a test that starts many. The agent
+// registration's budgets (agent.go) are emptied with them: both kinds of request
+// share the approval page, and a test that starts many of either means all of them.
 func resetDeviceBudgets() {
 	deviceClientStarts = newBudget(time.Minute, deviceStartsPerClient)
 	deviceAddressStarts = newBudget(time.Minute, deviceStartsPerAddress)
 	deviceMisses = newBudget(deviceMissWindow, deviceMissesPerAccount)
+	agentAddressStarts = newBudget(agentStartWindow, agentStartsPerAddress)
+	agentHintStarts = newBudget(agentStartWindow, agentStartsPerHint)
 }
 
 // requesterOf is who the edge says is asking: the address it saw connect, and its

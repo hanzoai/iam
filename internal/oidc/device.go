@@ -142,6 +142,17 @@ type deviceInfo struct {
 	// loginHint, so the account approved is the one that was looked at and not
 	// whichever session another tab made the current one in between.
 	Account deviceAccount `json:"account"`
+	// Agent is set when the code is an agent registration rather than a device
+	// sign-in (agent.go): approving it makes a service account in Organization, the
+	// signed-in person's own org, for the program that registered as Registration.
+	// The page says so, because that is a different act from signing a device in.
+	Agent *agentRequest `json:"agent,omitempty"`
+}
+
+// agentRequest is what approving an agent registration does.
+type agentRequest struct {
+	Registration string `json:"registration"`
+	Organization string `json:"organization"`
 }
 
 // deviceRequest is where a device authorization was started.
@@ -218,7 +229,7 @@ func deviceInfoHandler(db orm.DB) zip.Handler {
 		if who == "" {
 			who = user.Name
 		}
-		return httpx.Ok(c, deviceInfo{
+		info := deviceInfo{
 			ClientId:     app.ClientId,
 			DisplayName:  label,
 			Platform:     app.Platform,
@@ -226,7 +237,11 @@ func deviceInfoHandler(db orm.DB) zip.Handler {
 			Requested:    deviceRequest{Ip: row.RequestIp, Country: row.RequestCountry, At: row.Requested},
 			Scope:        strings.Fields(row.Scope),
 			Account:      deviceAccount{Sub: subjectOf(user), Name: who, Email: user.Email},
-		})
+		}
+		if isAgent(row) {
+			info.Agent = &agentRequest{Registration: registrationOf(row), Organization: user.Owner}
+		}
+		return httpx.Ok(c, info)
 	}
 }
 
@@ -313,20 +328,7 @@ func deviceHandler(db orm.DB) zip.Handler {
 			return tokenError(c, 500, "server_error", "")
 		}
 
-		// Both URIs point at the SPA approval page a human opens, never at this
-		// JSON API. The complete form is a PATH segment because that is the route
-		// the page is registered on (/login/oauth/device/:userCode). The page is
-		// where the application says its people sign in (verificationOrigin), the
-		// issuer's own when it says nothing the operator has configured.
-		origin := verificationOrigin(app, iss)
-		verify := origin + PathDeviceVerify
-		// On the brand's own site the code rides the FRAGMENT: a fragment reaches no
-		// server, so the code is in no access log, no CDN's analytics and no Referer,
-		// which a path segment is in all three. The issuer's own SPA reads a path.
-		complete := verify + "/" + userCode
-		if origin != normalizeIssuer(iss) {
-			complete = verify + "#" + userCode
-		}
+		verify, complete := verificationURIs(app, iss, userCode)
 		return c.JSON(200, deviceResponse{
 			DeviceCode:              deviceCode,
 			UserCode:                userCode,
@@ -535,6 +537,11 @@ func denyDevice(c *zip.Ctx, db orm.DB, user *schema.User, userCode string) error
 // unknown code, a spent one, an expired one, one for a tenant you may not approve.
 // Each failure is a guess as far as this can tell, so it is counted against the
 // account (deviceMisses), and an account past its budget is refused whatever it asks.
+//
+// An agent registration rides this too, under its own rule (mayClaim): only the
+// account whose verified address the agent named, and only an admin of a tenant
+// home org. Any other account is refused in the same words as a code that is not
+// there, so the page reveals nothing about a registration it may not approve.
 func lookDevice(ctx context.Context, db orm.DB, user *schema.User, userCode string) (*schema.Token, *schema.Application) {
 	now := nowFunc()
 	who := subjectOf(user)
@@ -543,8 +550,10 @@ func lookDevice(ctx context.Context, db orm.DB, user *schema.User, userCode stri
 	}
 	row, err := store.GetTokenByUserCode(ctx, db, userCode)
 	if err == nil && pending(row) && row.Organization != "" {
-		if app, err := resolveTokenApp(ctx, db, row); err == nil && app != nil && mayApprove(user, row, app) {
-			return row, app
+		if app, err := resolveTokenApp(ctx, db, row); err == nil && app != nil {
+			if (isAgent(row) && mayClaim(user, row)) || (isDevice(row) && mayApprove(user, row, app)) {
+				return row, app
+			}
 		}
 	}
 	missed(who, now)
@@ -567,13 +576,35 @@ func sweepDevices(ctx context.Context, db orm.DB, now time.Time) {
 	}
 }
 
-// pending reports whether row is a device authorization still waiting for a
-// person: a device row, not redeemed, not approved, not refused and not expired.
-// Looking, approving and refusing each ask it, so the three can never disagree
-// about which codes are live.
+// pending reports whether row is a device authorization or an agent registration
+// still waiting for a person: not redeemed, not approved, not refused and not
+// expired. Looking, approving and refusing each ask it, so the three can never
+// disagree about which codes are live.
 func pending(row *schema.Token) bool {
-	return row != nil && isDevice(row) && !row.CodeIsUsed && row.User == "" && !row.Denied &&
+	return row != nil && asksPerson(row) && !row.CodeIsUsed && row.User == "" && !row.Denied &&
 		!expired(row.CodeExpireIn, nowFunc())
+}
+
+// verificationURIs are the two addresses a person is sent to with userCode, for a
+// code app issued under iss: the approval page, and the page with the code filled
+// in. Both point at the SPA page a human opens, never at the JSON API. The page is
+// where the application says its people sign in (verificationOrigin), the issuer's
+// own when it says nothing the operator has configured. The device grant and an
+// agent registration (agent.go) send a person to the same page, so they read it
+// here.
+func verificationURIs(app *schema.Application, iss, userCode string) (verify, complete string) {
+	origin := verificationOrigin(app, iss)
+	verify = origin + PathDeviceVerify
+	// The complete form is a PATH segment on the issuer's own SPA, because that is
+	// the route the page is registered on (/login/oauth/device/:userCode). On the
+	// brand's own site the code rides the FRAGMENT: a fragment reaches no server, so
+	// the code is in no access log, no CDN's analytics and no Referer, which a path
+	// segment is in all three.
+	complete = verify + "/" + userCode
+	if origin != normalizeIssuer(iss) {
+		complete = verify + "#" + userCode
+	}
+	return verify, complete
 }
 
 // verificationOrigin is the origin of the page a person opens to approve a
@@ -680,8 +711,15 @@ func deviceDead(c *zip.Ctx) error {
 // at the device grant, which verifies neither PKCE nor redirect_uri, and a
 // device code must never be redeemed at the authorization-code grant, which
 // would mint on a row no human has approved. The user_code IS the
-// discriminator — only a device authorization has one.
-func isDevice(tok *schema.Token) bool { return tok != nil && tok.UserCode != "" }
+// discriminator — only a row a person is asked to approve has one — and of those,
+// an agent registration (isAgent) is not a device authorization: its claim token is
+// never a device_code, so the device poll never redeems one.
+func isDevice(tok *schema.Token) bool { return asksPerson(tok) && !isAgent(tok) }
+
+// asksPerson reports whether a code row waits on a person typing its user_code at
+// the approval page: a device authorization or an agent registration. Neither is an
+// authorization code, and the approval page serves both.
+func asksPerson(tok *schema.Token) bool { return tok != nil && tok.UserCode != "" }
 
 // deviceClientMismatch reports whether clientID is NOT the client the device
 // authorization was issued to (RFC 8628 §3.4). Without this an approval for app

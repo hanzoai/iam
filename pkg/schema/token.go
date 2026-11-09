@@ -87,6 +87,11 @@ type Token struct {
 	Requested      int64  `json:"requested,omitempty" url:"-"`
 	Polled         int64  `json:"polled,omitempty" url:"-"`
 
+	// LoginHint is the address an agent registration (internal/oidc agent.go) named
+	// as the person it acts for, normalized. Only the account whose VERIFIED email is
+	// this address may approve the registration; empty on every other row.
+	LoginHint string `json:"loginHint,omitempty" url:"-"`
+
 	// RedirectUri binds the authorization code to the exact redirect URI of the
 	// authorize request (RFC 6749 §4.1.3): the token endpoint refuses a code
 	// redeemed with a different redirect_uri, closing code-injection across a

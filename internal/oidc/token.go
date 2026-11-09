@@ -148,9 +148,18 @@ func tokenHandler(db orm.DB) zip.Handler {
 		case grantTypeTokenExchange:
 			return tokenExchangeGrant(c, db)
 		case grantTypeAssertion:
+			// Two issuers of a jwt-bearer assertion: IAM itself, for an agent it
+			// registered (agent.go), and a cluster or CI that vouches for a workload.
+			// The assertion says which; anything that is not IAM's own agent
+			// assertion is the workload grant's, exactly as before.
+			if agentAssertion(c) {
+				return agentAssertionGrant(c, db)
+			}
 			return workloadGrant(c, db)
 		case deviceGrant:
 			return deviceCodeGrant(c, db)
+		case agentClaimGrant:
+			return agentClaim(c, db)
 		case "":
 			return tokenError(c, 400, "invalid_request", "grant_type is required")
 		default:
@@ -181,11 +190,11 @@ func authorizationCodeGrant(c *zip.Ctx, db orm.DB) error {
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}
-	// Unknown code, an app that vanished, or a row that is a DEVICE authorization
-	// rather than an authorization code — one opaque answer, no oracle. The kind
-	// check is load-bearing: a device row carries no PKCE challenge and no
+	// Unknown code, an app that vanished, or a row that is a DEVICE authorization or
+	// an agent registration rather than an authorization code — one opaque answer, no
+	// oracle. The kind check is load-bearing: neither carries a PKCE challenge or a
 	// redirect_uri, so redeeming one here would mint on a grant no human approved.
-	if app == nil || isDevice(tok) {
+	if app == nil || asksPerson(tok) {
 		return tokenError(c, 400, "invalid_grant", "invalid authorization code")
 	}
 	// Every answer to an impersonation code is a row, whichever check gives it.
