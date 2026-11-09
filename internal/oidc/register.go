@@ -38,12 +38,15 @@ const PathRegister = "/v1/iam/oauth/register"
 // EnvRegistration turns registration on for a deployment and says where its
 // clients live:
 //
-//	IAM_REGISTRATION={"organization":"hanzo","signinUrl":"https://hanzo.ai/login"}
+//	IAM_REGISTRATION={"organization":"hanzo","signinUrl":"https://hanzo.ai/login","providers":"hanzo-app"}
 //
 // organization owns every registered client and signs its tokens (cert-<org>).
 // signinUrl is the page a registered client's authorize request is handed to; it
 // is followed only where IAM signs people in (hostedLoginTarget), so it can name
-// the brand's own site and nothing else. Unset, the endpoint answers 404 and
+// the brand's own site and nothing else. providers names the application whose
+// social sign-in methods (Google, GitHub, ...) a registered client offers, so a
+// person who signs in that way on the brand's page can do so for a client too;
+// they sign people in and never up. Unset, the endpoint answers 404 and
 // discovery does not advertise it: a deployment opts in, it is never open by
 // default.
 const EnvRegistration = "IAM_REGISTRATION"
@@ -52,6 +55,7 @@ const EnvRegistration = "IAM_REGISTRATION"
 type registrar struct {
 	Organization string `json:"organization"`
 	SigninUrl    string `json:"signinUrl"`
+	Providers    string `json:"providers"`
 }
 
 // registration is the policy discovery advertises and the endpoint enforces. Nil
@@ -184,6 +188,10 @@ func registerHandler(db orm.DB, reg *registrar) zip.Handler {
 		}
 
 		ctx := c.Context()
+		if err := offerProviders(ctx, db, app, reg.Providers); err != nil {
+			slog.Error("iam: dynamic registration failed", "err", err)
+			return tokenError(c, http.StatusInternalServerError, "server_error", "")
+		}
 		client := httpx.Client(c.Header("CF-Connecting-IP"), c.Header("X-Forwarded-For"))
 		app, err = lodge(ctx, db, app, client)
 		var held *registerCapped
@@ -272,6 +280,30 @@ func newClient(reg *registrar, in clientMetadata) (*schema.Application, error) {
 		a.Scopes = append(a.Scopes, &schema.ScopeItem{Name: s})
 	}
 	return a, nil
+}
+
+// offerProviders gives a new client the sign-in methods of the application the
+// deployment names, as sign-in only: a client registered by anyone must not be a
+// way to create accounts. The template not being there leaves the client with the
+// password alone, and says so.
+func offerProviders(ctx context.Context, db orm.DB, a *schema.Application, template string) error {
+	if template == "" {
+		return nil
+	}
+	t, err := store.GetApplicationByClientId(ctx, db, template)
+	if err != nil {
+		return err
+	}
+	if t == nil {
+		slog.Warn("iam: dynamic registration: the providers application does not exist", "providers", template)
+		return nil
+	}
+	for _, p := range t.Providers {
+		if p != nil && p.CanSignIn {
+			a.Providers = append(a.Providers, &schema.ProviderItem{Owner: p.Owner, Name: p.Name, CanSignIn: true})
+		}
+	}
+	return nil
 }
 
 // redirectsOf validates the redirect URIs: https, or http on the loopback

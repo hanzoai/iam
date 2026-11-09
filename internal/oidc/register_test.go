@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
@@ -496,5 +497,65 @@ func TestRegister_ASessionNeverAnswersARegisteredClient(t *testing.T) {
 	_, body = do(t, app, req)
 	if decode(t, body)["status"] != "ok" {
 		t.Errorf("an operator's application lost single sign-on: %s", body)
+	}
+}
+
+// A person who signs in with Google or GitHub on the brand's page can do so for a
+// registered client: it offers the social sign-in methods of the application the
+// deployment names, as sign-in only. A client anyone can register must not be a way
+// to create accounts, so sign-up and unlink are off and a method that signs nobody
+// in (web3 here) is not copied.
+func TestRegister_OffersTheTemplatesSocialSigninNeverSignup(t *testing.T) {
+	t.Setenv(EnvRegistration, `{"organization":"hanzo","signinUrl":"https://hanzo.ai/login","providers":"hanzo-app"}`)
+	installIssuerResolver(t, "https://hanzo.id", testIssuerMap)
+	installFederationResolver(t, `{"hanzo.ai":"https://hanzo.ai"}`)
+	app, db := newServer(t)
+	t.Cleanup(func() { registration.Store(nil) })
+	seedRSACert(t, db, "cert-hanzo")
+	tmpl := seedApp(t, db, appOpts{clientID: "hanzo-app"})
+	tmpl.Providers = []*schema.ProviderItem{
+		{Owner: "admin", Name: "provider-github", CanSignIn: true, CanSignUp: true, CanUnlink: true},
+		{Owner: "admin", Name: "provider-google", CanSignIn: true, CanSignUp: true},
+		{Owner: "admin", Name: "provider-web3", CanSignIn: false, CanSignUp: true},
+	}
+	if err := tmpl.UpdateCtx(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	_, got := register(t, app, claudeCode())
+	a, err := orm.Get[schema.Application](db, "hanzo/"+got["client_id"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(a.Providers) != 2 {
+		t.Fatalf("providers = %+v, want github and google", a.Providers)
+	}
+	for _, p := range a.Providers {
+		if !p.CanSignIn || p.CanSignUp || p.CanUnlink || p.Owner != "admin" {
+			t.Errorf("%s offered as %+v: sign in only", p.Name, p)
+		}
+	}
+	if a.Providers[0].Name != "provider-github" || a.Providers[1].Name != "provider-google" {
+		t.Errorf("providers = %s, %s", a.Providers[0].Name, a.Providers[1].Name)
+	}
+}
+
+// Every way a code row is made holds a registered client to its registered scopes,
+// the federation mint included: MintCode is the one constructor.
+func TestRegister_MintCodeClampsToRegisteredScopes(t *testing.T) {
+	a := &schema.Application{Name: "mcp-x", Organization: "hanzo", Tags: []string{schema.TagDynamic},
+		Scopes: []*schema.ScopeItem{{Name: "openid"}, {Name: "email"}}}
+	row, err := MintCode(a, "hanzo/alice", "openid admin email kms:write email", "", "", "", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row.Scope != "openid email" {
+		t.Errorf("scope = %q, want openid email", row.Scope)
+	}
+
+	own := &schema.Application{Name: "console", Organization: "hanzo"}
+	row, err = MintCode(own, "hanzo/alice", "openid admin kms:write", "", "", "", time.Now())
+	if err != nil || row.Scope != "openid admin kms:write" {
+		t.Errorf("an operator's application lost its scope: %q %v", row.Scope, err)
 	}
 }

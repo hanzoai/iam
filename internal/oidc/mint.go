@@ -107,11 +107,6 @@ func MintFor(ctx context.Context, db orm.DB, app *schema.Application, userID str
 	if app.ClientSecret == "" && p.CodeChallenge == "" {
 		return "", errors.New("PKCE is required for public clients")
 	}
-	// A client that registered itself holds the scopes it registered and no others,
-	// whatever its authorize request names.
-	if app.Dynamic() {
-		p.Scope = registered(app, p.Scope)
-	}
 	code, err := MintCode(app, userID, p.Scope, p.CodeChallenge, method, p.Resource, nowFunc())
 	if err != nil {
 		return "", err

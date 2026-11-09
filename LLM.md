@@ -982,12 +982,14 @@ metadata, find this issuer, and register here before running the ordinary author
 flow with PKCE. Advertised as `registration_endpoint` in both discovery documents, and only
 where it is served.
 
-**Off unless the deployment says so**: `IAM_REGISTRATION={"organization":"hanzo","signinUrl":"https://hanzo.ai/login"}`.
+**Off unless the deployment says so**: `IAM_REGISTRATION={"organization":"hanzo","signinUrl":"https://hanzo.ai/login","providers":"hanzo-app"}`.
 Unset or unreadable, the route does not exist and discovery does not mention it. `organization`
 owns every registered client and signs its tokens (`cert-<org>`); `signinUrl` is where authorize
 hands the request, and it is followed only on an origin in `IAM_FEDERATION_ORIGIN_MAP` for the
 issuer. A registration is refused (503) where that is not so, because the client would land on
-the issuer's page instead of the brand's.
+the issuer's page instead of the brand's. `providers` names the application whose social sign-in
+methods (Google, GitHub, ...) a new client is given, copied as sign-in only (no sign-up, no
+unlink) so a person who signs in that way on the brand's page can do so for a client.
 
 - **What it registers**: a PUBLIC client (`token_endpoint_auth_method` answers `none` whatever
   was asked; the response says so), `authorization_code` + `refresh_token`, the scopes
@@ -1006,8 +1008,9 @@ the issuer's page instead of the brand's.
 - **Untrusted until a person says otherwise.** Nobody vetted it and the address it chose is
   where the code goes. So it is never answered from a session: authorize forces `prompt=login`
   (`prompt=none` is `interaction_required`) and the login resume refuses it, whichever door the
-  request came through (a link straight to the sign-in page never runs authorize). `MintFor`
-  clamps the grant's scope to what it registered. `DisplayName` is `<client_name> (<host>)`, the
+  request came through (a link straight to the sign-in page never runs authorize). `MintCode`
+  (the one constructor of a code row, so the federation mint too) clamps the grant's scope to
+  what it registered. `DisplayName` is `<client_name> (<host>)`, the
   host its code returns to. SuperAdmin cannot authorize one (reserved-org confinement).
 - **Not built**: RFC 7592 client management (no registration access token, no delete over the
   wire; delete a row with the applications API), a consent screen (the sign-in is the consent, and
