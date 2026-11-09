@@ -104,7 +104,12 @@ func TestCapRefusesTheCreationPastTheLimit(t *testing.T) {
 		t.Fatalf("after 3 creations: %+v", before)
 	}
 
-	_, err := create(db, in, c, "203.0.113.7", 3, now)
+	// The refusal is asked at a clock read AFTER the rows were written, as a
+	// request's is. The ledger stamps a row with the clock it was written at, to
+	// the second, so a `now` read before the writes can sit a second behind the
+	// oldest row whenever a second turns between them, and the wait then reads
+	// longer than the window plus the stamp's second it is bounded by.
+	_, err := create(db, in, c, "203.0.113.7", 3, time.Now().UTC())
 	e := refusedBy(t, err, "ip", 3)
 	if e.window != time.Hour || e.retry <= 0 || e.retry > time.Hour+time.Second {
 		t.Fatalf("window %v retry %v, want 1h and a wait inside it", e.window, e.retry)
