@@ -158,18 +158,7 @@ func create(db orm.DB) zip.Handler {
 			return httpx.Err(c, "a user named "+name+" already exists in organization "+in.Organization)
 		}
 
-		sa := orm.New[schema.User](db)
-		sa.Owner, sa.Name = in.Organization, name
-		sa.Type, sa.DisplayName, sa.Tag = serviceAccount, name, in.AgentRef
-		// Subject is the (owner,name) natural key, NOT a minted UUID — a service account
-		// is a machine identity whose sub is its stable owner/name (the M2M principal),
-		// so this bypasses the canonical users.Create path and diverges from the "sub is
-		// always a UUID" invariant (F-A1). It is NOT an impersonation vector: owner is the
-		// caller's authorized org and name is canonicalized server-side with no client Id,
-		// and store.GetUserById fails closed on an empty/duplicate Id. Minting a UUID here
-		// would change the M2M subject shape, so it is deferred to a deliberate migration
-		// rather than folded into this security rework.
-		sa.SetId(in.Organization + "/" + name)
+		sa := account(db, in.Organization, name, in.AgentRef)
 		key, secret, err := mint(ctx, db, sa)
 		if err != nil {
 			return httpx.Err(c, err.Error())
@@ -182,6 +171,66 @@ func create(db orm.DB) zip.Handler {
 			AccessKey: key, AccessSecret: secret,
 		})
 	}
+}
+
+// account is the row a service account IS: a user row of Type serviceAccount in
+// org, named name, carrying ref (the agent record it embodies) as its Tag. Not yet
+// written. create and Enroll both build it here, so an account a person made and one
+// an approved agent registration made are the same shape.
+func account(db orm.DB, org, name, ref string) *schema.User {
+	sa := orm.New[schema.User](db)
+	sa.Owner, sa.Name = org, name
+	sa.Type, sa.DisplayName, sa.Tag = serviceAccount, name, ref
+	// Subject is the (owner,name) natural key, NOT a minted UUID — a service account
+	// is a machine identity whose sub is its stable owner/name (the M2M principal),
+	// so this bypasses the canonical users.Create path and diverges from the "sub is
+	// always a UUID" invariant (F-A1). It is NOT an impersonation vector: owner is the
+	// caller's authorized org and name is canonicalized server-side with no client Id,
+	// and store.GetUserById fails closed on an empty/duplicate Id. Minting a UUID here
+	// would change the M2M subject shape, so it is deferred to a deliberate migration
+	// rather than folded into this security rework.
+	sa.SetId(org + "/" + name)
+	return sa
+}
+
+// ErrTaken is an Enroll whose name already names a principal in the org.
+var ErrTaken = errors.New("serviceaccounts: the name is taken in this organization")
+
+// MayAdminister reports whether p may create, rotate and revoke the service
+// accounts of org: the gate every credential mutation here applies (admin). A
+// caller that creates an account on a person's behalf asks it of that person, so
+// it can make nothing the person could not have made here.
+func MayAdminister(p *principal.Principal, org string) bool { return admin(p, org) }
+
+// Enroll files a service account in org, named by the handle name (bare or already
+// `<org>-` prefixed, as create takes it) with ref as its Tag, and mints it NO key:
+// it is for an agent a person approved (internal/oidc agent.go), whose credential
+// is the token IAM signs for it rather than an sk- secret. The caller has already
+// decided that someone allowed to administer org (MayAdminister) asked for it.
+//
+// Refused, with nothing written: a name that is not a valid handle, an org that is
+// not one or is reserved, and a name any principal of org already holds (ErrTaken).
+func Enroll(ctx context.Context, db orm.DB, org, name, ref string) (*schema.User, error) {
+	if err := schema.OrgName(org); err != nil {
+		return nil, err
+	}
+	if policy.IsReservedOrg(org) {
+		return nil, errors.New("serviceaccounts: " + org + " is not a tenant")
+	}
+	full := canonical(org, name)
+	if full == "" {
+		return nil, errors.New("serviceaccounts: " + name + " is not a usable name")
+	}
+	if u, err := find(ctx, db, org, full); err != nil {
+		return nil, err
+	} else if u != nil {
+		return nil, ErrTaken
+	}
+	sa := account(db, org, full, ref)
+	if err := sa.CreateCtx(ctx); err != nil {
+		return nil, err
+	}
+	return sa, nil
 }
 
 // list returns your organization's service accounts — what each is called and

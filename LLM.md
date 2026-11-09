@@ -76,7 +76,8 @@ a shared binary.
 `/v1/iam/oauth/{authorize,token,introspect,revoke,userinfo,logout,callback}` ·
 `/v1/iam/oauth/device` + `/v1/iam/oauth/device/info` (RFC 8628; `info` names the
 client a pending `user_code` belongs to, session-gated, code in the BODY because
-a request line reaches access logs) · `/v1/iam/scim/v2/Users`. PKCE `S256` always; `client_id` = `<org>-<app>`.
+a request line reaches access logs) · `/v1/iam/oauth/agent/identity` (WorkOS auth.md
+`service_auth`, "Agent registration" below) · `/v1/iam/scim/v2/Users`. PKCE `S256` always; `client_id` = `<org>-<app>`.
 Authorize bounds every parameter it reads (`paramLimits`: state 1 KiB, nonce 512 B,
 scope, resource and redirect_uri 2 KiB) and refuses one past its bound in place.
 Brands set `serverUrl`: hanzo→iam.hanzo.ai, lux→lux.id, zoo→zoo.id,
@@ -973,6 +974,81 @@ reaches no server, log, Referer or CDN analytics; the issuer's own SPA keeps the
 `signinUrl` is validated on create and update (`schema.CheckSigninUrl`) and authorize
 follows it only to an origin IAM signs people in at (`hostedLoginTarget`), else the default
 hosted login.
+
+## Agent registration — an agent names its person, and becomes a service account in their org
+
+WorkOS's auth.md profile (github.com/workos/auth.md), `service_auth` ONLY
+(`internal/oidc/agent.go`). Cloudflare's Agent Readiness scan reads the AS metadata for
+an `agent_auth` block; this is what puts one there, for an issuer configured to offer it.
+
+    POST /v1/iam/oauth/agent/identity   {"type":"service_auth","login_hint":"ada@acme.com"}
+      → registration_id reg_…, claim_token clm_… (once; the row holds its SHA-256),
+        claim {user_code, verification_uri(_complete), expires_in 600, interval 5}
+    person: /login/oauth/device, signed in, types the code   (POST /v1/iam/login type=device)
+    POST /v1/iam/oauth/token  grant_type=urn:workos:agent-auth:grant-type:claim  claim_token=…
+      → authorization_pending | slow_down | access_denied | expired_token, then once:
+        access_token (1h), identity_assertion (typ oauth-id-jag+jwt, 7 days), no refresh
+    POST /v1/iam/oauth/token  grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer  assertion=…
+      → a fresh access token, for as long as the assertion lives and the account exists
+
+**A registration is a device row with another key.** The same `schema.Token` row (Code,
+UserCode, `store.WithToken` for every decision, the same sweep and the same approval page),
+marked by its NAME (`ag-<registration id>`): `isDevice` is false for it, so the device poll
+never redeems a claim token's row and the claim poll never redeems a device row
+(`isAgent`), and `asksPerson` keeps both out of the authorization-code grant. The row adds
+`LoginHint`. Device info answers `agent: {registration, organization}` so the page can say
+what approving does.
+
+**Who approves** (`mayClaim`, asked at the page AND again at the claim): the account whose
+VERIFIED email is the login_hint (case-insensitive), not a machine, home org not reserved,
+and allowed to create a service account there — `serviceaccounts.MayAdminister`, the gate
+`POST /v1/iam/service-accounts` applies, so approving makes nothing the person could not
+make there. Anyone else gets the device page's one opaque refusal, counted against their
+miss budget like any wrong code.
+
+**What the claim makes**, once (the burn is under the row lock): a service account in the
+APPROVER's home org (`serviceaccounts.Enroll`: the row `create` writes, no sk- key), named
+`<org>-agent-<first 8 of the registration>`, Tag = the registration id; the row's User
+becomes that account; an `agent-claim` audit row (PlatformWritten) names the approver. The
+access token is the account's user token (`identityOf` + `SignUserToken`, owner and
+organization = the account's org), so a resource server reads a principal of that org whose
+`billing_account` is the org pool — cloud bills it to the org. `azp`/`aud` = the agent
+application. The assertion's `sub` is the registration and it carries no tokenType, so no
+IAM verifier takes it as a bearer.
+
+**Revoking** is deleting the account (`DELETE /v1/iam/service-accounts/:name`): every
+exchange re-reads the registration and the account (exists, service-account type, Tag =
+registration), so the assertion is dead at once. Access tokens already minted live out their
+hour, as any token does.
+
+**jwt-bearer is shared with the workload grant.** `agentAssertion` reads the assertion
+unverified: `typ` oauth-id-jag+jwt AND `iss` = this request's issuer goes to the agent path;
+anything else goes to `workloadGrant` untouched. Discovery lists jwt-bearer wherever either
+can be exchanged.
+
+**Configured per issuer, both or neither** (judged at boot, `server.RequireIssuer` →
+`CheckAgentAuth`):
+
+    IAM_AGENT_SKILL_MAP  {"hanzo.id":"https://hanzo.ai/auth.md"}   issuer HOST → its auth.md
+    IAM_AGENT_CLIENT     hanzo-agents                              the app agents register through
+
+An issuer with no entry advertises no `agent_auth`, no claim grant, and answers
+`service_auth_not_enabled`. The application must be admin-owned, declare
+`urn:workos:agent-auth:grant-type:claim`, serve a tenant, and NOT be Platform: a Platform
+application's bearer passes `PlatformBearer` (accept an invitation, start a provider link),
+and an agent's token is issued to this application. Withdrawing the grant ends every claim
+and exchange through it.
+
+**Budgets** (in-process, as the device's): 20 registrations an hour per address, 6 per
+login_hint; past either, 429 `rate_limited` with Retry-After.
+
+**Deliberately not implemented, and not advertised:** `anonymous` (`anonymous_not_enabled`:
+a principal nobody vouches for, spending nobody's money), `identity_assertion`
+(`issuer_not_enabled`: there is no trust list of agent providers), `events_endpoint` (only
+identity_assertion has an upstream to hear from), `claim_endpoint` (anonymous only; the
+re-ceremony it would give service_auth after an expired code is a fresh registration here).
+The user_code is the device grant's 8-symbol code, stored as the device's is, not the
+profile's 6 digits: the page normalizes to that alphabet, and 0/1 do not survive it.
 
 ## Dynamic client registration — how an MCP client gets a client_id (RFC 7591)
 

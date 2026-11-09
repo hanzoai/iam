@@ -46,6 +46,10 @@ const (
 	// API path: RFC 8628's verification_uri is somewhere a human opens and signs
 	// in, which the JSON token API can never be.
 	PathDeviceVerify = "/login/oauth/device"
+	// PathAgentIdentity is where an agent registers to act for a person (WorkOS
+	// auth.md `agent_auth.identity_endpoint`, agent.go). Under the OAuth subtree
+	// because it is a protocol endpoint named by that profile, like token or device.
+	PathAgentIdentity = "/v1/iam/oauth/agent/identity"
 )
 
 // CodeLoginRequired is the STABLE machine-readable reason for "this needs a
@@ -152,6 +156,11 @@ func Route(r *zip.Group, db orm.DB) {
 	// the approval rides the login endpoint, both already public above.
 	routeDevice(r.Group(""), db)
 
+	// Agent registration (WorkOS auth.md, service_auth only): an agent names the
+	// person it acts for, that person approves on the device page above, and the
+	// agent's poll and its later exchanges ride the token endpoint (agent.go).
+	routeAgent(r.Group(""), db)
+
 	// The confidential-client "act on behalf of a user" primitive (the console +
 	// keyless-AI proxies mint their forwarded bearer here). Authenticates the
 	// client itself, so it is not Bearer-gated.
@@ -196,7 +205,7 @@ func Discovery(c *zip.Ctx) error {
 		"jwks_uri":                      iss + PathJWKS,
 		"response_types_supported":      []string{"code"},
 		"response_modes_supported":      []string{"query", "fragment", "form_post"},
-		"grant_types_supported":         grantsSupported(),
+		"grant_types_supported":         grantsSupported(iss),
 		// The sign-in modes a client may ask for. Advertised because a relying
 		// party CANNOT discover them by trying: a server that ignores prompt=none
 		// answers with a login page, which to the client is indistinguishable from
@@ -230,6 +239,11 @@ func Discovery(c *zip.Ctx) error {
 	// a client_id there, and a 404 would be its answer.
 	if registration.Load() != nil {
 		doc["registration_endpoint"] = iss + PathRegister
+	}
+	// The auth.md bootstrap block, only where this issuer offers agent registration
+	// and only what is implemented (agentAuthMetadata).
+	if block := agentAuthMetadata(iss); block != nil {
+		doc["agent_auth"] = block
 	}
 	return c.JSON(200, doc)
 }

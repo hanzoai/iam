@@ -178,12 +178,20 @@ func Seed(ctx context.Context, db orm.DB, initDataPath string) (*seed.Summary, e
 // is refused; each is an error here and nothing stands in for it. A process that
 // skips this has no issuer at all: every mint, discovery document and sign-in
 // answers an error rather than naming some fixed brand's issuer.
+//
+// The agent registration config (IAM_AGENT_SKILL_MAP, IAM_AGENT_CLIENT) is judged
+// last, against the issuers just installed: a skill keyed by a host no issuer has,
+// or a map with no client to register through, is half a configuration and is
+// refused here rather than advertised.
 func RequireIssuer() error {
 	if err := oidc.InitIssuerResolver(); err != nil {
 		return fmt.Errorf("issuer: %w", err)
 	}
 	if err := oidc.InitFederationResolver(); err != nil {
 		return fmt.Errorf("sign-in origins: %w", err)
+	}
+	if err := oidc.CheckAgentAuth(); err != nil {
+		return fmt.Errorf("agent registration: %w", err)
 	}
 	return nil
 }
