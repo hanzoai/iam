@@ -132,6 +132,17 @@ func authorizeHandler(db orm.DB) zip.Handler {
 		}
 
 		p := parsePrompt(q.prompt)
+		// A client that registered itself was vetted by nobody, and an address it
+		// chose is where the code goes. A session answering for it silently would let
+		// a link anyone can send hand that code to whoever registered the address, so
+		// it is never answered from a session: the person types their credential for
+		// it, and prompt=none has nothing to ask (RFC 6749 §10.6).
+		if app.Dynamic() {
+			if p.none {
+				return authorizeErrorRedirect(c, q, errInteractionRequired, "this client needs the person to sign in")
+			}
+			p.login = true
+		}
 		if p.combined {
 			return authorizeErrorRedirect(c, q, "invalid_request", "prompt=none must not be combined with other values")
 		}

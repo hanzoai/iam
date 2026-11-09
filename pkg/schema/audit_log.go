@@ -109,6 +109,11 @@ const (
 	// Object names the provider, the subject, the client and whether the account's
 	// address was verified before the link; never a credential.
 	ActionFederationLink = "federation-link"
+	// A client registered itself at the dynamic registration endpoint (RFC 7591),
+	// filed under the organization that now holds it with the client address
+	// (ClientIp) and its network (Object). It is the ledger the registration cap
+	// counts, which is why no request may create, alter or remove one.
+	ActionRegisterClient = "register-client"
 )
 
 // PlatformWritten reports whether action names a record the platform writes
@@ -123,7 +128,7 @@ func PlatformWritten(action string) bool {
 		ActionAssumeOrg, ActionReleaseOrg, ActionListOrgs, ActionSuperAdmin, ActionWorkloadToken,
 		ActionInviteSend, ActionInviteAccept, ActionInviteRefused, ActionInviteSignupRefused,
 		ActionInviteCodeSent, ActionMembershipGrant, ActionMembershipRevoke, ActionImpersonate,
-		ActionDelegate, ActionAddress, ActionWalletSignup, ActionFederationLink:
+		ActionDelegate, ActionAddress, ActionWalletSignup, ActionFederationLink, ActionRegisterClient:
 		return true
 	}
 	return false

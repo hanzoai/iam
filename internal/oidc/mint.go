@@ -6,6 +6,7 @@ package oidc
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 
 	policy "github.com/hanzoai/authz"
@@ -106,6 +107,11 @@ func MintFor(ctx context.Context, db orm.DB, app *schema.Application, userID str
 	if app.ClientSecret == "" && p.CodeChallenge == "" {
 		return "", errors.New("PKCE is required for public clients")
 	}
+	// A client that registered itself holds the scopes it registered and no others,
+	// whatever its authorize request names.
+	if app.Dynamic() {
+		p.Scope = registered(app, p.Scope)
+	}
 	code, err := MintCode(app, userID, p.Scope, p.CodeChallenge, method, p.Resource, nowFunc())
 	if err != nil {
 		return "", err
@@ -133,4 +139,18 @@ func ResolveApp(ctx context.Context, db orm.DB, clientId, name string) (*schema.
 		return store.GetApplicationByName(ctx, db, "admin", name)
 	}
 	return nil, nil
+}
+
+// registered is the part of scope the application registered for, in the order
+// asked and without repeats.
+func registered(app *schema.Application, scope string) string {
+	var out []string
+	for _, s := range strings.Fields(scope) {
+		for _, have := range app.Scopes {
+			if have != nil && have.Name == s && !slices.Contains(out, s) {
+				out = append(out, s)
+			}
+		}
+	}
+	return strings.Join(out, " ")
 }

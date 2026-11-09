@@ -134,6 +134,7 @@ var browserPaths = map[string]credential{
 	"/.well-known/jwks":                              bearer,
 	"/v1/iam/.well-known/jwks":                       bearer,
 	"/v1/iam/oauth/token":                            bearer,
+	"/v1/iam/oauth/register":                         bearer,
 	"/v1/iam/oauth/userinfo":                         bearer,
 
 	// The account object an authenticated SPA reads about ITSELF. It ALSO answers

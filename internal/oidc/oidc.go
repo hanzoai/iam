@@ -156,6 +156,10 @@ func Route(r *zip.Group, db orm.DB) {
 	// keyless-AI proxies mint their forwarded bearer here). Authenticates the
 	// client itself, so it is not Bearer-gated.
 	routeIssueToken(r.Group(""), db)
+
+	// RFC 7591 dynamic client registration, for a deployment that turned it on
+	// (IAM_REGISTRATION): how an MCP client that holds no client_id gets one.
+	routeRegister(r.Group(""), db)
 }
 
 // Discovery returns the OpenID Connect discovery document — the one URL you
@@ -180,7 +184,7 @@ func Discovery(c *zip.Ctx) error {
 	// when a provider button is pressed, so a cached copy takes a round trip off
 	// every press.
 	c.SetHeader("Cache-Control", "public, max-age=3600")
-	return c.JSON(200, map[string]any{
+	doc := map[string]any{
 		"issuer":                        iss,
 		"authorization_endpoint":        iss + PathAuthorize,
 		"token_endpoint":                iss + PathToken,
@@ -221,5 +225,11 @@ func Discovery(c *zip.Ctx) error {
 			// proved control of, and the identifier derived from `sub`.
 			"wallets", "did",
 		},
-	})
+	}
+	// Advertised only where the endpoint is served: a client that reads it asks for
+	// a client_id there, and a 404 would be its answer.
+	if registration.Load() != nil {
+		doc["registration_endpoint"] = iss + PathRegister
+	}
+	return c.JSON(200, doc)
 }
