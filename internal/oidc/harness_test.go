@@ -60,6 +60,8 @@ type appOpts struct {
 	codeSignin   bool     // EnableCodeSignin → the app allows sign-in by emailed/texted code
 	orgChoice    string   // OrgChoiceMode → "" none, "create" = self-serve org creation
 	grants       []string // declared OAuth grants; a grant absent here is refused
+	signin       string   // SigninUrl → where the application says its people sign in
+	platform     bool     // one the platform itself declares, not a tenant's registration
 }
 
 // tctx is the background context used by the test seed helpers.
@@ -111,6 +113,8 @@ func seedApp(t *testing.T, db orm.DB, o appOpts) *schema.Application {
 	a.IsShared = o.shared
 	a.OrgChoiceMode = o.orgChoice
 	a.GrantTypes = o.grants
+	a.SigninUrl = o.signin
+	a.Platform = o.platform
 	a.SetId("admin/" + o.clientID)
 	if err := a.CreateCtx(context.Background()); err != nil {
 		t.Fatalf("seed app: %v", err)

@@ -55,6 +55,12 @@ type loginForm struct {
 	// UserCode is the RFC 8628 code the device displays, transcribed by the human
 	// approving it (type=device).
 	UserCode string `json:"userCode"`
+	// Deny refuses the device authorization instead of approving it (denyDevice).
+	// The verb "device_deny" is the refusal; the flag is read too, on type "device",
+	// because the approval page once sent `deny:true` beside it and a tab or a cached
+	// bundle still does. A body that says deny anywhere is a refusal and never an
+	// approval: ambiguity fails to the side that signs nobody in.
+	Deny bool `json:"deny"`
 
 	// PKCE authorize passthrough (present when type=code).
 	ClientId            string `json:"clientId"`
@@ -65,6 +71,13 @@ type loginForm struct {
 	CodeChallenge       string `json:"codeChallenge"`
 	CodeChallengeMethod string `json:"codeChallengeMethod"`
 	Resource            string `json:"resource"`
+	// Prompt is the authorize request's OIDC `prompt`, and LoginHint the account it
+	// is for — the subject a page's account chooser picked, or the client's own
+	// login_hint. Both are read only by the session branch: a request that asked for
+	// a fresh credential (login) or for the person to choose (select_account) is
+	// never answered from a session nobody named.
+	Prompt    string `json:"prompt"`
+	LoginHint string `json:"loginHint"`
 
 	// The second factor (present on the finishing request). Challenge names the
 	// outstanding ceremony; a browser returns it in the cookie the gate set and
@@ -75,6 +88,12 @@ type loginForm struct {
 	EnableMfaRemember bool   `json:"enableMfaRemember"`
 	Challenge         string `json:"challenge"`
 }
+
+// typeDeviceDeny is the login verb that refuses a device authorization. It is a
+// verb of its own and never a flag on "device": a server that does not know a verb
+// refuses the request (nothing is signed in), where one that does not know a flag
+// approves.
+const typeDeviceDeny = "device_deny"
 
 // routeLogin registers POST /v1/iam/login.
 func routeLogin(r *zip.Group, db orm.DB) {
@@ -94,6 +113,9 @@ func loginHandler(db orm.DB) zip.Handler {
 			return httpx.Err(c, "invalid request body")
 		}
 		adoptQuery(c, &f)
+		if f.Type == typeDeviceDeny {
+			f.Type, f.Deny = "device", true
+		}
 		ctx := c.Context()
 
 		// A post carrying no fresh credential but naming an outstanding challenge is
@@ -168,14 +190,51 @@ func loginHandler(db orm.DB) zip.Handler {
 					return httpx.Fail(c, http.StatusForbidden, err.Error(), "")
 				}
 				if sc != nil {
-					var app *schema.Application
-					if f.Type == "code" {
-						if app, err = ResolveApp(ctx, db, f.ClientId, f.Application); err != nil {
-							return httpx.Err(c, err.Error())
+					if f.Type == "device" {
+						// The approval is for the account the page showed: the one its
+						// loginHint names, else the current one. A hint naming nobody
+						// signed in here approves nothing, so an account switched in
+						// another tab between showing and approving is not the one bound.
+						user := sessionUser(ctx, db, sc)
+						if f.LoginHint != "" {
+							_, user, _ = signedIn(c, db, nil, f.LoginHint, "")
 						}
+						if user != nil {
+							return resumeGrant(c, db, user, f)
+						}
+						return httpx.ErrCode(c, "please sign in first", CodeLoginRequired)
 					}
-					if _, user := signedIn(c, db, app, "", ""); user != nil {
-						return loginGrant(c, db, user, f)
+					app, err := ResolveApp(ctx, db, f.ClientId, f.Application)
+					if err != nil {
+						return httpx.Err(c, err.Error())
+					}
+					// The authorize request's own instructions hold here as they do at
+					// authorize: prompt=login is owed a fresh credential, so no session
+					// answers it; prompt=select_account is owed the person's choice, so
+					// only a session the page names (loginHint) answers it; max_age is
+					// owed a sign-in that recent; and with several people signed in here
+					// and none named, nobody is picked. What authorize recorded counts
+					// whether or not the page forwarded it (demand.go).
+					p := parsePrompt(f.Prompt)
+					d, err := demandOf(db, demandKey(f.ClientId, f.RedirectUri, f.State, f.CodeChallenge))
+					if err != nil {
+						return httpx.Fail(c, http.StatusInternalServerError, "server_error", "")
+					}
+					if p.login {
+						return httpx.ErrCode(c, "sign in again to continue", CodeLoginRequired)
+					}
+					if (p.selectAccount || d.Choose) && f.LoginHint == "" {
+						return httpx.ErrCode(c, "choose an account to continue", CodeAccountSelectionRequired)
+					}
+					chosen, user, many := signedIn(c, db, app, f.LoginHint, "")
+					if many {
+						return httpx.ErrCode(c, "choose an account to continue", CodeAccountSelectionRequired)
+					}
+					if user != nil && !d.met(chosen.AuthTime, f.LoginHint != "") {
+						return httpx.ErrCode(c, "sign in again to continue", CodeLoginRequired)
+					}
+					if user != nil {
+						return resumeGrant(c, db, user, f)
 					}
 					return httpx.ErrCode(c, "please sign in first", CodeLoginRequired)
 				}
@@ -353,6 +412,18 @@ func codeLogin(ctx context.Context, db orm.DB, f loginForm, user *schema.User) (
 // finish alike — so the checks between "this is the user" and "here is the grant"
 // are stated once and cannot be true of one path and false of another.
 func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
+	return grant(c, db, user, f, true)
+}
+
+// resumeGrant is loginGrant for a person who presented no credential and was
+// answered from the session they hold: the same mint, and their session keeps the
+// auth_time of the sign-in it records.
+func resumeGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
+	return grant(c, db, user, f, false)
+}
+
+// grant is the one minting tail; proved says whether a credential was just shown.
+func grant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm, proved bool) error {
 	ctx := c.Context()
 
 	// An account an operator archived (isForbidden) or deleted gets no grant, and is
@@ -371,6 +442,9 @@ func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
 	// blessed capability — so the reserved-org confinement MintFor enforces (which
 	// binds a SuperAdmin to its own-org app) does NOT apply to it; it precedes it.
 	if f.Type == "device" {
+		if f.Deny {
+			return denyDevice(c, db, user, f.UserCode)
+		}
 		return approveDevice(c, db, user, f.UserCode)
 	}
 
@@ -407,7 +481,7 @@ func loginGrant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm) error {
 	// sessions.Open is that rule, and it is where the wallet endpoint and the
 	// return from another identity provider read it from too. Best-effort — a
 	// session failure never blocks a valid login.
-	_ = sessions.Open(ctx, c.Fiber(), db, user.Owner, user.Name, f.Application)
+	_ = sessions.Open(ctx, c.Fiber(), db, user.Owner, user.Name, f.Application, proved)
 
 	// One return, one meaning: MintFor already yields the user id for a bare portal
 	// sign-in and the authorization code for the code flow, so the SDK reads `data`
@@ -585,4 +659,16 @@ func adoptQuery(c *zip.Ctx, f *loginForm) {
 	adopt(&f.Resource, "resource")
 	adopt(&f.CodeChallenge, "code_challenge", "codeChallenge")
 	adopt(&f.CodeChallengeMethod, "code_challenge_method", "codeChallengeMethod")
+	adopt(&f.Prompt, "prompt")
+	adopt(&f.LoginHint, "login_hint", "loginHint")
+}
+
+// sessionUser re-reads the account a session names: nil when it has since been
+// forbidden or deleted, so a session never outlives the account it was opened for.
+func sessionUser(ctx context.Context, db orm.DB, sc *sessions.Cookie) *schema.User {
+	u, err := store.GetUserByName(ctx, db, sc.Owner, sc.Name)
+	if err != nil || u == nil || u.IsForbidden || u.IsDeleted {
+		return nil
+	}
+	return u
 }

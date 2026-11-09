@@ -76,24 +76,85 @@ type browserAccount struct {
 // in is left out. A browser with nobody signed in gets an empty list.
 func getAccounts(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
+		c.SetHeader("Cache-Control", "no-store")
+		return httpx.Ok(c, browserAccounts(c, db))
+	}
+}
+
+// browserAccounts is everyone signed in on the calling browser, the current
+// account first, each read from its own row: an account forbidden or deleted since
+// it signed in is left out.
+func browserAccounts(c *zip.Ctx, db orm.DB) []browserAccount {
+	ctx := c.Context()
+	list := []browserAccount{}
+	for _, sc := range sessions.Accounts(ctx, c.Fiber(), db) {
+		u, err := store.GetUserByName(ctx, db, sc.Owner, sc.Name)
+		if err != nil || u == nil || u.IsForbidden || u.IsDeleted {
+			continue
+		}
+		list = append(list, browserAccount{
+			Sub:         subjectOf(u),
+			Owner:       u.Owner,
+			Name:        u.Name,
+			DisplayName: u.DisplayName,
+			Email:       u.Email,
+			Avatar:      u.Picture(),
+		})
+	}
+	return list
+}
+
+// accountsBody names the account to make current, by its subject.
+type accountsBody struct {
+	Current string `json:"current"`
+}
+
+// putAccounts makes one of the accounts signed in on this browser the current
+// one — the account an account menu switches to — and answers the list in its new
+// order, current first.
+//
+// Only an account ALREADY signed in here can be chosen, by the subject
+// GET /v1/iam/accounts named it with; anything else is refused and the order is
+// unchanged. Nobody is signed in or out, and nothing is granted: each account
+// keeps resolving to its own row, its own org and its own roles, so switching
+// cannot carry one account's standing to another. Like every write on the session
+// cookie it is taken only from this site's own pages, as JSON.
+func putAccounts(db orm.DB) zip.Handler {
+	return func(c *zip.Ctx) error {
 		ctx := c.Context()
-		list := []browserAccount{}
-		for _, sc := range sessions.Accounts(ctx, c.Fiber(), db) {
-			u, err := store.GetUserByName(ctx, db, sc.Owner, sc.Name)
-			if err != nil || u == nil || u.IsForbidden || u.IsDeleted {
-				continue
+		if sessions.Forgeable(sessions.RequestOf(c.Fiber())) {
+			return httpx.Fail(c, http.StatusForbidden, sessions.ErrForgeable.Error(), "")
+		}
+		var in accountsBody
+		if err := c.Bind(&in); err != nil || in.Current == "" {
+			return httpx.Fail(c, http.StatusBadRequest, "name the account to switch to by its subject", "")
+		}
+		var found *sessions.Cookie
+		list := sessions.Accounts(ctx, c.Fiber(), db)
+		for i := range list {
+			u, err := store.GetUserByName(ctx, db, list[i].Owner, list[i].Name)
+			if err == nil && u != nil && !u.IsForbidden && !u.IsDeleted && subjectOf(u) == in.Current {
+				found = &list[i]
+				break
 			}
-			list = append(list, browserAccount{
-				Sub:         subjectOf(u),
-				Owner:       u.Owner,
-				Name:        u.Name,
-				DisplayName: u.DisplayName,
-				Email:       u.Email,
-				Avatar:      u.Picture(),
-			})
+		}
+		if found == nil {
+			return httpx.Fail(c, http.StatusNotFound, "that account is not signed in on this browser", "")
+		}
+		if _, err := sessions.Switch(ctx, c.Fiber(), db, found.Owner, found.Name); err != nil {
+			return httpx.Fail(c, http.StatusForbidden, err.Error(), "")
+		}
+		// The list is read from the cookie the request carried, so put the chosen
+		// account first here rather than reading it back from the response.
+		out := browserAccounts(c, db)
+		for i, a := range out {
+			if a.Sub == in.Current {
+				out = append(append([]browserAccount{a}, out[:i]...), out[i+1:]...)
+				break
+			}
 		}
 		c.SetHeader("Cache-Control", "no-store")
-		return httpx.Ok(c, list)
+		return httpx.Ok(c, out)
 	}
 }
 

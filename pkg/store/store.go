@@ -766,6 +766,62 @@ func SaveToken(ctx context.Context, db orm.DB, tok *schema.Token) error {
 	return existing.UpdateCtx(ctx)
 }
 
+// WithToken runs fn on the CURRENT state of tok's row, under a row lock, and saves
+// what fn leaves in it. SaveToken is a whole-row overwrite of a copy read earlier, so
+// two requests that each read, decided and wrote raced: a refusal landed beside an
+// approval and the device was still signed in, and two polls each minted. Everything
+// that decides on a device authorization's state (approve, refuse, the poll's burn)
+// decides here, on the row as the lock holder reads it, so exactly one of them wins.
+//
+// fn returns whether to save. An error from fn rolls back and is returned; a row
+// that is gone answers orm.ErrNotFound.
+func WithToken(ctx context.Context, db orm.DB, tok *schema.Token, fn func(*schema.Token) (bool, error)) error {
+	return db.RunInTransaction(ctx, func(tx orm.DB) error {
+		fresh, err := orm.GetForUpdate[schema.Token](tx, tok.Key().Encode())
+		if err != nil {
+			return err
+		}
+		save, err := fn(fresh)
+		if err != nil || !save {
+			return err
+		}
+		if err := fresh.UpdateCtx(ctx); err != nil {
+			return err
+		}
+		*tok = *fresh
+		return nil
+	})
+}
+
+// PurgeDeviceCodes deletes up to limit device authorizations that expired before
+// cutoff and were never approved, and reports how many went. An unauthenticated
+// request starts one, so without this the table grows with every start. Only a
+// request nobody approved is touched: an approved one IS the grant (its row carries
+// the refresh family), however long ago its code expired.
+func PurgeDeviceCodes(ctx context.Context, db orm.DB, cutoff time.Time, limit int) (int, error) {
+	stale, err := orm.TypedQuery[schema.Token](db).
+		Filter("UserCode>", "").
+		Filter("User=", "").
+		Filter("CodeExpireIn>", 0).
+		Filter("CodeExpireIn<", cutoff.Unix()).
+		Limit(limit).
+		GetAll(ctx)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, t := range stale {
+		if t.User != "" || t.AccessTokenHash != "" || t.RefreshTokenHash != "" {
+			continue
+		}
+		if err := t.DeleteCtx(ctx); err != nil {
+			return n, err
+		}
+		n++
+	}
+	return n, nil
+}
+
 // ListCerts returns every certificate ordered by name, each with its private key
 // filled in from the keyring (see GetCert). The JWKS endpoint calls this and
 // filters to the token-signing certs it publishes.

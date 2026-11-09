@@ -62,16 +62,18 @@ type authorizeRequest struct {
 //
 // If the person is ALREADY signed in here, it does not ask them again: it
 // returns them to the application with a one-time code and they never see this
-// page. Otherwise it shows the right way to sign in for the application they are
-// signing in to, or hands off to another identity provider if that is what they
-// pick.
+// page. When SEVERAL people are signed in on the browser and the request names
+// none of them, it asks which one, with the account chooser. Otherwise it shows
+// the right way to sign in for the application they are signing in to, or hands
+// off to another identity provider if that is what they pick.
 //
 // A client can say what it wants with `prompt`: `none` means answer without any
-// screen at all — with the code if a session exists, with an error if not, but
-// never with a page; `login` means ask for the password again even if a session
-// exists; `select_account` means let the person choose among the accounts signed
-// in on this browser, or sign in to another. `login_hint` names which of those
-// accounts the request is for.
+// screen at all — with the code if a session exists, with an error if not
+// (`account_selection_required` when several accounts are signed in and none is
+// named), but never with a page; `login` means ask for the password again even if
+// a session exists; `select_account` means let the person choose among the
+// accounts signed in on this browser, or sign in to another. `login_hint` names
+// which of those accounts the request is for.
 //
 // It returns only to an address the application has registered. That check
 // happens before anything else, so a request naming an unregistered address is
@@ -182,6 +184,11 @@ func authorizeHandler(db orm.DB) zip.Handler {
 			if p.none {
 				return authorizeErrorRedirect(c, q, refusal, "no interaction was permitted and the request could not be answered from an existing session")
 			}
+			// Several people are signed in here and the request named none of them:
+			// the page asks which one, exactly as if the client had said so.
+			if refusal == errAccountSelectionRequired {
+				p.selectAccount = true
+			}
 		}
 
 		// prompt=none has now been answered one way or the other; reaching here
@@ -190,7 +197,19 @@ func authorizeHandler(db orm.DB) zip.Handler {
 		// clean, re-encoded request. The login page posts credentials to
 		// /v1/iam/login, which mints the code.
 		q.prompt = p.forwarded()
-		return c.Redirect(302, hostedLoginTarget(app)+"?"+authorizeForwardQuery(q, method))
+		// What the request demanded is recorded here, where it was validated, so a
+		// page that resumes from a session without forwarding it is still held to it
+		// (demand.go). A demand that cannot be recorded is not handed on unenforced.
+		if d := (demand{Login: p.login || p.unrecognized, Choose: p.selectAccount, MaxAge: param(c, "max_age"), Since: nowFunc().Unix()}); d.needed() {
+			if err := rememberDemand(ctx, db, demandKey(q.clientID, q.redirectURI, q.state, q.codeChallenge), d); err != nil {
+				return authorizeUserError(c, "internal error")
+			}
+		}
+		iss, err := tokenIssuer(c)
+		if err != nil {
+			return authorizeUserError(c, "internal error")
+		}
+		return c.Redirect(302, hostedLoginTarget(app, iss)+"?"+authorizeForwardQuery(q, method))
 	}
 }
 
@@ -238,10 +257,18 @@ func oversize(c *zip.Ctx) string {
 }
 
 // hostedLoginTarget is the login URL a validated request is delegated to — the
-// application's own SigninUrl when set, else the default hosted-login route.
-func hostedLoginTarget(app *schema.Application) string {
+// application's own SigninUrl when it names an origin the operator configured as a
+// sign-in origin of this issuer, else the default hosted-login route. The value is
+// an organization's to write for its own applications, so it is followed only where
+// IAM itself signs people in: stored raw it made the issuer an open redirector, a 302
+// to wherever a tenant's application said.
+func hostedLoginTarget(app *schema.Application, iss string) string {
 	if app.SigninUrl != "" {
-		return app.SigninUrl
+		if u, err := url.Parse(strings.TrimSpace(app.SigninUrl)); err == nil && u.Scheme == "https" && u.User == nil {
+			if origin, err := signinOrigin("https://" + u.Host); err == nil && configuredSignin(origin, normalizeIssuer(iss)) {
+				return app.SigninUrl
+			}
+		}
 	}
 	// Relative on purpose. signinRelocation has already moved a request that
 	// arrived on an alias to its sign-in origin, before anything is minted or

@@ -35,6 +35,11 @@ func TestBindHasOneCaller(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// CI runs the gates from a symlink to the checkout, and WalkDir does not
+	// descend a root that is a link: it visited one entry and found no caller.
+	if root, err = filepath.EvalSymlinks(root); err != nil {
+		t.Fatal(err)
+	}
 	fset := token.NewFileSet()
 	var found []string
 

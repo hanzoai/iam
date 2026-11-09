@@ -52,6 +52,8 @@ func routeFrontDoor(r *zip.Group, db orm.DB) {
 	r.Raw(http.MethodGet, PathAccount, getAccount(db))
 	// Everyone signed in on the browser, for the account chooser. Cookie only.
 	r.Raw(http.MethodGet, PathAccounts, getAccounts(db))
+	// The write half: which of them is current — the account menu's switch.
+	r.Raw(http.MethodPut, PathAccounts, putAccounts(db))
 	// The write half of the same noun: a person's own profile, a fixed set of
 	// display fields, self-scoped like the password and consent writes beside it.
 	r.Put(PathAccount, putAccountHandler(db),

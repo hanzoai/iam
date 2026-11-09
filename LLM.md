@@ -106,9 +106,10 @@ names hosts that sign in somewhere other than their issuer:
   route registration (`routeFederation`), LOGGED, and every host signs in at its
   issuer; it never stops the process (cloud runs `strategy: Recreate`).
 - Off its issuer's host, authorize never answers silently from a session: that
-  origin's `__Host-hanzo_session` is not ended by the issuer's sign-out, so the
-  page asks "continue as" and `prompt=none` is `login_required`. Cross-origin
-  sign-out (ending hanzo.ai's session from hanzo.id and the reverse) is not built.
+  origin holds its own `__Host-hanzo_session`, so the page asks "continue as" and
+  `prompt=none` is `login_required`. A navigating sign-out on either origin visits
+  the other and ends the same sessions there (see "Several accounts on one
+  browser"); a program's JSON POST to logout ends only the origin it reached.
 - The binding, challenge and remember cookies are `__Host-` (`__Host-hanzo_fed`,
   `__Host-hanzo_challenge`, `__Host-hanzo_mfa_remember`), so no sibling of a
   sign-in origin with siblings (*.hanzo.ai) can plant one.
@@ -122,6 +123,66 @@ names hosts that sign in somewhere other than their issuer:
   "header-immune" wording elsewhere in `issuer.go`, `token.go` and `webauthn.go` is
   true of `iam serve` only. A caller can still only select a configured value, for
   its own requests.
+
+## Several accounts on one browser — chosen, switched, signed out one at a time
+
+The session cookie holds one signed session per person (`internal/sessions`,
+joined by `~`, current first). Five rules sit on top of it:
+
+- **Nobody is guessed.** `signedIn` (prompt.go) answers the one account the
+  request names (`login_hint`, `id_token_hint`), or the ONE account the app can
+  serve. Several and none named is `many`: authorize forwards the hosted page
+  `prompt=select_account`, and `prompt=none` gets `account_selection_required`
+  (OIDC Core §3.1.2.6). The most-recent-sign-in fallback is gone: it is how a
+  CLI sign-in on a shared browser completed as the wrong account.
+- **The session branch of `POST /v1/iam/login` keeps the authorize request's
+  word.** A page's credential-less resume carries `prompt` and `loginHint` (body
+  or query). `prompt=login` is refused `login_required`; `select_account` without
+  a chosen `loginHint`, or several accounts and no hint, is refused
+  `account_selection_required` (`CodeAccountSelectionRequired`); a `loginHint`
+  answers only that account. `type=device` approves as the account its
+  `loginHint` names (the one the approval page showed), else the current one.
+- **What authorize demanded is kept by the server** (`demand.go`). Handing a
+  request to the hosted page records a LoginChallenge of kind `prompt`, named by
+  sha256(client, redirect, state, PKCE challenge), holding `prompt=login`,
+  `select_account` (or several-accounts-none-named) and `max_age`, for 30 minutes.
+  The session branch and a silent re-entry of the same request both read it, so a
+  page that forwards nothing (hanzo.ai's resume did, for the CLI) is held to it:
+  login is met only by a sign-in made after the request's second, choose only by a
+  named account, max_age by `freshEnough`. A store fault refuses. A page that
+  alters any of the four values gets a code no client asked for.
+- **auth_time moves only on a proof.** `sessions.Open(..., proved)`: a credential
+  shown again for a held person restamps their session's auth_time (same sid); a
+  resume (`resumeGrant`) does not, so a resume cannot launder an old sign-in past
+  max_age or prompt=login.
+- **Switch:** `PUT /v1/iam/accounts {"current":"<sub>"}` moves an account already
+  signed in here to the front (`sessions.Switch`, same sid and auth_time) and
+  answers the list. Same-origin JSON only (`Forgeable`, checked before the lookup,
+  so another page learns nothing). Each session still resolves to its own row, so
+  no org, role or SuperAdmin standing crosses accounts
+  (`TestAccounts_SwitchCarriesNoStandingAcross`). A page holding a bearer for the
+  old account must drop it on switch.
+- **Sign out one:** end-session with `logout_hint` (RP-Initiated Logout §2: sub,
+  address or username) ends every account it names and no other (`sessions.End`):
+  an address two orgs share names both, so a SuperAdmin `admin/alice` is never
+  the one left behind. A hint naming nobody here ends nothing. No hint ends every
+  account (`sessions.Clear`).
+- **Sign out on every sign-in origin:** a navigating end-session walks the issuer
+  and every origin `IAM_FEDERATION_ORIGIN_MAP` names for it, sorted, once each
+  (`nextSignout`, `chain=<origin it started at>~<MAC over the session key>`; an
+  unsealed chain is no chain, so a crafted link cannot skip an origin; the issuer
+  is compared in sign-in-origin spelling, so `:443` is not a second stop), carrying `id_token_hint`,
+  `client_id`, `post_logout_redirect_uri`, `state`, `logout_hint`, `everywhere`.
+  The last hop validates and returns the browser. Each origin must route
+  `/v1/iam/oauth/logout` to IAM (hanzo.ai does, `infra/sites`).
+
+Where the chooser renders is the hosted page's job: the id SPA's `Login` phase
+`choose`. **hanzo.id's edge sends `/login/oauth/authorize` with a `state` to
+hanzo.ai/login** (universe `infra/sites/sites.yaml`, route `hanzo-id`), and
+hanzo.ai's panel resumes for a loopback platform client without reading
+`prompt`; that is why a `prompt=select_account` CLI sign-in completed silently in
+production. The session-branch rules above refuse that resume when several
+accounts are signed in or when the page forwards `prompt`.
 
 ## A principal is `owner`/`name` — org and USERNAME, on every surface
 
@@ -867,6 +928,51 @@ different first-party client per flow (`hanzo-app` for device, `hanzo-console`
 for password and refresh); besides being unregistrable, that guaranteed renewal
 could never work, because a device_code is redeemable only by the client it was
 issued to and a refresh token was being presented under a different id.
+
+**Where the person opens the link** (`verificationOrigin`, device.go). The device
+response's `verification_uri` and `verification_uri_complete` are on the origin of
+the application's `signinUrl` when that origin is a sign-in origin the operator
+configured for the request's issuer (`IAM_FEDERATION_ORIGIN_MAP` values whose host
+resolves to the same issuer), else on the issuer. The application says, the
+operator decides: `signinUrl` is a field an organization writes for its own
+applications, so it can only select among configured origins, and an origin of
+another brand (a host the issuer map folds elsewhere) is refused exactly as the boot
+check refuses a map that would send one there. Only an application the platform declares
+(`Application.Platform`, SuperAdmin-written) is sent there: the approval page shows the
+application's name, which its registrant chose, so a tenant's application keeps the
+issuer's page rather than borrow the brand's standing for a name of its own choosing
+(`device/info` also says `platform` and `organization`, so the page can say whose it is).
+Only the origin is taken; the page is `/login/oauth/device[/<userCode>]` on it. Discovery, the issuer and the token and
+JSON endpoints do not move. Declared per app in the provision document
+(`signin:` -> upsert `signinUrl`, a pointer: omitted preserves, `""` clears), so it
+moves the app's hosted-login page too (`hostedLoginTarget` reads the same field).
+**Deny** is `POST /v1/iam/login {type:"device_deny", userCode}`, a verb of its own on the
+approval's own seam (session, same-origin JSON via `sessions.Writer`, `loginHint`, tenant
+boundary). The flag `deny` is READ too, on any device body: a body that says deny is a
+refusal and never an approval (the page's first spelling, `{type:"device", deny:true}`,
+is still sent by stale tabs; ambiguity fails to the side that signs nobody in). Approve,
+refuse and the poll's burn decide on the row as the lock holder reads it
+(`store.WithToken`: GetForUpdate), so one outcome stands and a request is minted once;
+`pending` is the one live-code predicate. The device's next poll is `access_denied` once,
+then `expired_token`.
+**What a stranger may ask** (`device_guard.go`): the start needs no credential, so the
+scope is pinned (`grantedScope`: the application's declared scopes, else the standard
+OIDC set; `openid admin kms:write *` is `openid`; past 2048 bytes is `invalid_scope`), the
+start is budgeted per client and per address (429 `slow_down`; in-process, a brake not a
+meter), unapproved expired rows are swept (`PurgeDeviceCodes`, a batch a minute), and a
+pending poll sooner than 4 s after the last is `slow_down`. The row records where it was
+started (`RequestIp` from CF-Connecting-IP via `httpx.Client`, never a client-written XFF
+hop; `RequestCountry` from CF-IPCountry; `Requested`), and `device/info` shows that and the
+pinned scope beside the application's name, so a person approving a stranger's request can
+see it is a stranger's. Wrong codes are counted per account (`deviceMisses`, 10 per 15 min,
+logged once): past it every answer is the one opaque refusal. That refusal also covers a
+code that is live but not the caller's tenant. `mayApprove`: a SuperAdmin crosses tenants
+only for `Platform` applications. TTL is 10 min. On the brand's own site the code rides the
+URL FRAGMENT (`verification_uri_complete` = `<origin>/login/oauth/device#<code>`), which
+reaches no server, log, Referer or CDN analytics; the issuer's own SPA keeps the path form.
+`signinUrl` is validated on create and update (`schema.CheckSigninUrl`) and authorize
+follows it only to an origin IAM signs people in at (`hostedLoginTarget`), else the default
+hosted login.
 
 ## Workload grant — the cluster already vouches for the pod
 

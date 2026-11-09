@@ -8,7 +8,11 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"errors"
+	"log"
 	"net/http"
+	"net/url"
+	"strings"
+	"sync/atomic"
 	"time"
 
 	policy "github.com/hanzoai/authz"
@@ -53,10 +57,13 @@ const (
 	// to open the link on a phone, sign in, and approve. It is deliberately NOT
 	// codeTTL (5 min) — an authorization code is redeemed by software in seconds,
 	// a device code waits on a person.
-	deviceCodeTTL = 15 * time.Minute
+	deviceCodeTTL = 10 * time.Minute
 	// devicePollInterval is the minimum seconds between token-endpoint polls
-	// (RFC 8628 §3.5 `interval`).
+	// (RFC 8628 §3.5 `interval`). A poll that finds the request still pending and
+	// comes sooner than deviceTooFast after the last one is told slow_down; the
+	// allowance under the interval is network jitter, not a licence.
 	devicePollInterval = 5
+	deviceTooFast      = 4000 // milliseconds
 )
 
 // user_code generation. The alphabet is RFC 8628 §6.1 "unambiguous": no I, L, O,
@@ -117,6 +124,38 @@ func routeDevice(r *zip.Group, db orm.DB) {
 type deviceInfo struct {
 	ClientId    string `json:"clientId"`
 	DisplayName string `json:"displayName"`
+	// Platform says the application is one the platform itself declares, and
+	// Organization whose it is otherwise. A name is the application's own word for
+	// itself, so a page that shows one must also say whether it is Hanzo's: a
+	// tenant can register an application and name it anything.
+	Platform     bool   `json:"platform"`
+	Organization string `json:"organization"`
+	// Requested says where and when the device authorization was started, and Scope
+	// what it would be allowed to do. The person approving is not the person who
+	// started it, unless it is their own terminal, and a stranger's request cannot
+	// hide that it comes from somewhere else; Scope is what the grant carries (the
+	// application's, never the requester's word for it).
+	Requested deviceRequest `json:"requested"`
+	Scope     []string      `json:"scope"`
+	// Account is the person the page is signed in as, which is who an approval
+	// binds the device to. The page shows it and returns Sub as the approval's
+	// loginHint, so the account approved is the one that was looked at and not
+	// whichever session another tab made the current one in between.
+	Account deviceAccount `json:"account"`
+}
+
+// deviceRequest is where a device authorization was started.
+type deviceRequest struct {
+	Ip      string `json:"ip,omitempty"`
+	Country string `json:"country,omitempty"`
+	At      int64  `json:"at,omitempty"`
+}
+
+// deviceAccount names the person a device approval would be made as.
+type deviceAccount struct {
+	Sub   string `json:"sub"`
+	Name  string `json:"name"`
+	Email string `json:"email,omitempty"`
 }
 
 // deviceInfoHandler answers "what am I approving?" for a pending device code.
@@ -163,32 +202,31 @@ func deviceInfoHandler(db orm.DB) zip.Handler {
 		}
 
 		const refuse = "the user code is invalid or expired"
-		row, err := store.GetTokenByUserCode(ctx, db, userCode)
-		if err != nil {
+		// One refusal for every way a look can fail, the org mismatch included: the
+		// caller learns nothing about a code that is not theirs to approve. Each miss
+		// is counted against the account, and an account past its budget gets that
+		// refusal for every answer.
+		row, app := lookDevice(ctx, db, user, userCode)
+		if row == nil {
 			return httpx.Err(c, refuse)
-		}
-		if row == nil || !isDevice(row) || row.CodeIsUsed || row.User != "" ||
-			expired(row.CodeExpireIn, nowFunc()) {
-			return httpx.Err(c, refuse)
-		}
-		// The same tenant boundary approveDevice enforces: what you may LOOK AT is
-		// exactly what you may approve, so this leaks nothing the caller could not
-		// already have learned by approving.
-		if row.Organization == "" {
-			return httpx.Err(c, refuse)
-		}
-		app, err := resolveTokenApp(ctx, db, row)
-		if err != nil || app == nil {
-			return httpx.Err(c, refuse)
-		}
-		if !mayApprove(user, row, app) {
-			return httpx.Err(c, "your organization may not approve this device sign-in")
 		}
 		label := app.DisplayName
 		if label == "" {
 			label = app.Name
 		}
-		return httpx.Ok(c, deviceInfo{ClientId: app.ClientId, DisplayName: label})
+		who := user.DisplayName
+		if who == "" {
+			who = user.Name
+		}
+		return httpx.Ok(c, deviceInfo{
+			ClientId:     app.ClientId,
+			DisplayName:  label,
+			Platform:     app.Platform,
+			Organization: app.Organization,
+			Requested:    deviceRequest{Ip: row.RequestIp, Country: row.RequestCountry, At: row.Requested},
+			Scope:        strings.Fields(row.Scope),
+			Account:      deviceAccount{Sub: subjectOf(user), Name: who, Email: user.Email},
+		})
 	}
 }
 
@@ -220,12 +258,27 @@ func deviceHandler(db orm.DB) zip.Handler {
 		if !appGrants(app, deviceGrant) {
 			return tokenError(c, 400, "unsupported_grant_type", "the application does not permit the device grant")
 		}
-		// The approval page lives at the issuer; with none there is nowhere to send
-		// the person, so nothing is minted.
+		// The approval page lives at the application's sign-in origin, which is the
+		// issuer unless the operator says otherwise; with no issuer there is nowhere
+		// to send the person, so nothing is minted.
 		iss, err := tokenIssuer(c)
 		if err != nil {
 			return tokenError(c, 500, "server_error", "")
 		}
+
+		// The start asks for no credential, so it is bounded: the scope as authorize
+		// bounds its own, and how often one client and one address may start. What is
+		// refused is never written.
+		asked := param(c, "scope")
+		if len(asked) > deviceScopeLimit {
+			return tokenError(c, 400, "invalid_scope", "scope is too long")
+		}
+		now := nowFunc()
+		ip, country := requesterOf(c)
+		if !deviceClientStarts.within("c:"+app.ClientId, now) || (ip != "" && !deviceAddressStarts.within("i:"+ip, now)) {
+			return tokenError(c, 429, "slow_down", "too many sign-ins are being started; try again in a minute")
+		}
+		sweepDevices(ctx, db, now)
 
 		deviceCode, err := newOpaqueToken()
 		if err != nil {
@@ -245,9 +298,15 @@ func deviceHandler(db orm.DB) zip.Handler {
 			Organization: app.Organization,
 			Code:         deviceCode,
 			UserCode:     userCode,
-			Scope:        param(c, "scope"),
-			TokenType:    "Bearer",
-			CodeExpireIn: nowFunc().Add(deviceCodeTTL).Unix(),
+			// What the grant carries is what the application may have of what was
+			// asked, never the asker's word: it is shown to the approver and it is
+			// the scope of the token the device is minted.
+			Scope:          strings.Join(grantedScope(app, asked), " "),
+			TokenType:      "Bearer",
+			CodeExpireIn:   now.Add(deviceCodeTTL).Unix(),
+			RequestIp:      ip,
+			RequestCountry: country,
+			Requested:      now.Unix(),
 		}
 		row.Name = "dc-" + deviceCode[:24]
 		if err := store.PersistToken(ctx, db, row); err != nil {
@@ -256,13 +315,23 @@ func deviceHandler(db orm.DB) zip.Handler {
 
 		// Both URIs point at the SPA approval page a human opens, never at this
 		// JSON API. The complete form is a PATH segment because that is the route
-		// the page is registered on (/login/oauth/device/:userCode).
-		verify := iss + PathDeviceVerify
+		// the page is registered on (/login/oauth/device/:userCode). The page is
+		// where the application says its people sign in (verificationOrigin), the
+		// issuer's own when it says nothing the operator has configured.
+		origin := verificationOrigin(app, iss)
+		verify := origin + PathDeviceVerify
+		// On the brand's own site the code rides the FRAGMENT: a fragment reaches no
+		// server, so the code is in no access log, no CDN's analytics and no Referer,
+		// which a path segment is in all three. The issuer's own SPA reads a path.
+		complete := verify + "/" + userCode
+		if origin != normalizeIssuer(iss) {
+			complete = verify + "#" + userCode
+		}
 		return c.JSON(200, deviceResponse{
 			DeviceCode:              deviceCode,
 			UserCode:                userCode,
 			VerificationUri:         verify,
-			VerificationUriComplete: verify + "/" + userCode,
+			VerificationUriComplete: complete,
 			ExpiresIn:               int(deviceCodeTTL.Seconds()),
 			Interval:                devicePollInterval,
 		})
@@ -321,22 +390,55 @@ func deviceCodeGrant(c *zip.Ctx, db orm.DB) error {
 	if !appGrants(app, deviceGrant) {
 		return tokenError(c, 400, "unsupported_grant_type", "the application does not permit the device grant")
 	}
-	// Not approved yet: leave the row exactly as it is — the device keeps polling.
-	if row.User == "" {
+
+	// What state the row is in, and what this poll does to it, is decided on the row
+	// as the lock holder reads it (store.WithToken), never on the copy read above: an
+	// approval, a refusal and another poll all land on this row, and each used to
+	// decide on its own stale copy and overwrite the others. Here the burn is atomic,
+	// so a refusal never lands beside a mint and two polls never both mint. A person's
+	// refusal is told once (RFC 8628 §3.5) and burned, after the client authenticates
+	// like the pending answer, so an unauthenticated poll never learns what was
+	// decided. A poll that finds the request pending and comes sooner than the
+	// interval allows is told slow_down.
+	var verdict string
+	err = store.WithToken(ctx, db, row, func(t *schema.Token) (bool, error) {
+		switch {
+		case t.CodeIsUsed || expired(t.CodeExpireIn, now):
+			verdict = "dead"
+			return false, nil
+		case t.Denied:
+			t.CodeIsUsed, verdict = true, "denied"
+			return true, nil
+		case t.User == "":
+			at := now.UnixMilli()
+			if t.Polled != 0 && at-t.Polled < deviceTooFast {
+				verdict = "slow"
+				return false, nil
+			}
+			t.Polled, verdict = at, "pending"
+			return true, nil
+		default:
+			t.CodeIsUsed, verdict = true, "mint"
+			return true, nil
+		}
+	})
+	if err != nil {
+		return tokenError(c, 500, "server_error", "")
+	}
+	switch verdict {
+	case "dead":
+		return deviceDead(c)
+	case "denied":
+		return tokenError(c, 400, "access_denied", "the person refused the sign-in")
+	case "slow":
+		return tokenError(c, 400, "slow_down", "poll no faster than the interval")
+	case "pending":
 		return tokenError(c, 400, "authorization_pending", "the device authorization is pending approval")
 	}
 
-	// One-shot: burn the approval BEFORE minting, so any later poll finds the row
-	// already redeemed rather than minting a second token off one approval. Like
-	// the authorization-code grant beside it this is a read-modify-write, not a
-	// compare-and-swap: two polls landing inside the same write window could still
-	// both mint. They mint the same user, app, scope and refresh family, so the
-	// duplicate is contained (revoking the family revokes both) — a real CAS is a
-	// property the Token row would have to carry for every grant, not just this one.
-	row.CodeIsUsed = true
-	if err := store.SaveToken(ctx, db, row); err != nil {
-		return tokenError(c, 500, "server_error", "")
-	}
+	// Minted exactly once: the row was burned under the lock above, so any later poll
+	// finds it redeemed. Like the authorization-code grant beside it the tokens are
+	// issued and the row saved after, which nothing else can change now.
 	resp, err := issueTokens(ctx, db, c, app, row, newFamilyID(row), now)
 	if err != nil {
 		return mintError(c, err)
@@ -355,34 +457,26 @@ func deviceCodeGrant(c *zip.Ctx, db orm.DB) error {
 // already proven who the approver is.
 func approveDevice(c *zip.Ctx, db orm.DB, user *schema.User, userCode string) error {
 	// ONE opaque refusal for unknown / not-a-device / expired / already-approved /
-	// already-redeemed. The user_code is only 40 bits — the one secret in this
-	// flow — so an answer that distinguished those cases would turn this page into
-	// an oracle for hunting live codes.
+	// already-redeemed / not-yours. The user_code is only 40 bits — the one secret in
+	// this flow — so an answer that distinguished those cases would turn this page
+	// into an oracle for hunting live codes.
 	const refuse = "the user code is invalid or expired"
 
 	ctx := c.Context()
-	row, err := store.GetTokenByUserCode(ctx, db, userCode)
-	if err != nil {
+	row, app := lookDevice(ctx, db, user, userCode)
+	if row == nil {
 		return httpx.Err(c, refuse)
 	}
-	if row == nil || !isDevice(row) || row.CodeIsUsed || row.User != "" ||
-		expired(row.CodeExpireIn, nowFunc()) {
-		return httpx.Err(c, refuse)
-	}
-	// Tenant boundary (mayApprove). An unresolvable tenant fails closed.
-	if row.Organization == "" {
-		return httpx.Err(c, refuse)
-	}
-	app, err := resolveTokenApp(ctx, db, row)
-	if err != nil || app == nil {
-		return httpx.Err(c, refuse)
-	}
-	if !mayApprove(user, row, app) {
-		return httpx.Err(c, "your organization may not approve this device sign-in")
-	}
-
-	row.User = user.Owner + "/" + user.Name
-	if err := store.SaveToken(ctx, db, row); err != nil {
+	// Decided on the row as the lock holder reads it: a refusal or a second approval
+	// that landed since the look has already ended the request.
+	who := user.Owner + "/" + user.Name
+	if err := store.WithToken(ctx, db, row, func(t *schema.Token) (bool, error) {
+		if !pending(t) {
+			return false, errNotPending
+		}
+		t.User = who
+		return true, nil
+	}); err != nil {
 		return httpx.Err(c, refuse)
 	}
 	// A SuperAdmin approving a sign-in to another organization's application is
@@ -391,7 +485,7 @@ func approveDevice(c *zip.Ctx, db orm.DB, user *schema.User, userCode string) er
 		store.Record(ctx, db, &schema.AuditLog{
 			Owner:        user.Owner,
 			Organization: row.Organization,
-			User:         row.User,
+			User:         who,
 			ClientIp:     httpx.ClientIP(c),
 			Method:       c.Method(),
 			RequestUri:   c.Path(),
@@ -400,7 +494,156 @@ func approveDevice(c *zip.Ctx, db orm.DB, user *schema.User, userCode string) er
 			StatusCode:   200,
 		})
 	}
-	return httpx.Ok(c, row.User)
+	return httpx.Ok(c, who)
+}
+
+// errNotPending is a device authorization that stopped being pending between the
+// look and the write: approved, refused, redeemed or expired.
+var errNotPending = errors.New("device: not pending")
+
+// denyDevice is the person's refusal of a pending device authorization: the
+// device's next poll is told access_denied (RFC 8628 §3.5) and the code is dead,
+// where closing the tab would leave it approvable by anyone holding it for the
+// rest of its life. It rides the same seam as the approval (login.go, type=device_deny),
+// so the session, the same-origin rule, the account the page showed and the
+// tenant boundary are the approval's by construction, and it answers refusals in
+// the approval's one opaque sentence.
+func denyDevice(c *zip.Ctx, db orm.DB, user *schema.User, userCode string) error {
+	const refuse = "the user code is invalid or expired"
+
+	ctx := c.Context()
+	row, _ := lookDevice(ctx, db, user, userCode)
+	if row == nil {
+		return httpx.Err(c, refuse)
+	}
+	if err := store.WithToken(ctx, db, row, func(t *schema.Token) (bool, error) {
+		if !pending(t) {
+			return false, errNotPending
+		}
+		t.Denied = true
+		return true, nil
+	}); err != nil {
+		return httpx.Err(c, refuse)
+	}
+	return httpx.Ok(c, "denied")
+}
+
+// lookDevice resolves the pending device authorization userCode names for a
+// signed-in person, and the application it is for, or nil when there is none they
+// may act on. Looking, approving and refusing all begin here, so what you may look at
+// is exactly what you may approve, and every way it can fail is the same nil: an
+// unknown code, a spent one, an expired one, one for a tenant you may not approve.
+// Each failure is a guess as far as this can tell, so it is counted against the
+// account (deviceMisses), and an account past its budget is refused whatever it asks.
+func lookDevice(ctx context.Context, db orm.DB, user *schema.User, userCode string) (*schema.Token, *schema.Application) {
+	now := nowFunc()
+	who := subjectOf(user)
+	if deviceMisses.spent(who, now) {
+		return nil, nil
+	}
+	row, err := store.GetTokenByUserCode(ctx, db, userCode)
+	if err == nil && pending(row) && row.Organization != "" {
+		if app, err := resolveTokenApp(ctx, db, row); err == nil && app != nil && mayApprove(user, row, app) {
+			return row, app
+		}
+	}
+	missed(who, now)
+	return nil, nil
+}
+
+// devicePurged is when dead authorizations were last swept, in unix seconds.
+var devicePurged atomic.Int64
+
+// sweepDevices removes the device authorizations nobody approved and whose code has
+// expired, a batch at most once a minute per process: a start writes a row and
+// nothing else deletes one that is never polled again.
+func sweepDevices(ctx context.Context, db orm.DB, now time.Time) {
+	last := devicePurged.Load()
+	if now.Unix()-last < 60 || !devicePurged.CompareAndSwap(last, now.Unix()) {
+		return
+	}
+	if _, err := store.PurgeDeviceCodes(ctx, db, now, devicePurgeBatch); err != nil {
+		log.Printf("device: sweep: %v", err)
+	}
+}
+
+// pending reports whether row is a device authorization still waiting for a
+// person: a device row, not redeemed, not approved, not refused and not expired.
+// Looking, approving and refusing each ask it, so the three can never disagree
+// about which codes are live.
+func pending(row *schema.Token) bool {
+	return row != nil && isDevice(row) && !row.CodeIsUsed && row.User == "" && !row.Denied &&
+		!expired(row.CodeExpireIn, nowFunc())
+}
+
+// verificationOrigin is the origin of the page a person opens to approve a
+// device sign-in for app, whose issuer is iss.
+//
+// It is the origin of the application's own SigninUrl (where the application says
+// its people sign in) when the operator has configured that origin as a sign-in
+// origin of THIS issuer, and the issuer itself otherwise. The application says
+// which; the operator decides whether it may: SigninUrl is a field an
+// organization writes for its own applications, so it selects among the origins
+// IAM_FEDERATION_ORIGIN_MAP names and can name no other. A link to a host IAM
+// does not sign people in at, or to another brand's, would send a person with a
+// code to a page that cannot approve it, or to a page that is not ours.
+//
+// Only an origin is taken from it. The path is the approval page's, never the
+// SigninUrl's, and the userinfo, query and fragment of a SigninUrl never reach a
+// link.
+//
+// Only an application the platform declares (schema.Application.Platform, which
+// only a SuperAdmin may set) is sent to the brand's own site. The approval page
+// shows the application's name, which its registrant chose, so a tenant's
+// application on the brand's host would borrow the brand's standing for a name of
+// its own choosing; it keeps the issuer's page, as every application did.
+func verificationOrigin(app *schema.Application, iss string) string {
+	iss = normalizeIssuer(iss)
+	if app == nil || !app.Platform || strings.TrimSpace(app.SigninUrl) == "" {
+		return iss
+	}
+	u, err := url.Parse(strings.TrimSpace(app.SigninUrl))
+	if err != nil || u.User != nil || u.Host == "" {
+		return iss
+	}
+	origin, err := signinOrigin("https://" + u.Host)
+	if err != nil || u.Scheme != "https" {
+		return iss
+	}
+	if configuredSignin(origin, iss) {
+		return origin
+	}
+	return iss
+}
+
+// configuredSignin reports whether origin is a sign-in origin the operator
+// configured for the issuer iss: the issuer's own, or a value of
+// IAM_FEDERATION_ORIGIN_MAP whose host belongs to the same brand. A host the
+// issuer map does not name resolves to the default issuer, so an origin of another
+// brand is refused here exactly as the boot check refuses a map that would send
+// one there (signinOriginsTerminal).
+func configuredSignin(origin, iss string) bool {
+	if origin == iss {
+		return true
+	}
+	r := activeFederationResolver.Load()
+	if r == nil {
+		return false
+	}
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	host, err := resolveIssuer(u.Host)
+	if err != nil || normalizeIssuer(host) != iss {
+		return false
+	}
+	for _, v := range r.byHost {
+		if v == origin {
+			return true
+		}
+	}
+	return false
 }
 
 // mayApprove reports whether user may look at and approve the pending device
@@ -412,10 +655,11 @@ func approveDevice(c *zip.Ctx, db orm.DB, user *schema.User, userCode string) er
 // org admits any org that is not reserved — the same rule its authorization code
 // is minted under (MintFor), so a self-service account in an org of its own
 // approves `hanzo auth login` exactly as it signs in to the console. A SuperAdmin
-// (schema.User.SuperAdmin) crosses tenants deliberately: that is the identity an
-// operator signs a CLI into any brand's app with, and approveDevice records it.
+// (schema.User.SuperAdmin) crosses tenants for the platform's own applications and
+// for those alone: that is the identity an operator signs a CLI into any brand's app
+// with, and approveDevice records it. A tenant's application is its tenant's.
 func mayApprove(user *schema.User, row *schema.Token, app *schema.Application) bool {
-	if user.Owner == row.Organization || user.SuperAdmin() {
+	if user.Owner == row.Organization || (user.SuperAdmin() && app.Platform) {
 		return true
 	}
 	return app.ServesAnyOrg() && !policy.IsReservedOrg(user.Owner)

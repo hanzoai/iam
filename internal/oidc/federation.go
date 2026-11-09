@@ -536,7 +536,7 @@ func federationMint(c *zip.Ctx, db orm.DB, app *schema.Application, user *schema
 	// IdP remembers them — the same tail loginGrant has. Without it a Google or
 	// GitHub sign-in left the person anonymous on hanzo.id itself and re-prompted by
 	// every other app: the relying party got its code and the IdP forgot the human.
-	_ = sessions.Open(ctx, c.Fiber(), db, user.Owner, user.Name, app.Name)
+	_ = sessions.Open(ctx, c.Fiber(), db, user.Owner, user.Name, app.Name, true)
 	v := url.Values{}
 	v.Set("code", codeRow.Code)
 	setIfPresent(v, "state", p.AppState)

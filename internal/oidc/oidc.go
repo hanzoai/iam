@@ -42,8 +42,9 @@ const (
 	// the approval page must show a human before they authorize it.
 	PathDeviceInfo = "/v1/iam/oauth/device/info"
 	// PathDeviceVerify is the user-facing device-approval PAGE (a route in the
-	// hosted SPA), not an API path: RFC 8628's verification_uri is somewhere a
-	// human opens and signs in, which the JSON token API can never be.
+	// hosted SPA, on the application's sign-in origin: verificationOrigin), not an
+	// API path: RFC 8628's verification_uri is somewhere a human opens and signs
+	// in, which the JSON token API can never be.
 	PathDeviceVerify = "/login/oauth/device"
 )
 
@@ -58,6 +59,12 @@ const (
 // and password are required", naming three fields that page has never rendered and
 // never sends. An error must describe the thing the caller can actually do.
 const CodeLoginRequired = "login_required"
+
+// CodeAccountSelectionRequired is the `code` beside a session sign-in refused
+// because several people are signed in on this browser and the request named none
+// of them, or asked the person to choose (prompt=select_account): the page shows
+// its account chooser and posts again naming the one picked (loginHint).
+const CodeAccountSelectionRequired = "account_selection_required"
 
 // CodeAccountNotPermitted is the `code` beside a sign-in refused because the
 // account itself may not sign in — archived by an operator (isForbidden) or

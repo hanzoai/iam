@@ -270,6 +270,11 @@ func Create(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 		// Which applications are the platform's own is the seed's to say
 		// (internal/seed markPlatform), and nobody else's: a create never makes one.
 		in.Platform = false
+		// Where the application's people sign in is an address, and the authorize
+		// endpoint redirects to it: nothing that is not an https URL is stored.
+		if err := schema.CheckSigninUrl(in.SigninUrl); err != nil {
+			return nil, zip.ErrBadRequest("signinUrl: " + err.Error())
+		}
 		if err := authorizeProviders(ctx, in); err != nil {
 			return nil, err
 		}
@@ -342,6 +347,9 @@ func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 		}
 		// The flag is the seed's; an update keeps what is stored.
 		in.Platform = existing.Platform
+		if err := schema.CheckSigninUrl(in.SigninUrl); err != nil {
+			return nil, zip.ErrBadRequest("signinUrl: " + err.Error())
+		}
 		if err := authorizeProviders(ctx, in); err != nil {
 			return nil, err
 		}

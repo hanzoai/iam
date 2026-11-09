@@ -17,6 +17,7 @@ package schema
 
 import (
 	"crypto/subtle"
+	"fmt"
 	"net/url"
 
 	policy "github.com/hanzoai/authz"
@@ -378,4 +379,19 @@ func (a *Application) IsPasswordEnabled() bool {
 		}
 	}
 	return false
+}
+
+// CheckSigninUrl judges a SigninUrl a deployment declares: empty (the issuer), or an
+// absolute https URL naming a host, with no userinfo. Whether IAM prints its origin
+// is the operator's to say (IAM_FEDERATION_ORIGIN_MAP); this only keeps a value that
+// could never be an address out of the row.
+func CheckSigninUrl(raw string) error {
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
+		return fmt.Errorf("%q is not an absolute https URL", raw)
+	}
+	return nil
 }
