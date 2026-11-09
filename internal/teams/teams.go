@@ -42,15 +42,28 @@ func Route(app *zip.Group, db orm.DB) {
 }
 
 // Ref addresses one team by name. The owner is the caller's organization,
-// resolved from the credential — a URL carries what it addresses, and a tenant
-// is not something a request may name.
+// resolved from the credential, unless the request names one: principal.Scope
+// honours an org the caller may act in and refuses any other, so naming one never
+// reaches a tenant the credential could not.
 type Ref struct {
-	Name string `json:"name"`
+	// Owner is the organization the team belongs to: yours when left out.
+	Owner string `json:"owner"`
+	Name  string `json:"name"`
+}
+
+// AuthzScope is the team a delete addresses, resolved as authz.Authorize resolves
+// it, so the org the seam authorized is the org the handler deletes from.
+func (in *Ref) AuthzScope(ctx context.Context) (owner, name string, err error) {
+	owner, err = principal.Scope(ctx, in.Owner)
+	return owner, in.Name, err
 }
 
 // Input is the writable projection of a team (the v1 add/update-team body). It
 // keeps the HTTP contract clean of the orm.Model bookkeeping fields.
 type Input struct {
+	// Owner is the organization the team belongs to. Leave it out and it is
+	// yours, from your credentials; name another only if you administer it.
+	Owner string `json:"owner"`
 	// Name addresses the team on update and names it on create; every other
 	// field is content and binds from the BODY, never the URL.
 	Name         string   `json:"name"`
@@ -63,9 +76,18 @@ type Input struct {
 	IsEnabled    bool     `json:"isEnabled" url:"-"`
 }
 
-// ListInput carries nothing: the organization is the caller's, resolved from the
-// credential.
-type ListInput struct{}
+// AuthzScope is the team a create or update addresses, resolved as authz.Authorize
+// resolves it, so the org the seam authorized is the org the handler writes.
+func (in *Input) AuthzScope(ctx context.Context) (owner, name string, err error) {
+	owner, err = principal.Scope(ctx, in.Owner)
+	return owner, in.Name, err
+}
+
+// ListInput scopes a listing to one organization, the caller's when it names none.
+type ListInput struct {
+	// Owner is the organization whose teams to list: yours when left out.
+	Owner string `json:"owner"`
+}
 
 // ListOutput is the owner-scoped page of teams.
 type ListOutput struct {
@@ -104,17 +126,16 @@ func apply(dst *schema.Team, in *Input) {
 // List returns your organization's teams, newest first — each a named set of
 // people that roles and permissions are granted to.
 //
-// You see your own organization's teams and no one else's; which organization
-// that is comes from your credentials, not from the request.
+// Name no organization and it is yours, from your credentials. Name one you
+// belong to and you see its teams; any other is refused.
 func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
-	// The owner is resolved by principal.Scope from the authenticated principal,
-	// never taken from the input: a tenant reads only its own org, a SuperAdmin
-	// reads the owner it asks for. Filtering on in.Owner instead was a confused
-	// deputy — the Guard authorizes on the query string, then a typed GET binds
-	// NOTHING from it (zip typed.go reads a body only for non-GET), so in.Owner
-	// arrived empty on every REST call and the "empty owner lists everything"
-	// branch returned every tenant.
-	owner, err := principal.Scope(ctx, "")
+	// The owner is resolved by principal.ScopeRead, never taken from the input
+	// unchecked: in.Owner is what the CALLER wrote in the query, and ScopeRead
+	// honours it only for an org the caller belongs to (a SuperAdmin, any org;
+	// naming none, the caller's own). The Guard does not pre-authorize this read
+	// (authz.handlerAuthorizedExact), because belonging opens it, which is wider
+	// than the Guard's tenant rule — the clause the workspace list asks.
+	owner, err := principal.ScopeRead(ctx, in.Owner)
 	if err != nil {
 		return nil, err
 	}
@@ -131,12 +152,15 @@ func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) 
 
 // Get returns one team: who is in it.
 func (h *Handler) Get(ctx context.Context, in *Ref) (*schema.Team, error) {
-	owner, err := principal.Scope(ctx, "")
+	// The Guard and the op seam leave a team read to the handler (the item's org
+	// is in no path), so this is its whole authorization: the list's clause, one
+	// team at a time.
+	owner, err := principal.ScopeRead(ctx, in.Owner)
 	if err != nil {
 		return nil, err
 	}
-	if owner == "" || in.Name == "" {
-		return nil, zip.ErrBadRequest("a name is required")
+	if err := required(owner, in.Name); err != nil {
+		return nil, err
 	}
 	team, err := orm.Get[schema.Team](h.db, key(owner, in.Name))
 	if err != nil {
@@ -150,12 +174,12 @@ func (h *Handler) Get(ctx context.Context, in *Ref) (*schema.Team, error) {
 // people come and go: add someone and they inherit what the team can do. A name
 // already used in your organization is refused.
 func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Team, error) {
-	owner, err := principal.Scope(ctx, "")
+	owner, _, err := in.AuthzScope(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if owner == "" || in.Name == "" {
-		return nil, zip.ErrBadRequest("a name is required")
+	if err := required(owner, in.Name); err != nil {
+		return nil, err
 	}
 	// A team may only name people of its own organization: the refs are the
 	// caller's input and carry no tenancy of their own.
@@ -189,12 +213,12 @@ func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Team, error) {
 // everyone in it as soon as the write lands. The name and the created stamp do
 // not change.
 func (h *Handler) Update(ctx context.Context, in *Input) (*schema.Team, error) {
-	owner, err := principal.Scope(ctx, "")
+	owner, _, err := in.AuthzScope(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if owner == "" || in.Name == "" {
-		return nil, zip.ErrBadRequest("a name is required")
+	if err := required(owner, in.Name); err != nil {
+		return nil, err
 	}
 	// A team may only name people of its own organization: the refs are the
 	// caller's input and carry no tenancy of their own.
@@ -215,12 +239,12 @@ func (h *Handler) Update(ctx context.Context, in *Input) (*schema.Team, error) {
 // Delete removes a team. Everyone in it loses the access it carried; their
 // accounts, and any other team they are in, are untouched.
 func (h *Handler) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
-	owner, err := principal.Scope(ctx, "")
+	owner, _, err := in.AuthzScope(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if owner == "" || in.Name == "" {
-		return nil, zip.ErrBadRequest("a name is required")
+	if err := required(owner, in.Name); err != nil {
+		return nil, err
 	}
 	team, err := orm.Get[schema.Team](h.db, key(owner, in.Name))
 	if err != nil {
@@ -230,6 +254,19 @@ func (h *Handler) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 		return nil, zip.ErrInternal(err.Error())
 	}
 	return &DeleteOutput{Deleted: true}, nil
+}
+
+// required refuses a team address missing either half of its (owner, name) key.
+// The owner is empty only for a SuperAdmin naming no org: it has none of its own
+// to file a team under, so it names one rather than writing somewhere unintended.
+func required(owner, name string) error {
+	if owner == "" {
+		return zip.ErrBadRequest("an owner is required: name the organization the team belongs to")
+	}
+	if name == "" {
+		return zip.ErrBadRequest("a name is required")
+	}
+	return nil
 }
 
 // mapErr translates an orm lookup error into the matching HTTP status.

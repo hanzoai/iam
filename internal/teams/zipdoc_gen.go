@@ -9,10 +9,14 @@ import (
 func init() {
 	zip.Describe("github.com/hanzoai/iam/internal/teams DELETE /v1/iam/teams/:name", zip.Doc{
 		Description: "Removes a team. Everyone in it loses the access it carried; their\naccounts, and any other team they are in, are untouched.",
+		Fields: map[string]string{
+			"Ref.owner": "Owner is the organization the team belongs to: yours when left out.",
+		},
 	})
 	zip.Describe("github.com/hanzoai/iam/internal/teams GET /v1/iam/teams", zip.Doc{
-		Description: "Returns your organization's teams, newest first — each a named set of\npeople that roles and permissions are granted to.\n\nYou see your own organization's teams and no one else's; which organization\nthat is comes from your credentials, not from the request.",
+		Description: "Returns your organization's teams, newest first — each a named set of\npeople that roles and permissions are granted to.\n\nName no organization and it is yours, from your credentials. Name one you\nbelong to and you see its teams; any other is refused.",
 		Fields: map[string]string{
+			"ListInput.owner": "Owner is the organization whose teams to list: yours when left out.",
 			"Model[github.com/hanzoai/iam/pkg/schema.Team].id": "Persisted fields",
 		},
 	})
@@ -20,19 +24,22 @@ func init() {
 		Description: "Returns one team: who is in it.",
 		Fields: map[string]string{
 			"Model[github.com/hanzoai/iam/pkg/schema.Team].id": "Persisted fields",
+			"Ref.owner": "Owner is the organization the team belongs to: yours when left out.",
 		},
 	})
 	zip.Describe("github.com/hanzoai/iam/internal/teams POST /v1/iam/teams", zip.Doc{
 		Description: "Makes a team — a named set of people that roles and permissions grant\nto. Granting to a team rather than to each person keeps access correct as\npeople come and go: add someone and they inherit what the team can do. A name\nalready used in your organization is refused.",
 		Fields: map[string]string{
-			"Input.name": "Name addresses the team on update and names it on create; every other\nfield is content and binds from the BODY, never the URL.",
+			"Input.name":  "Name addresses the team on update and names it on create; every other\nfield is content and binds from the BODY, never the URL.",
+			"Input.owner": "Owner is the organization the team belongs to. Leave it out and it is\nyours, from your credentials; name another only if you administer it.",
 			"Model[github.com/hanzoai/iam/pkg/schema.Team].id": "Persisted fields",
 		},
 	})
 	zip.Describe("github.com/hanzoai/iam/internal/teams PUT /v1/iam/teams/:name", zip.Doc{
 		Description: "Changes who is in a team. Access changes for\neveryone in it as soon as the write lands. The name and the created stamp do\nnot change.",
 		Fields: map[string]string{
-			"Input.name": "Name addresses the team on update and names it on create; every other\nfield is content and binds from the BODY, never the URL.",
+			"Input.name":  "Name addresses the team on update and names it on create; every other\nfield is content and binds from the BODY, never the URL.",
+			"Input.owner": "Owner is the organization the team belongs to. Leave it out and it is\nyours, from your credentials; name another only if you administer it.",
 			"Model[github.com/hanzoai/iam/pkg/schema.Team].id": "Persisted fields",
 		},
 	})
