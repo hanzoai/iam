@@ -4,7 +4,10 @@ images:
   - name: iam
     context: .
     dockerfile: Dockerfile
-    repo: oci.hanzo.ai/hanzoai/iam
+    # Written to ghcr.io and pulled as oci.hanzo.ai/hanzoai/iam: oci.hanzo.ai
+    # reads through to ghcr.io (universe registry.yaml `proxy:`) and answers a
+    # push with 405.
+    repo: ghcr.io/hanzoai/iam
     platforms: [linux/amd64, linux/arm64]
 test:
   - name: build
