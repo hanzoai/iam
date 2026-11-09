@@ -89,3 +89,50 @@ func TestFederation_NoAddressIsRefusedRatherThanNamedAfterTheProvider(t *testing
 		}
 	}
 }
+
+// An IdP address that is present but NOT verified must not create an account.
+// GitHub's profile email (returned when /user/emails has no verified entry) is
+// the live shape of this refusal.
+func TestFederation_UnverifiedEmailIsNotProvisioned(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "webapp", signup: true, redirectURIs: []string{testRedirect}})
+	m := newMockGitHub(t)
+	m.emails = []map[string]any{
+		{"email": "octo-unverified@example.com", "primary": true, "verified": false},
+	}
+	m.profileEmail = "octo-profile@example.com"
+	seedGitHubProvider(t, db, "webapp", m)
+
+	before := countUsers(t, db)
+	q, cookie := beginAuthorize(t, app, "webapp", fedProvGitHub)
+	loc := requireRedirect(t, callback(t, app, q.Get("state"), "gh-code-1", cookie), testRedirect)
+	cb := mustQuery(t, loc)
+	if cb.Get("code") != "" {
+		t.Fatalf("unverified email must not mint a code: %q", loc)
+	}
+	if cb.Get("error") != "access_denied" {
+		t.Fatalf("want access_denied, got %q / %q", cb.Get("error"), cb.Get("error_description"))
+	}
+	desc := cb.Get("error_description")
+	if !strings.Contains(desc, "email") {
+		t.Fatalf("refusal should mention email, got %q", desc)
+	}
+	if countUsers(t, db) != before {
+		t.Fatalf("an unverified federated account was provisioned (%d -> %d)", before, countUsers(t, db))
+	}
+}
+
+// linkOrProvision itself refuses !emailVerified before calling Create.
+func TestLinkOrProvision_RefusesUnverifiedEmail(t *testing.T) {
+	ctx := tctx()
+	db, app, prov, _ := federatedApp(t)
+	_, _, err := linkOrProvision(ctx, db, app, prov, federatedIdentity{
+		subject: "idp-unverified", email: "newbie@example.com", emailVerified: false,
+	})
+	if err != errUnverifiedFederatedEmail {
+		t.Fatalf("got %v, want errUnverifiedFederatedEmail", err)
+	}
+	if u, _ := store.GetUserByEmail(ctx, db, app.Organization, "newbie@example.com"); u != nil {
+		t.Fatal("an unverified provision left a user row")
+	}
+}

@@ -171,6 +171,8 @@ func buildUserinfo(u *schema.User, claims *Claims, row *schema.Token, iss string
 	}
 	if hasScope(scope, "email") && u.Email != "" {
 		info["email"] = u.Email
+		// Relies on the stored EmailVerified bit (OTP prove, verified federation
+		// link, or backfill). Callers that require proof must read this claim.
 		info["email_verified"] = u.EmailVerified
 	}
 	if hasScope(scope, "address") && u.Location != "" {
