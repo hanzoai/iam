@@ -40,9 +40,10 @@ func TestProvisionFederatedUser_DedupesWithANumericSuffix(t *testing.T) {
 
 	for i, want := range []string{"z2", "z3"} {
 		id := federatedIdentity{
-			subject:     string(rune('a'+i)) + "-idp-subject",
-			email:       "z@example.com",
-			displayName: "Grace Hopper", // the trap: never a username
+			subject:       string(rune('a'+i)) + "-idp-subject",
+			email:         "z@example.com",
+			emailVerified: true,
+			displayName:   "Grace Hopper", // the trap: never a username
 		}
 		u, err := provisionFederatedUser(ctx, db, app, prov, binding, id)
 		if err != nil {
@@ -102,7 +103,7 @@ func TestProvisionFederatedUser_TakesTheProvidersHandleWhenFree(t *testing.T) {
 	}
 
 	// GitHub, its login free: the account is named after it, and the profile name stays the display name.
-	u := provision("GitHub", "92065535", federatedIdentity{email: "wbin90620@gmail.com", displayName: "Darkhorse7stars", handle: "Darkhorse7stars"})
+	u := provision("GitHub", "92065535", federatedIdentity{email: "wbin90620@gmail.com", emailVerified: true, displayName: "Darkhorse7stars", handle: "Darkhorse7stars"})
 	if u.Name != "darkhorse7stars" {
 		t.Fatalf("GitHub signup named %q, want its login %q", u.Name, "darkhorse7stars")
 	}
@@ -114,17 +115,17 @@ func TestProvisionFederatedUser_TakesTheProvidersHandleWhenFree(t *testing.T) {
 	if _, err := users.New(db).Create(ctx, &users.CreateInput{User: schema.User{Owner: "hanzo", Name: "octocat"}}); err != nil {
 		t.Fatalf("seed hanzo/octocat: %v", err)
 	}
-	u = provision("GitHub", "583231", federatedIdentity{email: "mona@example.com", displayName: "The Octocat", handle: "octocat"})
+	u = provision("GitHub", "583231", federatedIdentity{email: "mona@example.com", emailVerified: true, displayName: "The Octocat", handle: "octocat"})
 	if u.Name != "mona" {
 		t.Fatalf("GitHub signup with a held login named %q, want the address's %q", u.Name, "mona")
 	}
 
 	// GitHub with no usable login, and Google, which keeps none: the address's name.
-	u = provision("GitHub", "1", federatedIdentity{email: "ada@example.com", displayName: "Ada Lovelace", handle: ""})
+	u = provision("GitHub", "1", federatedIdentity{email: "ada@example.com", emailVerified: true, displayName: "Ada Lovelace", handle: ""})
 	if u.Name != "ada" {
 		t.Fatalf("GitHub signup with no login named %q, want %q", u.Name, "ada")
 	}
-	u = provision("Google", "google-sub-1", federatedIdentity{email: "grace@example.com", displayName: "Grace Hopper"})
+	u = provision("Google", "google-sub-1", federatedIdentity{email: "grace@example.com", emailVerified: true, displayName: "Grace Hopper"})
 	if u.Name != "grace" {
 		t.Fatalf("Google signup named %q, want the address's %q", u.Name, "grace")
 	}

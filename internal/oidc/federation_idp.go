@@ -524,8 +524,12 @@ func githubPrimaryEmail(ctx context.Context, userURL, token, fallback string) (s
 			return anyVerified, true
 		}
 	}
-	// No verified address available — the profile email is unproven.
-	return fallback, false
+	// No verified address available. Do not hand the unproven profile email to
+	// provisioning: linkOrProvision refuses !emailVerified, and returning the
+	// fallback here only created accounts with EmailVerified=false. Empty +
+	// false surfaces as errNoFederatedEmail / errUnverifiedFederatedEmail.
+	_ = fallback
+	return "", false
 }
 
 // --- hardened HTTP + JWKS ---

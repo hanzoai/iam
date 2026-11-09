@@ -598,6 +598,10 @@ var (
 	// errNoFederatedEmail: the provider shared no address, so there is nothing to
 	// name the account after and no way to reach the person again.
 	errNoFederatedEmail = errors.New("federation: the provider shared no email address")
+	// errUnverifiedFederatedEmail: the IdP shared an address it did not verify.
+	// Linking an existing account already refused that case; provisioning must
+	// refuse it too — an unverified address must not become a usable identity.
+	errUnverifiedFederatedEmail = errors.New("federation: the provider did not verify this email address")
 )
 
 // msgAddressHeld is what a person is told for errAddressHeld, on the callback and
@@ -616,6 +620,8 @@ func fedResolveErrorRedirect(c *zip.Ctx, st *schema.FederationState, err error) 
 		return fedErrorRedirect(c, st, "access_denied", "this application is not open for registration")
 	case errors.Is(err, errNoFederatedEmail):
 		return fedErrorRedirect(c, st, "access_denied", "the provider shared no email address for this account")
+	case errors.Is(err, errUnverifiedFederatedEmail):
+		return fedErrorRedirect(c, st, "access_denied", "the provider did not verify this email address")
 	case errors.Is(err, store.ErrEmailAmbiguous):
 		// The provider proved this address to the person at the browser, so naming
 		// the conflict tells them nothing they do not own. Which row is theirs is
@@ -763,6 +769,12 @@ func linkOrProvision(ctx context.Context, db orm.DB, app *schema.Application, pr
 	if id.email == "" {
 		return nil, nil, errNoFederatedEmail
 	}
+	// An unverified IdP address must not create a usable identity. Linking an
+	// existing account already refused !emailVerified above; provisioning must
+	// refuse it too (GitHub profile email fallback is unproven).
+	if !id.emailVerified {
+		return nil, nil, errUnverifiedFederatedEmail
+	}
 	// No row holds this address, which is now a property of reaching this line rather
 	// than something to re-check. Federated accounts carry NO password (the digest
 	// stays empty, so password login fails closed) and are never admin.
@@ -840,6 +852,12 @@ func (l *fedLink) write(ctx context.Context, db orm.DB, owner, name, client stri
 // The display name reaches DisplayName and stops there: a profile name never
 // becomes an identity.
 func provisionFederatedUser(ctx context.Context, db orm.DB, app *schema.Application, prov *schema.Provider, binding connectorBinding, id federatedIdentity) (*schema.User, error) {
+	if id.email == "" {
+		return nil, errNoFederatedEmail
+	}
+	if !id.emailVerified {
+		return nil, errUnverifiedFederatedEmail
+	}
 	org := app.Organization
 	name, err := federatedName(ctx, db, org, id, prov.Type)
 	if err != nil {
