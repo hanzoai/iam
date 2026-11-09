@@ -287,6 +287,23 @@ func (a *Application) Spans() bool {
 // carries. Both must read as confined.
 const orgChoiceNone = "None"
 
+// TagDynamic marks an application a client registered for itself at the dynamic
+// registration endpoint (RFC 7591). Nobody vetted it, so the authorization
+// endpoint never answers it from a session and a grant never carries a scope it
+// did not register.
+const TagDynamic = "dynamic"
+
+// Dynamic reports whether this application registered itself rather than being
+// declared by an operator or created by a tenant.
+func (a *Application) Dynamic() bool {
+	for _, t := range a.Tags {
+		if t == TagDynamic {
+			return true
+		}
+	}
+	return false
+}
+
 // IsRedirectUriValid reports whether redirectUri is one of the application's
 // registered redirect URIs (RFC 6749 3.1.2.3). Match is exact string equality —
 // never a host-suffix, substring, or regex match — so a trusted origin can never

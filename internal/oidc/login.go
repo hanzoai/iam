@@ -208,6 +208,13 @@ func loginHandler(db orm.DB) zip.Handler {
 					if err != nil {
 						return httpx.Err(c, err.Error())
 					}
+					// A client that registered itself is never answered from a session,
+					// here or at authorize: this post can be reached without authorize
+					// having run, by a link straight to the sign-in page, so no recorded
+					// demand can be relied on to say so.
+					if app != nil && app.Dynamic() {
+						return httpx.ErrCode(c, "sign in again to continue", CodeLoginRequired)
+					}
 					// The authorize request's own instructions hold here as they do at
 					// authorize: prompt=login is owed a fresh credential, so no session
 					// answers it; prompt=select_account is owed the person's choice, so

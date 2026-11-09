@@ -1050,6 +1050,52 @@ re-ceremony it would give service_auth after an expired code is a fresh registra
 The user_code is the device grant's 8-symbol code, stored as the device's is, not the
 profile's 6 digits: the page normalizes to that alphabet, and 0/1 do not survive it.
 
+## Dynamic client registration — how an MCP client gets a client_id (RFC 7591)
+
+`POST /v1/iam/oauth/register` (`internal/oidc/register.go`). Claude.ai, ChatGPT, Codex,
+Cursor, VS Code and the rest add `https://api.hanzo.ai/v1/mcp`, read its protected-resource
+metadata, find this issuer, and register here before running the ordinary authorization-code
+flow with PKCE. Advertised as `registration_endpoint` in both discovery documents, and only
+where it is served.
+
+**Off unless the deployment says so**: `IAM_REGISTRATION={"organization":"hanzo","signinUrl":"https://hanzo.ai/login","providers":"hanzo-app"}`.
+Unset or unreadable, the route does not exist and discovery does not mention it. `organization`
+owns every registered client and signs its tokens (`cert-<org>`); `signinUrl` is where authorize
+hands the request, and it is followed only on an origin in `IAM_FEDERATION_ORIGIN_MAP` for the
+issuer. A registration is refused (503) where that is not so, because the client would land on
+the issuer's page instead of the brand's. `providers` names the application whose social sign-in
+methods (Google, GitHub, ...) a new client is given, copied as sign-in only (no sign-up, no
+unlink) so a person who signs in that way on the brand's page can do so for a client.
+
+- **What it registers**: a PUBLIC client (`token_endpoint_auth_method` answers `none` whatever
+  was asked; the response says so), `authorization_code` + `refresh_token`, the scopes
+  `openid profile email offline_access` narrowed to those asked, redirect URIs that are https
+  on a named public host or http on `127.0.0.1`/`[::1]`/`localhost` (max 5; no custom scheme,
+  wildcard, fragment, userinfo or IP-literal https host). Owned by the configured org,
+  `IsShared` (it serves any of the issuer's people), `Platform` false, tagged
+  `schema.TagDynamic`; `ExpireInHours` 1, `RefreshExpireInHours` 720.
+- **Idempotent**: `client_id` is `mcp-` + a digest of the registered metadata, so a hosted client
+  whose every user registers the same name and callback is one row, and a repeat creates nothing
+  and counts against nothing. A loopback client with a fresh port each run is a new row.
+- **Bounded**: new clients per address (20/h) and per network (a /24 or /64, 100/h), counted from
+  the audit ledger in the transaction that writes the row; 429 with `Retry-After`. Every created
+  client is an audit row (`register-client`, `schema.PlatformWritten`) naming the client, the
+  address, and where it sends a code.
+- **Untrusted until a person says otherwise.** Nobody vetted it and the address it chose is
+  where the code goes. So it is never answered from a session: authorize forces `prompt=login`
+  (`prompt=none` is `interaction_required`) and the login resume refuses it, whichever door the
+  request came through (a link straight to the sign-in page never runs authorize). `MintCode`
+  (the one constructor of a code row, so the federation mint too) clamps the grant's scope to
+  what it registered. `DisplayName` is `<client_name> (<host>)`, the
+  host its code returns to. SuperAdmin cannot authorize one (reserved-org confinement).
+- **Not built**: RFC 7592 client management (no registration access token, no delete over the
+  wire; delete a row with the applications API), a consent screen (the sign-in is the consent, and
+  the page shows the name with its host), a janitor for clients that never completed a sign-in
+  (growth is bounded by the cap), CIMD (clients identified by a URL the server fetches).
+- The `aud` of a code-grant access token is the client's id, as for every application; the
+  `resource` an authorize request carries rides the code and the refresh but is not applied to
+  `aud`. Resource servers here trust issuer + signature (cloud does not gate on `aud`).
+
 ## Workload grant — the cluster already vouches for the pod
 
 `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer` (RFC 7523,
@@ -1722,3 +1768,10 @@ by an account living in `hanzo` with the same address.
 - Never call Hanzo an "LLM gateway"; never position vs LiteLLM. Full AI cloud, not a proxy.
 - `/v1/` only, never `/api/`. Zen models are our own family — never name upstream models.
 - White-label by domain; never the Hanzo mark on a Lux/Zoo surface.
+
+## Web3 verify-signature (cloud#464)
+- This checkout (hanzoai/iam) has no `idp/web3onboard.go`; native wallet flow is `internal/wallet` (`GET /v1/iam/web3/nonce`, `POST /v1/iam/web3/verify`).
+- `verify.go` parses CAIP-122 signed message, burns single-use server nonce (10m TTL, `burn()` via `GetForUpdate`), checks domain/chain, calls `VerifyProof` (EIP-191 `VerifyEVM` recovers signer and compares case-insensitively to claimed address), identity is recovered `res.Address`, never body.
+- Fixed `store.go:burn/first` to use `orm.IsNotFound` (backend returns `db.ErrNoSuchEntity`/`sql.ErrNoRows`, not `orm.ErrNotFound`) so unknown nonce correctly yields opaque `web3: nonce invalid, already used, or expired` instead of leaking `db: no such entity`.
+- Added `internal/wallet/attack_test.go`: empty payload, forged address/no signature, valid signature by different key, replayed nonce, expired nonce, unknown nonce, happy path with real secp256k1 key.
+- Test output: `ok github.com/hanzoai/iam/internal/wallet 3.291s` (full `./internal/wallet/...`), vet clean.

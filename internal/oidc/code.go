@@ -58,6 +58,12 @@ func MintCode(app *schema.Application, userID, scope, challenge, method, resourc
 	if challenge != "" && method != "S256" {
 		return nil, ErrPKCEPlainRejected
 	}
+	// A client that registered itself holds the scopes it registered and no others,
+	// whatever its authorize request names. Here, in the one constructor of a code
+	// row, because the password mint and the federation mint both reach it.
+	if app.Dynamic() {
+		scope = registered(app, scope)
+	}
 	// The token row is keyed by the application's OWNER (its registry owner, e.g.
 	// "admin"), so (Owner, Application) is the application's natural key and the
 	// token endpoint resolves the app back unambiguously. Organization records the

@@ -404,7 +404,15 @@ func readTarget(c *zip.Ctx) (owner, name string, ok bool) {
 // memberships is here because its target rides in ?user=/?org= rather than
 // ?owner=/?id=/the path, so the Guard cannot pre-authorize it generically — the
 // list handler's own scoped() check is the tenant gate.
-var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/", "/v1/iam/service-accounts", "/v1/iam/memberships"}
+//
+// A team ITEM (/v1/iam/teams/{name}) is here because its organization rides in
+// neither the path nor the query: it is the caller's, from the credential, unless
+// the caller names one. The Guard therefore reads an empty owner and would refuse
+// every non-SuperAdmin before the handler could resolve it. The handler asks
+// principal.ScopeRead, the clause the team collection asks, so a member reads the
+// org's teams one at a time as it reads them all, and a stranger is refused. The
+// collection itself is in handlerAuthorizedExact.
+var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/", "/v1/iam/service-accounts", "/v1/iam/memberships", "/v1/iam/teams/"}
 
 // handlerAuthorizedExact are SINGLE routes (not subtrees) the handler authorizes
 // itself.
@@ -438,6 +446,12 @@ var handlerAuthorizedPrefixes = []string{"/v1/iam/scim/", "/v1/iam/service-accou
 // narrows a member to their own rows, and holds a confidential client to the
 // key-mint capability and the org it serves. Exact, so a named key stays the
 // Guard's.
+//
+// The team COLLECTION is here for the workspace collection's reason, and one more:
+// a team list names no org at all by default (it is the caller's), so the Guard
+// has no target to authorize and refused every caller but a SuperAdmin. The list
+// handler asks ScopeRead. Its items are handler-authorized too, by prefix (see
+// handlerAuthorizedPrefixes), because a team item carries no owner in its path.
 var handlerAuthorizedExact = map[string]bool{
 	"/v1/iam/keys":                 true,
 	"/v1/iam/keys/org":             true,
@@ -446,6 +460,7 @@ var handlerAuthorizedExact = map[string]bool{
 	"/v1/iam/webauthn-credentials": true,
 	"/v1/iam/projects":             true,
 	"/v1/iam/workspaces":           true,
+	"/v1/iam/teams":                true,
 }
 
 // pathAuthorized reports whether path is handler-authorized: an exact single-route
@@ -728,6 +743,20 @@ func Authorize(ctx context.Context, op zip.Op, in any) (zip.Decision, error) {
 	if v == policy.Read && pathAuthorized(op.Path) {
 		return zip.Decision{Effect: zip.Allow}, nil
 	}
+	// An input whose org defaults to the caller's names its target through Scope,
+	// and the handler asks the same method, so the org decided here is the org
+	// written. A Scope refusal (a foreign org named) is the refusal.
+	if s, ok := in.(scoped); ok {
+		var err error
+		if owner, name, err = s.AuthzScope(ctx); err != nil {
+			reason := "forbidden"
+			var he *zip.HTTPError
+			if errors.As(err, &he) && he.Msg != "" {
+				reason = he.Msg
+			}
+			return zip.Decision{Effect: zip.Deny, Clause: "scope", Reason: reason}, nil
+		}
+	}
 	if !p.CanEntity(v, policy.Entity{Kind: entityOf(op.Path), Owner: owner, Name: name}, principal.Env) {
 		return zip.Decision{Effect: zip.Deny, Clause: "entity", Reason: "forbidden"}, nil
 	}
@@ -745,6 +774,22 @@ func Authorize(ctx context.Context, op zip.Op, in any) (zip.Decision, error) {
 // carries its OWN owner) for the target.
 type owned interface {
 	AuthzTarget() (owner, name string)
+}
+
+// scoped is implemented by a typed input whose organization is the CALLER's unless
+// the request names one — a team write, whose org comes from the credential. Its
+// target is not a field alone but a field read against the principal, so the seam
+// cannot take it from the struct: decodedTarget would hand it ("", name), and an
+// empty owner is refused to everyone but a SuperAdmin, which is how the teams
+// surface came to answer no one (hanzoai/iam#23).
+//
+// AuthzScope resolves it through principal.Scope — an org named is honoured or
+// refused, never reinterpreted, and naming none is the caller's own — and the
+// handler calls the SAME method, so the owner authorized is by construction the
+// owner written. A SuperAdmin naming none resolves to "" and the handler refuses
+// that, since there is no org to file the row under.
+type scoped interface {
+	AuthzScope(ctx context.Context) (owner, name string, err error)
 }
 
 // decodedTarget returns the (owner, name) a decoded request addresses — exactly
