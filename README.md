@@ -11,24 +11,59 @@ provisioning, MFA / WebAuthn, service accounts, and social federation
 (Google, GitHub).
 
 It is a **clean-room, native rewrite** on the Hanzo stack — `zip` over
-`hanzoai/orm`, **no the legacy surface, no Beego, no xorm**. The identity binary owns its
+`hanzoai/orm`, **no legacy surface, no Beego, no xorm**. The identity binary owns its
 source outright and collapses to one way of doing each thing. The retired
-the legacy surface/Beego fork lives at
+legacy Beego fork lives at
 `hanzoai/iam-v1`, private and archived, and is out of every graph.
 
 Clients never hand-roll OAuth. They authenticate through the **`@hanzo/iam`
 SDK** against the endpoints below — one way, no legacy paths (HIP-0111).
 
+## Quickstart (Run Locally)
+
+Requires Go 1.27+ and `openssl`. Signing key material is deliberately never stored in SQLite (`schema.Cert.PrivateKey` is `json:"-"`), so local dev mounts one RSA PEM in `IAM_SIGNING_KEYS` matching the seeded cert name:
+
+```sh
+git clone https://github.com/hanzoai/iam && cd iam
+
+# 1. Generate a local dev signing key and minimal seed config (gitignored under .dev/)
+mkdir -p .dev/keys
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out .dev/keys/cert-dev
+cat > .dev/init_data.json <<'EOF'
+{
+  "organizations": [{"owner":"admin","name":"hanzo"}],
+  "certs": [{"owner":"admin","name":"cert-dev","cryptoAlgorithm":"RS256"}],
+  "applications": [{"owner":"admin","name":"hanzo-dev","clientId":"hanzo-dev","organization":"hanzo","enablePassword":true}]
+}
+EOF
+
+# 2. Boot local OIDC + JWKS on 127.0.0.1:8000 (SQLite in data/iam.db)
+IAM_DEV_HOST_RELATIVE=1 IAM_SIGNING_KEYS=.dev/keys \
+  go run . serve \
+  --http http://127.0.0.1:8000 \
+  --zap 127.0.0.1:19653 \
+  --init-data .dev/init_data.json
+```
+
+Verify from a second terminal:
+
+```sh
+curl -sS http://127.0.0.1:8000/.well-known/openid-configuration
+curl -sS http://127.0.0.1:8000/v1/iam/.well-known/jwks
+```
+
+[`hanzoai/cloud`](https://github.com/hanzoai/cloud) defaults `CLOUD_IAM_ISSUER=http://127.0.0.1:8000` (with ZAP on `:9653`, which is why the snippet above binds IAM's ZAP port to `19653` when running both on one machine). See the full **[Self-Hosting & Air-Gapped Deployment Guide](https://docs.hanzo.ai/docs/self-hosting)**.
+
 ## Stack
 
 | Concern | Component | Notes |
 |---|---|---|
-| HTTP | [`zap-proto/zip`](https://github.com/zap-proto/zip) | Typed `zip.Get[In,Out]` handlers on the `zap-proto/fiber/v3` engine; specificity routing; OpenAPI 3.1 at the edge |
+| HTTP | [`hanzoai/zip`](https://github.com/hanzoai/zip) | Typed `zip.Get[In,Out]` handlers on the Fiber v3 engine; specificity routing; OpenAPI 3.1 at the edge |
 | Storage | [`hanzoai/orm`](https://github.com/hanzoai/orm) | Typed Go records + KV cache over one `orm.DB` abstraction. Embedded SQLite by default (`hanzoai/sqlite`, pure-Go, WAL) — never Postgres |
 | OIDC / OAuth2 | in-tree | RS256 today; ML-DSA-65 hybrid JWT + real JWKS from the Cert entity. No external OIDC library |
 | Password verify | `internal/cred` | Algorithm resolved from the stored row — argon2id + bcrypt, verify-only, fail-closed |
 | Authorization | [`hanzoai/authz`](https://github.com/hanzoai/authz) | One canonical policy engine, called over ZAP RPC |
-| Inter-service | [`zap-proto`](https://github.com/zap-proto) | Binary RPC service↔service. HTTPS is the external edge only |
+| Inter-service | [`hanzoai/zap`](https://github.com/hanzoai/zap) | Binary RPC service↔service. HTTPS is the external edge only |
 
 ## Endpoints — RFC / OIDC standard (no `/api/`, no vendor verbs)
 
@@ -82,11 +117,11 @@ driver. Pick the backend at boot with `--store`:
 ```sh
 go build ./...
 
-# Seed real config + serve OIDC / login (SQLite by default)
-go run . serve --init-data init_data.json
+# Seed config + serve OIDC / login (SQLite by default; requires $IAM_SIGNING_KEYS and either $IAM_ISSUER or IAM_DEV_HOST_RELATIVE=1)
+IAM_ISSUER=https://iam.example.com IAM_SIGNING_KEYS=/etc/iam/keys go run . serve --init-data /etc/iam/init_data.json
 
 # ZAP-native persistence instead of embedded SQLite
-go run . serve --store datastore --init-data init_data.json
+IAM_ISSUER=https://iam.example.com IAM_SIGNING_KEYS=/etc/iam/keys go run . serve --store datastore --init-data /etc/iam/init_data.json
 
 # Read-only v1 → v2 drift report (needs a `-tags migration` build)
 go run . compare --legacy postgres://…/iam
@@ -124,8 +159,7 @@ OIDC/OAuth2 core is live and tested end to end (login → PKCE code → token �
 discovery + JWKS, credential login (argon2id / bcrypt), the token endpoint,
 introspection / revocation, UserInfo, RFC 8693 token exchange, SCIM 2.0
 provisioning, and Google / GitHub federation. Current release line: `v1.33.x`.
-See [MIGRATION.md](./MIGRATION.md) for the phased plan and the full RFC surface
-table.
+See [LLM.md](./LLM.md) for architecture details and the full RFC surface.
 
 ## License
 
@@ -133,6 +167,6 @@ Dual-licensed under [MIT](./LICENSE-MIT) or [Apache-2.0](./LICENSE-APACHE) at yo
 
 ## Hanzo — the Open AI Cloud
 
-Open source · every language · on-chain settlement. [hanzo.ai](https://hanzo.ai) · [docs.hanzo.ai](https://docs.hanzo.ai)
+Open source · every language · on-chain settlement. [hanzo.ai](https://hanzo.ai) · [docs.hanzo.ai](https://docs.hanzo.ai) · [Self-Hosting Guide](https://docs.hanzo.ai/docs/self-hosting)
 
-**SDKs in every language** — [Python](https://github.com/hanzoai/python-sdk) (flagship) · [TypeScript](https://github.com/hanzo-js/sdk) · [Go](https://github.com/hanzo-go/sdk) · [Rust](https://crates.io/crates/hanzo-client) · [C++](https://github.com/hanzo-cpp/sdk) · [Swift](https://github.com/hanzo-swift/sdk) · [Kotlin](https://github.com/hanzo-kt/sdk) · [umbrella](https://github.com/hanzoai/sdk)
+**SDKs in every language** — [Python](https://github.com/hanzoai/python-sdk) (flagship) · [TypeScript](https://github.com/hanzoai/js-sdk) · [Go](https://github.com/hanzo-go/sdk) · [Rust](https://crates.io/crates/hanzo-client) · [C++](https://github.com/hanzo-cpp/sdk) · [Swift](https://github.com/hanzo-swift/sdk) · [Kotlin](https://github.com/hanzo-kt/sdk) · [umbrella](https://github.com/hanzoai/sdk)

@@ -25,6 +25,7 @@ web/build/
 !cmd/migrate-v1/testdata/*.db
 
 # env / local
+/.dev/
 .env
 .env.*
 *.local
