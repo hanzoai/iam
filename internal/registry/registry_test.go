@@ -11,6 +11,7 @@ import (
 	"encoding/base32"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"io"
 	"math/big"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/hanzoai/orm"
@@ -26,6 +28,8 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/cred"
+	iamkeyring "github.com/hanzoai/iam/internal/keyring"
+	"github.com/hanzoai/iam/internal/oidc"
 	"github.com/hanzoai/iam/internal/users"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
@@ -1230,5 +1234,114 @@ func TestToken_UserPush_UnaffectedByAppList(t *testing.T) {
 	want := []access{{Type: "repository", Name: "hanzoai/cloud", Actions: []string{"pull", "push"}}}
 	if got := accessOf(t, claims); !eqAccess(got, want) {
 		t.Fatalf("access = %v, want %v — the user path is not governed by the app allowlist", got, want)
+	}
+}
+
+func seedOIDCSigningCert(t *testing.T, db orm.DB) (*rsa.PrivateKey, string) {
+	t.Helper()
+	t.Setenv("IAM_ISSUER", "https://hanzo.id")
+	if err := oidc.InitIssuerResolver(); err != nil {
+		t.Fatalf("init issuer resolver: %v", err)
+	}
+	key, err := parseRSAPEM([]byte(goldenKeyPEM))
+	if err != nil {
+		t.Fatalf("parse golden key: %v", err)
+	}
+	const kid = "cert-hanzo-oidc-test"
+	privPEM := string(pem.EncodeToMemory(&pem.Block{
+		Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key),
+	}))
+	iamkeyring.Set(kid, privPEM)
+	c := orm.New[schema.Cert](db)
+	c.Owner, c.Name = "admin", kid
+	c.CryptoAlgorithm = "RS256"
+	c.SetId("admin/" + kid)
+	if err := c.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed oidc cert: %v", err)
+	}
+	return key, kid
+}
+
+func mintOIDCAccessToken(t *testing.T, key *rsa.PrivateKey, kid, sub string, imp bool) string {
+	t.Helper()
+	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		"tokenType": "access-token",
+		"iss":       "https://hanzo.id",
+		"aud":       "hanzo-cli",
+		"sub":       sub,
+		"imp":       imp,
+		"iat":       time.Now().Add(-time.Minute).Unix(),
+		"exp":       time.Now().Add(time.Hour).Unix(),
+	})
+	tok.Header["kid"] = kid
+	signed, err := tok.SignedString(key)
+	if err != nil {
+		t.Fatalf("sign oidc jwt: %v", err)
+	}
+	return signed
+}
+
+func TestToken_OIDCAccessToken_PullOnly(t *testing.T) {
+	app, db, _ := newServer(t)
+	key, kid := seedOIDCSigningCert(t, db)
+	seedUser(t, db, "admin", "root", "unused-pass", true)
+	seedUser(t, db, "hanzo", "boss", "unused-pass", true)
+
+	for _, sub := range []string{"admin/root", "hanzo/boss"} {
+		jwtTok := mintOIDCAccessToken(t, key, kid, sub, false)
+
+		// Basic "token:<jwt>" (`docker login oci.hanzo.ai -u token --password-stdin`).
+		status, body, _ := tokenGET(t, app, "token", jwtTok,
+			testService, "repository:hanzoai/cloud:pull,push")
+		if status != 200 {
+			t.Fatalf("%s basic status = %d, body = %v", sub, status, body)
+		}
+		claims := verifyClaims(t, app, body["token"].(string))
+		want := []access{{Type: "repository", Name: "hanzoai/cloud", Actions: []string{"pull"}}}
+		if got := accessOf(t, claims); !eqAccess(got, want) {
+			t.Fatalf("%s basic access = %v, want %v (pull-only)", sub, got, want)
+		}
+
+		// Bearer "<jwt>" (`hanzo up` / HTTP Bearer).
+		req := httptest.NewRequest(http.MethodGet,
+			PathToken+"?service="+url.QueryEscape(testService)+"&scope="+url.QueryEscape("repository:hanzoai/cloud:pull,push"),
+			nil)
+		req.Host = testHost
+		req.Header.Set("Authorization", "Bearer "+jwtTok)
+		resp, err := testhttp.Do(app, req)
+		if err != nil {
+			t.Fatalf("%s bearer do: %v", sub, err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != 200 {
+			t.Fatalf("%s bearer status = %d, want 200", sub, resp.StatusCode)
+		}
+	}
+}
+
+func TestToken_OIDCAccessToken_Denials(t *testing.T) {
+	app, db, _ := newServer(t)
+	key, kid := seedOIDCSigningCert(t, db)
+	seedUser(t, db, "hanzo", "customer", "unused-pass", false)
+	seedUser(t, db, "evil", "boss", "unused-pass", true)
+	seedUser(t, db, "hanzo", "boss", "unused-pass", true)
+
+	cases := []struct {
+		name string
+		tok  string
+	}{
+		{"plain customer in hanzo", mintOIDCAccessToken(t, key, kid, "hanzo/customer", false)},
+		{"foreign tenant admin", mintOIDCAccessToken(t, key, kid, "evil/boss", false)},
+		{"impersonated admin token", mintOIDCAccessToken(t, key, kid, "hanzo/boss", true)},
+		{"unknown kid", mintOIDCAccessToken(t, key, "cert-nonexistent", "hanzo/boss", false)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			status, _, _ := tokenGET(t, app, "token", tc.tok,
+				testService, "repository:hanzoai/cloud:pull")
+			if status != 401 {
+				t.Fatalf("%s: status = %d, want 401", tc.name, status)
+			}
+		})
 	}
 }

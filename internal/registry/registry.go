@@ -74,6 +74,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/httpx"
+	"github.com/hanzoai/iam/internal/oidc"
 	"github.com/hanzoai/iam/internal/users"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
@@ -258,6 +259,9 @@ func credentials(c *zip.Ctx, req *fasthttp.Request) (id, secret string) {
 	if bid, bsecret, ok := httpx.Basic(c); ok && bid != "" {
 		return bid, bsecret
 	}
+	if bearer := httpx.Bearer(c); bearer != "" {
+		return "token", bearer
+	}
 	return formOrQuery(req, "username"), formOrQuery(req, "password")
 }
 
@@ -299,6 +303,11 @@ func (h *handler) resolve(ctx context.Context, id, secret string) *principal {
 			return userPrincipal(u)
 		}
 	}
+	for _, cand := range []string{secret, id} {
+		if p := h.principalByToken(ctx, cand); p != nil {
+			return p
+		}
+	}
 	// A plain member of a platform org is not its tenant (authz.IsPlatformOrg): a
 	// customer who landed in hanzo pulls none of its images. Its admins and its
 	// machines do; a key of a plain member resolves nowhere (store.KeyNotTenant).
@@ -309,6 +318,53 @@ func (h *handler) resolve(ctx context.Context, id, secret string) *principal {
 		return p
 	}
 	return nil
+}
+
+// principalByToken verifies an OIDC access token (e.g. `hanzo auth token` from
+// CLI login) via oidc.VerifyToken and resolves its subject from the live store,
+// granting PULL ONLY (privileged: false). Only compact three-segment JWTs reach
+// the verifier, so passwords and clientSecrets cost zero store lookups.
+//
+// Impersonated tokens, forbidden/deleted users, and plain (non-admin,
+// non-machine) members of a platform org are refused — matching userByPassword
+// and store.KeyNotTenant. Push remains reserved to declared service accounts and
+// direct admin credentials; an interactive CLI bearer never mints push.
+func (h *handler) principalByToken(ctx context.Context, raw string) *principal {
+	raw = strings.TrimSpace(raw)
+	if strings.Count(raw, ".") != 2 {
+		return nil
+	}
+	claims, err := oidc.VerifyToken(ctx, h.db, raw)
+	if err != nil || claims == nil || claims.Imp {
+		return nil
+	}
+	u, err := store.GetUserBySubject(ctx, h.db, claims.Subject)
+	if err != nil {
+		return nil
+	}
+	if u != nil {
+		if u.IsForbidden || u.IsDeleted || (!u.Machine() && !userPrivileged(u)) {
+			return nil
+		}
+		return &principal{
+			subject:    u.Owner + "/" + u.Name,
+			owner:      u.Owner,
+			privileged: false,
+		}
+	}
+	owner, name, ok := strings.Cut(claims.Subject, "/")
+	if !ok || owner == "" || name == "" {
+		return nil
+	}
+	app, err := store.GetApplicationByName(ctx, h.db, owner, name)
+	if err != nil || app == nil || app.ClientSecret == "" {
+		return nil
+	}
+	return &principal{
+		subject:    app.ClientId,
+		owner:      app.Owner,
+		privileged: false,
+	}
 }
 
 // userByKey resolves a Hanzo API key to its user, fail-closed: an empty, unknown,
