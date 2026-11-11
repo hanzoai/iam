@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
@@ -179,11 +180,12 @@ func authorizeHandler(db orm.DB) zip.Handler {
 		//
 		// It is also skipped on a sign-in origin that is not the issuer's own host
 		// (hanzo.ai signing in for hanzo.id). That origin holds a session of its
-		// own, and the issuer's sign-out ends the issuer's session, not that one,
-		// so answering from it would sign someone back in after they signed out.
-		// The hosted page there asks "continue as" instead; prompt=none, which
-		// allows no page, is refused.
-		if !p.interactive() && !atIssuer(c) {
+		// own, and the hosted page there asks "continue as" instead of answering
+		// from it; prompt=none, which allows no page, is refused — except for the
+		// platform's own applications that share one sign-out (silentAtSigninOrigin),
+		// whose sign-out ends this origin's session too, so a silent answer here
+		// can never revive a session the person ended.
+		if !p.interactive() && !atIssuer(c) && !(p.none && silentAtSigninOrigin(app)) {
 			if p.none {
 				return authorizeErrorRedirect(c, q, errLoginRequired, "no session at this sign-in origin may answer without the person")
 			}
@@ -336,6 +338,30 @@ func authorizeCodeRedirect(c *zip.Ctx, q authorizeRequest, code string) error {
 	v := url.Values{}
 	v.Set("code", code)
 	return authorizeRedirect(c, q, v)
+}
+
+// silentAtSigninOrigin reports whether app may be answered silently
+// (prompt=none) on a sign-in origin that is not the issuer's own host —
+// hanzo.ai signing in for hanzo.id (decision D6).
+//
+// A sign-in origin holds a session of its own, and the reason authorize there
+// asks before answering is that a sign-out somewhere else might have left that
+// session alive, so a silent answer would sign the person back in after they
+// signed out. That stops being true for exactly the applications whose sign-out
+// is shared (IAM_SIGNOUT_APPS): leaving any of them retires the grant to all of
+// them (revokeShared), and a sign-out the browser navigates through ends the
+// session on every sign-in origin of the issuer (nextSignout). For those, and
+// only those, the session here is one the person has not ended.
+//
+// The owner pin is the same one mintAllowed uses: the app must be owned by a
+// reserved signing owner (admin/built-in, as every application the platform
+// provisions is), so a tenant's app registered with a clientId that spells a
+// listed one is still refused. Unset list allows nothing — fail closed.
+//
+// A request with no prompt keeps the hosted "continue as" page: this answers
+// only the client that asked for no page at all.
+func silentAtSigninOrigin(app *schema.Application) bool {
+	return policy.IsSigningOwner(app.Owner) && appInList(envSignoutApps, app.ClientId)
 }
 
 // authorizeErrorRedirect bounces a protocol error back to the (already

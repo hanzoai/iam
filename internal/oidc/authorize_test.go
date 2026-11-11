@@ -245,10 +245,12 @@ func TestAuthorize_SigninOriginDecidesTheRelocation(t *testing.T) {
 	}
 }
 
-// A sign-in origin that is not its issuer's host holds a session of its own, which
-// the issuer's sign-out does not end. So authorize there never answers silently
-// from it: the page asks, and prompt=none, which allows no page, is login_required.
-// At the issuer the same session answers as it always has.
+// A sign-in origin that is not its issuer's host holds a session of its own. So
+// authorize there never answers silently from it for an application whose sign-out
+// is not shared (off IAM_SIGNOUT_APPS, which is unset here): the page asks, and
+// prompt=none, which allows no page, is login_required. At the issuer the same
+// session answers as it always has. The shared-sign-out case is
+// TestAuthorize_FirstPartySilentAtSigninOrigin.
 func TestAuthorize_NoSilentGrantAtADelegatedSigninOrigin(t *testing.T) {
 	app, db := newServer(t)
 	twoApps(t, db)
