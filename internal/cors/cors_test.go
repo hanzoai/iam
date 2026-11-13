@@ -3,7 +3,16 @@
 
 package cors
 
-import "testing"
+import (
+	"context"
+	"path/filepath"
+	"testing"
+
+	"github.com/hanzoai/orm"
+	ormdb "github.com/hanzoai/orm/db"
+
+	"github.com/hanzoai/iam/pkg/schema"
+)
 
 // A redirect URI reduces to exactly the string a browser sends in Origin —
 // scheme + host + port, nothing else. Getting this wrong means a registered
@@ -157,5 +166,37 @@ func TestBrowserPaths_StayClosedByDefault(t *testing.T) {
 		if browserPaths[p] != absent {
 			t.Errorf("%s is open to browsers but nothing browser-side calls it", p)
 		}
+	}
+}
+
+// A client that registered itself chose its own addresses, so its origins are not
+// allowed to read what IAM answers a browser; an operator's application's are.
+func TestLoadLeavesOutClientsThatRegisteredThemselves(t *testing.T) {
+	_ = schema.Kinds()
+	db, err := orm.OpenSQLite(&ormdb.SQLiteDBConfig{
+		Path:   filepath.Join(t.TempDir(), "cors.db"),
+		Config: ormdb.SQLiteConfig{BusyTimeout: 5000, JournalMode: "WAL"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	for name, a := range map[string]*schema.Application{
+		"web":   {Owner: "hanzo", Name: "web", RedirectUris: []string{"https://web.example/cb"}},
+		"mcp-x": {Owner: "hanzo", Name: "mcp-x", RedirectUris: []string{"https://evil.example/cb"}, Tags: []string{schema.TagDynamic}},
+	} {
+		row := orm.New[schema.Application](db)
+		model := row.Model
+		*row = *a
+		row.Model = model
+		row.SetId("hanzo/" + name)
+		if err := row.CreateCtx(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	set := load(context.Background(), db)
+	if !set["https://web.example"] || set["https://evil.example"] {
+		t.Errorf("allowlist = %v, want web.example and not evil.example", set)
 	}
 }

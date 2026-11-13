@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hanzoai/iam/pkg/schema"
+
 	wc "github.com/luxwallet/connect/go/walletconnect"
 )
 
@@ -145,4 +147,25 @@ func TestNonceOversizedAddress(t *testing.T) {
 	if code, m := get(t, app, PathNonce+"?chain=evm&address="+strings.Repeat("a", maxAddress)); code != 200 || m["status"] != "ok" {
 		t.Fatalf("address at the bound refused: %d %v", code, m)
 	}
+}
+
+// A client that registered itself chose its own addresses, so no origin of its is
+// a page of the application's own and the wallet door is closed to it: the
+// challenge names the host IAM answered on, and the proof signs nobody in.
+func TestSiteDynamicClientHasNoSiteAndNoWalletSignin(t *testing.T) {
+	app, db := newServer(t)
+	a := seed(t, db, opts{signup: true, redirects: []string{callback}})
+	a.Tags = []string{schema.TagDynamic}
+	if err := a.UpdateCtx(tctx()); err != nil {
+		t.Fatal(err)
+	}
+	origin := map[string]string{"Origin": page}
+
+	ch := mintAt(t, app, "chain=evm&address="+addr+"&clientId="+a.ClientId, origin)
+	if ch.Domain != host {
+		t.Fatalf("a registered client's origin named the site: %q", ch.Domain)
+	}
+	msg, sig := signWith(t, signer(t), ch, wc.ChainEVM, addr)
+	code, m := post(t, app, PathVerify, body(a, wc.ChainEVM, addr, msg, sig), origin)
+	errorIs(t, code, m, "this client signs in with a password or a provider")
 }

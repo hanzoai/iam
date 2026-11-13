@@ -74,7 +74,7 @@ var registration atomic.Pointer[registrar]
 var registerCap = struct {
 	IP, Subnet, Global int
 	Window             time.Duration
-}{IP: 20, Subnet: 100, Global: 600, Window: time.Hour}
+}{IP: 20, Subnet: 100, Global: 2000, Window: time.Hour}
 
 // The scopes a registered client can ever hold. Identity and a refresh token, no
 // more: what a token may do is decided by its user, not by a scope the client
@@ -200,14 +200,17 @@ func registerHandler(db orm.DB, reg *registrar) zip.Handler {
 		id := app.ClientId
 		app, err = lodge(ctx, db, app, client)
 		var held *registerCapped
-		if err != nil && !errors.As(err, &held) {
+		var refusal *registrationError
+		if err != nil && !errors.As(err, &held) && !errors.As(err, &refusal) {
 			// Two identical first registrations race: one row wins, and the other
 			// is answered with it rather than with its own insert's refusal.
-			if have, e := store.ListApplicationsByClientId(ctx, db, id); e == nil && len(have) > 0 {
+			if have, e := store.ListApplicationsByClientId(ctx, db, id); e == nil && len(have) > 0 && have[0].Dynamic() {
 				app, err = have[0], nil
 			}
 		}
 		switch {
+		case errors.As(err, &refusal):
+			return registerFail(c, http.StatusConflict, refusal)
 		case errors.As(err, &held):
 			c.SetHeader("Retry-After", fmt.Sprint(int64(held.retry/time.Second)+1))
 			return c.JSON(http.StatusTooManyRequests, map[string]string{
@@ -532,6 +535,11 @@ func lodge(ctx context.Context, db orm.DB, a *schema.Application, client netip.A
 			return err
 		}
 		if len(have) > 0 {
+			// Only a client that registered itself is answered as one: an application a
+			// tenant filed under this id is theirs, with their addresses.
+			if !have[0].Dynamic() {
+				return reject("invalid_client_metadata", "this client cannot be registered")
+			}
 			stored = have[0]
 			return nil
 		}

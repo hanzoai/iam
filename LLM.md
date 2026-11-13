@@ -1091,6 +1091,10 @@ unlink) so a person who signs in that way on the brand's page can do so for a cl
   Social sign-in is held to the same rule: the IdP leg carries `prompt=select_account`
   (`idpAuthorizeURL`'s `choose`), so a browser holding a Google or GitHub session is not carried
   through to a code with no click. SuperAdmin cannot authorize one (reserved-org confinement).
+- **Its addresses are nobody's pages.** `Landing` (the link a mailed sign-in code opens, and the
+  site a wallet signs for) returns "" for it; the CORS registry leaves its origins out; the wallet
+  door refuses it. An application a tenant files under a registered client's id is never answered
+  as that client (409).
 - **Residual, by design of the resource servers**: the grant is the person's whole authority at
   cloud for an hour, and its refresh token 30 days. `aud` and `scope` are not enforced there, so a
   person who signs in for an address they did not read gives that client everything they could do.

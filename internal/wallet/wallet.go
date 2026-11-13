@@ -209,6 +209,12 @@ func check(db orm.DB, limit Cap) zip.Handler {
 		if app == nil {
 			return httpx.Err(c, "application not found")
 		}
+		// A wallet signs a message for the page that asks, and a client that
+		// registered itself chose which pages those are. Its people sign in with a
+		// password or a provider.
+		if app.Dynamic() {
+			return httpx.Err(c, "web3: this client signs in with a password or a provider")
+		}
 		org, err := store.GetOrganizationByName(ctx, db, app.Organization)
 		if err != nil {
 			return httpx.Err(c, err.Error())

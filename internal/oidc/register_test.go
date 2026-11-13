@@ -653,3 +653,41 @@ func TestRegister_FederationAlwaysAsksTheIdPToChoose(t *testing.T) {
 		t.Errorf("an operator's application's IdP leg has prompt=%q, want none", got)
 	}
 }
+
+// A client that registered itself has no pages of its own: the address a mailed
+// sign-in link opens and the site a wallet signs for are an application's own
+// registered origins, and these were chosen by whoever registered.
+func TestRegister_HasNoLandingOfItsOwn(t *testing.T) {
+	own := &schema.Application{Name: "web", RedirectUris: []string{"https://web.example/auth/callback#x"}}
+	if got := Landing(own, "https://web.example"); got != "https://web.example/auth/callback" {
+		t.Errorf("an operator's application lost its landing: %q", got)
+	}
+	dyn := &schema.Application{Name: "mcp-x", RedirectUris: []string{"https://evil.example/cb"}, Tags: []string{schema.TagDynamic}}
+	if got := Landing(dyn, "https://evil.example"); got != "" {
+		t.Errorf("a registered client's origin is a landing: %q", got)
+	}
+	if got := Landing(nil, "https://web.example"); got != "" {
+		t.Errorf("no application has a landing: %q", got)
+	}
+}
+
+// An application a tenant filed under the id a registration would take is theirs
+// and is never answered as the registered client.
+func TestRegister_NeverAnswersATenantsApplicationAsTheClient(t *testing.T) {
+	app, db := registrationServer(t)
+	_, first := register(t, app, claudeCode())
+	id := first["client_id"].(string)
+	row, err := orm.Get[schema.Application](db, "hanzo/"+id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row.Tags = nil
+	if err := row.UpdateCtx(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	resp, got := register(t, app, claudeCode())
+	if resp.StatusCode != http.StatusConflict || got["error"] != "invalid_client_metadata" {
+		t.Errorf("status = %d, body = %v, want 409 invalid_client_metadata", resp.StatusCode, got)
+	}
+}

@@ -162,9 +162,16 @@ func sendVerificationCode(db orm.DB) zip.Handler {
 // site only when it returns one (internal/wallet site).
 //
 // Only a registered URI is ever returned, so a forged Origin can at most choose
-// among the application's own callbacks. Host, Referer and X-Forwarded-* are never
+// among the application's own callbacks. A client that registered itself has none
+// (schema.TagDynamic): it returns "". Host, Referer and X-Forwarded-* are never
 // read: the Origin header is the one statement of which page asked.
 func Landing(app *schema.Application, origin string) string {
+	// A client that registered itself chose its own addresses, so none of them is
+	// a page of the application's own: a link IAM mails would carry the code to
+	// whoever registered it, and a wallet would sign a message naming their site.
+	if app == nil || app.Dynamic() {
+		return ""
+	}
 	o, err := url.Parse(origin)
 	if err != nil || (o.Scheme != "http" && o.Scheme != "https") || o.Host == "" || o.Scheme+"://"+o.Host != origin {
 		return ""

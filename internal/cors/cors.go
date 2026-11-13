@@ -335,7 +335,9 @@ func load(ctx context.Context, db orm.DB) map[string]bool {
 	}
 	set := make(map[string]bool, len(apps)*2)
 	for _, a := range apps {
-		if a == nil {
+		// A client that registered itself chose its own addresses and is not a page
+		// of ours: its origin is never allowed to read what IAM answers a browser.
+		if a == nil || a.Dynamic() {
 			continue
 		}
 		for _, raw := range a.RedirectUris {
