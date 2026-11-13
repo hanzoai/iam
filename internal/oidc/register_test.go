@@ -559,3 +559,97 @@ func TestRegister_MintCodeClampsToRegisteredScopes(t *testing.T) {
 		t.Errorf("an operator's application lost its scope: %q %v", row.Scope, err)
 	}
 }
+
+// Any registered address may receive the code, so the name a person reads names all
+// of them; a second host cannot hide behind a first-party-looking one.
+func TestRegister_TheNameShowsEveryHostACodeCanReach(t *testing.T) {
+	app, db := registrationServer(t)
+	body := claudeCode()
+	body["client_name"] = "Claude"
+	body["redirect_uris"] = []string{"https://claude.ai/api/mcp/auth_callback", "https://evil.example/cb", "https://claude.ai/other"}
+	_, got := register(t, app, body)
+	a, err := orm.Get[schema.Application](db, "hanzo/"+got["client_id"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.DisplayName != "Claude (claude.ai, evil.example)" {
+		t.Errorf("DisplayName = %q", a.DisplayName)
+	}
+}
+
+// A host is a public DNS name in ASCII: an address in any spelling, a name written
+// in look-alike letters and a single label send a code nowhere a person can read.
+func TestRegister_HostsArePublicASCIINames(t *testing.T) {
+	for host, ok := range map[string]bool{
+		"claude.ai": true, "mcp.example.co.uk": true, "xn--clude-9ra.ai": true, "a-b.example": true,
+		"localhost": false, "intranet": false, "127.1": false, "0x7f.0.0.1": false, "2130706433.0": false,
+		"203.0.113.9": false, "[::1]": false, "cl\u0430ude.ai": false, "claude.ai.": false, "-.-": false, "a_b.example": false,
+	} {
+		if got := publicHost(host); got != ok {
+			t.Errorf("publicHost(%q) = %v, want %v", host, got, ok)
+		}
+	}
+}
+
+// Addresses are cheap, so the cap on new clients also holds across all of them.
+func TestRegister_CapsNewClientsAcrossEveryAddress(t *testing.T) {
+	app, _ := registrationServer(t)
+	was := registerCap
+	registerCap.Global = 2
+	t.Cleanup(func() { registerCap = was })
+
+	for i, ip := range []string{"198.51.100.1", "192.0.2.1", "203.0.113.5"} {
+		body := claudeCode()
+		body["redirect_uris"] = []string{"http://localhost:" + strconv.Itoa(2000+i) + "/callback"}
+		req := jsonReq("POST", PathRegister, body)
+		req.Header.Set("CF-Connecting-IP", ip)
+		resp, _ := do(t, app, req)
+		want := http.StatusCreated
+		if i == 2 {
+			want = http.StatusTooManyRequests
+		}
+		if resp.StatusCode != want {
+			t.Errorf("registration %d from %s = %d, want %d", i, ip, resp.StatusCode, want)
+		}
+	}
+}
+
+// Social sign-in for a registered client always shows the IdP's account chooser:
+// a link anyone can send must not carry a browser that holds a Google or GitHub
+// session through the leg without a click. An operator's own application is as
+// it was.
+func TestRegister_FederationAlwaysAsksTheIdPToChoose(t *testing.T) {
+	t.Setenv(EnvRegistration, `{"organization":"hanzo","signinUrl":"https://hanzo.ai/login","providers":"hanzo-app"}`)
+	installIssuerResolver(t, "https://hanzo.id", testIssuerMap)
+	installFederationResolver(t, `{"hanzo.ai":"https://hanzo.ai"}`)
+	allowPrivateFederationDial(t)
+	app, db := newServer(t)
+	t.Cleanup(func() { registration.Store(nil) })
+	seedRSACert(t, db, "cert-hanzo")
+	seedApp(t, db, appOpts{clientID: "hanzo-app", redirectURIs: []string{testRedirect}})
+	m := newMockGitHub(t)
+	seedGitHubProvider(t, db, "hanzo-app", m)
+
+	_, got := register(t, app, claudeCode())
+	id := got["client_id"].(string)
+	redirect := "http://localhost:54321/callback"
+	begin := func(client, redirectURI string) url.Values {
+		q := url.Values{
+			"response_type": {"code"}, "client_id": {client}, "redirect_uri": {redirectURI},
+			"scope": {"openid email"}, "state": {"s"}, "provider": {"github"},
+			"code_challenge": {pkce.Challenge(fedVerifier)}, "code_challenge_method": {"S256"},
+		}
+		resp, _ := do(t, app, formReqNoBody("GET", PathAuthorize+"?"+q.Encode()))
+		loc, err := url.Parse(resp.Header.Get("Location"))
+		if resp.StatusCode != http.StatusFound || err != nil || !loc.IsAbs() {
+			t.Fatalf("%s: status %d, Location %q", client, resp.StatusCode, resp.Header.Get("Location"))
+		}
+		return loc.Query()
+	}
+	if got := begin(id, redirect).Get("prompt"); got != "select_account" {
+		t.Errorf("a registered client's IdP leg has prompt=%q, want select_account", got)
+	}
+	if got := begin("hanzo-app", testRedirect).Get("prompt"); got != "" {
+		t.Errorf("an operator's application's IdP leg has prompt=%q, want none", got)
+	}
+}

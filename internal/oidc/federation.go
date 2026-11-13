@@ -206,7 +206,7 @@ func beginFederation(c *zip.Ctx, db orm.DB, app *schema.Application, q authorize
 	if err != nil {
 		return authorizeErrorRedirect(c, q, "server_error", "")
 	}
-	idpURL, err := idpAuthorizeURL(ctx, prov, st, callback, q.loginHint)
+	idpURL, err := idpAuthorizeURL(ctx, prov, st, callback, q.loginHint, app.Dynamic())
 	if err != nil {
 		return authorizeErrorRedirect(c, q, "temporarily_unavailable", "the identity provider is unavailable")
 	}

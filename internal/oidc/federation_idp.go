@@ -117,16 +117,21 @@ func idpKind(p *schema.Provider) string {
 // idpAuthorizeURL builds the IdP authorization-endpoint URL the browser is sent
 // to at the begin leg — dialect-dispatched, with iam's callback as the IdP
 // redirect_uri, our single-use state, IdP-leg PKCE, and (OIDC) the nonce.
-func idpAuthorizeURL(ctx context.Context, p *schema.Provider, st *schema.FederationState, callback, loginHint string) (string, error) {
+//
+// choose asks the IdP to put its account chooser in front of the person even when
+// one account is already signed in there, so no browser that holds an IdP session
+// is carried through the leg without a click (see authorizeHandler: a client that
+// registered itself is never answered silently). Apple always shows its own sheet.
+func idpAuthorizeURL(ctx context.Context, p *schema.Provider, st *schema.FederationState, callback, loginHint string, choose bool) (string, error) {
 	switch idpKind(p) {
 	case "oidc":
 		cfg, err := oidcResolve(ctx, p)
 		if err != nil {
 			return "", err
 		}
-		return oidcAuthorizeURL(cfg, p, st, callback, loginHint), nil
+		return oidcAuthorizeURL(cfg, p, st, callback, loginHint, choose), nil
 	case "github":
-		return githubAuthorizeURL(p, st, callback, loginHint), nil
+		return githubAuthorizeURL(p, st, callback, loginHint, choose), nil
 	case "apple":
 		return appleAuthorizeURL(p, st, callback), nil
 	default:
@@ -226,7 +231,7 @@ func oidcDiscover(ctx context.Context, issuer string) (oidcDiscoveryDocument, er
 // oidcAuthorizeURL builds the OIDC authorization request: response_type=code,
 // the app-or-default scope, our callback, the single-use state, S256 PKCE, and
 // the nonce that the returned id_token must echo.
-func oidcAuthorizeURL(cfg oidcConfig, p *schema.Provider, st *schema.FederationState, callback, loginHint string) string {
+func oidcAuthorizeURL(cfg oidcConfig, p *schema.Provider, st *schema.FederationState, callback, loginHint string, choose bool) string {
 	v := url.Values{}
 	v.Set("response_type", "code")
 	v.Set("client_id", p.ClientId)
@@ -241,6 +246,9 @@ func oidcAuthorizeURL(cfg oidcConfig, p *schema.Provider, st *schema.FederationS
 	v.Set("code_challenge_method", "S256")
 	if strings.TrimSpace(loginHint) != "" {
 		v.Set("login_hint", strings.TrimSpace(loginHint))
+	}
+	if choose {
+		v.Set("prompt", "select_account")
 	}
 	return joinQuery(cfg.authURL, v)
 }
@@ -413,7 +421,7 @@ func verifyIDToken(ctx context.Context, idToken, jwksURL, issuer, audience, nonc
 // Apps support neither PKCE nor a nonce, so the single-use, browser-bound state
 // carries the CSRF defense; PKCE is added only when the provider opts in
 // (EnablePkce) for a compatible deployment.
-func githubAuthorizeURL(p *schema.Provider, st *schema.FederationState, callback, loginHint string) string {
+func githubAuthorizeURL(p *schema.Provider, st *schema.FederationState, callback, loginHint string, choose bool) string {
 	v := url.Values{}
 	v.Set("client_id", p.ClientId)
 	v.Set("redirect_uri", callback)
@@ -422,6 +430,9 @@ func githubAuthorizeURL(p *schema.Provider, st *schema.FederationState, callback
 	v.Set("allow_signup", "true")
 	if strings.TrimSpace(loginHint) != "" {
 		v.Set("login", strings.TrimSpace(loginHint))
+	}
+	if choose {
+		v.Set("prompt", "select_account")
 	}
 	if p.EnablePkce {
 		v.Set("code_challenge", pkce.Challenge(st.IdpVerifier))

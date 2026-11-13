@@ -67,10 +67,14 @@ var registration atomic.Pointer[registrar]
 // counts nothing, which is what lets a hosted client with one egress address
 // (every Claude.ai user registers the same name and callback) pass untouched while
 // a script minting distinct clients is stopped.
+//
+// Global bounds all of them together, because addresses are cheap and every row is a
+// scan on every sign-in; past it nobody registers a new client until the window
+// drops one, which costs a hostile caller nothing it had and a genuine one a retry.
 var registerCap = struct {
-	IP, Subnet int
-	Window     time.Duration
-}{IP: 20, Subnet: 100, Window: time.Hour}
+	IP, Subnet, Global int
+	Window             time.Duration
+}{IP: 20, Subnet: 100, Global: 600, Window: time.Hour}
 
 // The scopes a registered client can ever hold. Identity and a refresh token, no
 // more: what a token may do is decided by its user, not by a scope the client
@@ -193,8 +197,16 @@ func registerHandler(db orm.DB, reg *registrar) zip.Handler {
 			return tokenError(c, http.StatusInternalServerError, "server_error", "")
 		}
 		client := httpx.Client(c.Header("CF-Connecting-IP"), c.Header("X-Forwarded-For"))
+		id := app.ClientId
 		app, err = lodge(ctx, db, app, client)
 		var held *registerCapped
+		if err != nil && !errors.As(err, &held) {
+			// Two identical first registrations race: one row wins, and the other
+			// is answered with it rather than with its own insert's refusal.
+			if have, e := store.ListApplicationsByClientId(ctx, db, id); e == nil && len(have) > 0 {
+				app, err = have[0], nil
+			}
+		}
 		switch {
 		case errors.As(err, &held):
 			c.SetHeader("Retry-After", fmt.Sprint(int64(held.retry/time.Second)+1))
@@ -263,7 +275,7 @@ func newClient(reg *registrar, in clientMetadata) (*schema.Application, error) {
 		Name:         id,
 		ClientId:     id,
 		Organization: reg.Organization,
-		DisplayName:  name + " (" + hostOf(uris[0]) + ")",
+		DisplayName:  name + " (" + hostsOf(uris) + ")",
 		Cert:         "cert-" + reg.Organization,
 		GrantTypes:   grants,
 		RedirectUris: uris,
@@ -330,7 +342,7 @@ func redirectsOf(in []string) ([]string, error) {
 		host := strings.ToLower(u.Hostname())
 		switch u.Scheme {
 		case "https":
-			if _, err := netip.ParseAddr(host); err == nil || host == "localhost" || !strings.Contains(host, ".") {
+			if !publicHost(host) {
 				return nil, reject("invalid_redirect_uri", "%q does not name a public host", raw)
 			}
 		case "http":
@@ -345,6 +357,27 @@ func redirectsOf(in []string) ([]string, error) {
 		}
 	}
 	return out, nil
+}
+
+// publicHost reports whether host is a DNS name of the public internet, written
+// in ASCII (an internationalized name in its xn-- form, which a person reads as
+// what it is and not as the brand it imitates). An address in any spelling, a
+// single label and localhost are not: the last label of a name has a letter in it,
+// which no IPv4 spelling (127.1, 0x7f.0.0.1, 2130706433) has.
+func publicHost(host string) bool {
+	if host == "localhost" || !strings.Contains(host, ".") || host != strings.TrimSuffix(host, ".") {
+		return false
+	}
+	if _, err := netip.ParseAddr(host); err == nil {
+		return false
+	}
+	for _, r := range host {
+		if !(r == '-' || r == '.' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9') {
+			return false
+		}
+	}
+	last := host[strings.LastIndex(host, ".")+1:]
+	return strings.ContainsAny(last, "abcdefghijklmnopqrstuvwxyz")
 }
 
 // narrow keeps the members of asked that are allowed; an empty ask takes def. A
@@ -415,19 +448,28 @@ func nameOf(raw string) string {
 	return string(name)
 }
 
-// hostOf is where a registered client sends the person back to, as a person reads
-// it: the host, and "localhost" for any loopback address.
-func hostOf(redirect string) string {
-	u, err := url.Parse(redirect)
-	if err != nil {
-		return ""
+// hostsOf is every place a registered client can send the person back to, as a
+// person reads it: each host once, and "localhost" for any loopback address. All of
+// them, because any registered address may receive the code, so a name that showed
+// only the first would let a second one go unseen.
+func hostsOf(redirects []string) string {
+	var hosts []string
+	for _, r := range redirects {
+		u, err := url.Parse(r)
+		if err != nil {
+			continue
+		}
+		h := strings.ToLower(u.Hostname())
+		switch h {
+		case "127.0.0.1", "::1", "localhost":
+			h = "localhost"
+		}
+		if !slices.Contains(hosts, h) {
+			hosts = append(hosts, h)
+		}
 	}
-	switch h := strings.ToLower(u.Hostname()); h {
-	case "127.0.0.1", "::1", "localhost":
-		return "localhost"
-	default:
-		return h
-	}
+	slices.Sort(hosts)
+	return strings.Join(hosts, ", ")
 }
 
 // digestOf is a digest of everything a registration states, so equal metadata is
@@ -472,6 +514,9 @@ type registerCapped struct {
 }
 
 func (e *registerCapped) Error() string {
+	if e.bound == "service" {
+		return "too many new clients registered; try again later"
+	}
 	return "too many new clients registered from this " + e.bound + "; try again later"
 }
 
@@ -494,13 +539,15 @@ func lodge(ctx context.Context, db orm.DB, a *schema.Application, client netip.A
 		now := time.Now()
 		since := now.Add(-registerCap.Window)
 		for _, b := range []struct {
-			bound, field, key string
-			limit             int
+			bound string
+			limit int
+			match []string
 		}{
-			{"address", "ClientIp", addr, registerCap.IP},
-			{"network", "Object", network, registerCap.Subnet},
+			{"address", registerCap.IP, []string{"ClientIp", addr}},
+			{"network", registerCap.Subnet, []string{"Object", network}},
+			{"service", registerCap.Global, nil},
 		} {
-			n, err := store.Recorded(ctx, tx, schema.ActionRegisterClient, since, b.field, b.key)
+			n, err := store.Recorded(ctx, tx, schema.ActionRegisterClient, since, b.match...)
 			if err != nil {
 				return err
 			}

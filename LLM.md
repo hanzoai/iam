@@ -1077,8 +1077,8 @@ unlink) so a person who signs in that way on the brand's page can do so for a cl
 - **Idempotent**: `client_id` is `mcp-` + a digest of the registered metadata, so a hosted client
   whose every user registers the same name and callback is one row, and a repeat creates nothing
   and counts against nothing. A loopback client with a fresh port each run is a new row.
-- **Bounded**: new clients per address (20/h) and per network (a /24 or /64, 100/h), counted from
-  the audit ledger in the transaction that writes the row; 429 with `Retry-After`. Every created
+- **Bounded**: new clients per address (20/h), per network (a /24 or /64, 100/h) and in all (600/h),
+  counted from the audit ledger in the transaction that writes the row; 429 with `Retry-After`. Every created
   client is an audit row (`register-client`, `schema.PlatformWritten`) naming the client, the
   address, and where it sends a code.
 - **Untrusted until a person says otherwise.** Nobody vetted it and the address it chose is
@@ -1086,8 +1086,15 @@ unlink) so a person who signs in that way on the brand's page can do so for a cl
   (`prompt=none` is `interaction_required`) and the login resume refuses it, whichever door the
   request came through (a link straight to the sign-in page never runs authorize). `MintCode`
   (the one constructor of a code row, so the federation mint too) clamps the grant's scope to
-  what it registered. `DisplayName` is `<client_name> (<host>)`, the
-  host its code returns to. SuperAdmin cannot authorize one (reserved-org confinement).
+  what it registered. `DisplayName` is `<client_name> (<hosts>)`, every
+  host a code can return to (redirect hosts are public ASCII DNS names; `xn--` shows as such).
+  Social sign-in is held to the same rule: the IdP leg carries `prompt=select_account`
+  (`idpAuthorizeURL`'s `choose`), so a browser holding a Google or GitHub session is not carried
+  through to a code with no click. SuperAdmin cannot authorize one (reserved-org confinement).
+- **Residual, by design of the resource servers**: the grant is the person's whole authority at
+  cloud for an hour, and its refresh token 30 days. `aud` and `scope` are not enforced there, so a
+  person who signs in for an address they did not read gives that client everything they could do.
+  The sign-in page shows no client name or destination; the registered name carries the hosts.
 - **Not built**: RFC 7592 client management (no registration access token, no delete over the
   wire; delete a row with the applications API), a consent screen (the sign-in is the consent, and
   the page shows the name with its host), a janitor for clients that never completed a sign-in
