@@ -1786,3 +1786,24 @@ by an account living in `hanzo` with the same address.
 - Fixed `store.go:burn/first` to use `orm.IsNotFound` (backend returns `db.ErrNoSuchEntity`/`sql.ErrNoRows`, not `orm.ErrNotFound`) so unknown nonce correctly yields opaque `web3: nonce invalid, already used, or expired` instead of leaking `db: no such entity`.
 - Added `internal/wallet/attack_test.go`: empty payload, forged address/no signature, valid signature by different key, replayed nonce, expired nonce, unknown nonce, happy path with real secp256k1 key.
 - Test output: `ok github.com/hanzoai/iam/internal/wallet 3.291s` (full `./internal/wallet/...`), vet clean.
+
+## Forge scopes in the `scope` claim (`internal/oidc/forgescope.go`)
+
+An access token's `scope` claim is the one space-separated list (RFC 9068) the
+grant requested, as it always was. The forge (git.hanzo.ai) reads from that list
+the scopes spelled in its own vocabulary: `read:<area>`, `write:<area>`
+(areas: activitypub admin issue misc notification organization package
+repository user), `public-only` and `all`. OIDC scopes ride beside them. No
+second token format.
+
+IAM is where a request is held to what the application may be granted:
+`forgeScoped(app, requested)` drops every forge-vocabulary scope the application
+does not list in `Application.Scopes` (holding `write:X` also allows `read:X`),
+and leaves every other scope alone. It runs at every grant that takes a `scope`
+parameter: authorization code (`MintCode`, which federation and the password mint
+also reach), password, client_credentials, the jwt-bearer workload grant, RFC 8693
+token exchange and the device grant. Refresh may only narrow what its grant holds.
+An application listing no forge scope therefore never emits one, which is every
+application today: nothing changes until an administrator lists scopes on one
+(`PUT /v1/iam/applications`, `scopes: [{name: "read:repository"}]`).
+The forge narrows once more to the holder's role and resource permissions.

@@ -316,7 +316,7 @@ func deviceHandler(db orm.DB) zip.Handler {
 			// What the grant carries is what the application may have of what was
 			// asked, never the asker's word: it is shown to the approver and it is
 			// the scope of the token the device is minted.
-			Scope:          strings.Join(grantedScope(app, asked), " "),
+			Scope:          forgeScoped(app, strings.Join(grantedScope(app, asked), " ")),
 			TokenType:      "Bearer",
 			CodeExpireIn:   now.Add(deviceCodeTTL).Unix(),
 			RequestIp:      ip,

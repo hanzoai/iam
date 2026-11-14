@@ -62,6 +62,7 @@ type appOpts struct {
 	grants       []string // declared OAuth grants; a grant absent here is refused
 	signin       string   // SigninUrl → where the application says its people sign in
 	platform     bool     // one the platform itself declares, not a tenant's registration
+	scopes       []string // Scopes the application holds: what a forge scope in a request is held to
 }
 
 // tctx is the background context used by the test seed helpers.
@@ -115,6 +116,9 @@ func seedApp(t *testing.T, db orm.DB, o appOpts) *schema.Application {
 	a.GrantTypes = o.grants
 	a.SigninUrl = o.signin
 	a.Platform = o.platform
+	for _, n := range o.scopes {
+		a.Scopes = append(a.Scopes, &schema.ScopeItem{Name: n})
+	}
 	a.SetId("admin/" + o.clientID)
 	if err := a.CreateCtx(context.Background()); err != nil {
 		t.Fatalf("seed app: %v", err)

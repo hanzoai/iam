@@ -138,7 +138,7 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 	if want := seconds(param(c, "lifetime")); want > 0 && want < ttl {
 		ttl = want
 	}
-	scope := param(c, "scope")
+	scope := forgeScoped(clientApp, param(c, "scope"))
 	id := identityOf(ctx, db, user) // the ONE user→claims resolution
 	// An impersonated subject_token stays impersonated: the operator rides forward
 	// in `act` beside `imp`, and the new token dies no later than the one it was

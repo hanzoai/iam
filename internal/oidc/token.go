@@ -318,7 +318,7 @@ func clientCredentialsGrant(c *zip.Ctx, db orm.DB) error {
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}
-	resp, err := machineToken(ctx, db, app, iss, param(c, "scope"), resourceOf(c), "cc", now)
+	resp, err := machineToken(ctx, db, app, iss, forgeScoped(app, param(c, "scope")), resourceOf(c), "cc", now)
 	if err != nil {
 		return mintError(c, err)
 	}
@@ -576,7 +576,7 @@ func passwordGrant(c *zip.Ctx, db orm.DB) error {
 		Application:  app.Name,
 		Organization: user.Owner,
 		User:         user.Owner + "/" + user.Name,
-		Scope:        param(c, "scope"),
+		Scope:        forgeScoped(app, param(c, "scope")),
 	}
 	resp, err := issueTokens(ctx, db, c, app, row, newFamilyID(row), now)
 	if err != nil {
