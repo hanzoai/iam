@@ -760,9 +760,10 @@ var ErrNoSigningCert = errors.New("token: application has no trusted signing cer
 // Everything it says is the caller's own registration, already readable on the
 // application's public record; it names no key, credential, code or user.
 type unsignableError struct {
-	app  string // owner/name of the registration
-	cert string // the cert it names; "" when it names none
-	why  string // what the name resolved to, in the operator's terms
+	app     string // owner/name of the registration
+	cert    string // the cert it names; "" when it names none
+	why     string // what the name resolved to, in the operator's terms
+	explain string // why that cannot sign, when the name alone does not say
 }
 
 func (e *unsignableError) Error() string { return "token: " + e.describe() }
@@ -773,8 +774,9 @@ func (e *unsignableError) Unwrap() error { return ErrNoSigningCert }
 // describe is the error_description the token endpoint answers with.
 func (e *unsignableError) describe() string {
 	return "application " + descSafe(e.app) + " " + e.why +
-		", so no token can be issued for it. Ask a platform administrator to set the " +
-		"application's cert to one of the platform's signing certs (a kid this issuer's JWKS publishes)"
+		", so no token can be issued for it." + e.explain +
+		" Ask a platform administrator to set the application's cert to one of the " +
+		"platform's signing certs (a kid this issuer's JWKS publishes)."
 }
 
 // unsignable names why app.Cert resolved to nothing an application may sign with.
@@ -789,9 +791,9 @@ func unsignable(app *schema.Application, cert *schema.Cert) error {
 			", which never signs an application's tokens"
 	default:
 		e.why = "names the signing cert " + descSafe(app.Cert) +
-			", which is not one of the platform's signing certs. A cert added to an " +
-			"organization or an application never signs tokens: only the platform's own " +
-			"certs do, because only the platform holds their keys"
+			", which is not one of the platform's signing certs"
+		e.explain = " A cert added to an organization or an application never signs " +
+			"tokens: only the platform's own certs do, because only the platform holds their keys."
 	}
 	return e
 }
