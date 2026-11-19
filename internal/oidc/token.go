@@ -747,6 +747,77 @@ func refreshTTL(app *schema.Application) time.Duration {
 // this is the answer for one that already was.
 var ErrNoSigningCert = errors.New("token: application has no trusted signing cert")
 
+// unsignableError is ErrNoSigningCert for ONE application: which registration,
+// the cert it names, and why that cert cannot sign. The bare sentinel told an
+// operator only that the app "has no signing cert" — wrong on its face for an
+// app whose row plainly names one, which is the common case: an org adds a
+// certificate, points its application at it, and is told it has none. The
+// reason is the trust boundary (store.GetSigningCert): only a cert under a
+// reserved platform owner signs, because only the platform holds signing keys
+// (internal/keyring), so a cert an organization adds is never read for signing.
+// Saying so, and saying what fixes it, is what makes the failure actionable.
+//
+// Everything it says is the caller's own registration, already readable on the
+// application's public record; it names no key, credential, code or user.
+type unsignableError struct {
+	app  string // owner/name of the registration
+	cert string // the cert it names; "" when it names none
+	why  string // what the name resolved to, in the operator's terms
+}
+
+func (e *unsignableError) Error() string { return "token: " + e.describe() }
+
+// Unwrap keeps errors.Is(err, ErrNoSigningCert) true for every caller that asks.
+func (e *unsignableError) Unwrap() error { return ErrNoSigningCert }
+
+// describe is the error_description the token endpoint answers with.
+func (e *unsignableError) describe() string {
+	return "application " + descSafe(e.app) + " " + e.why +
+		", so no token can be issued for it. Ask a platform administrator to set the " +
+		"application's cert to one of the platform's signing certs (a kid this issuer's JWKS publishes)"
+}
+
+// unsignable names why app.Cert resolved to nothing an application may sign with.
+// cert is what the trusted resolution returned: nil, or the delegation key.
+func unsignable(app *schema.Application, cert *schema.Cert) error {
+	e := &unsignableError{app: app.Owner + "/" + app.Name, cert: app.Cert}
+	switch {
+	case strings.TrimSpace(app.Cert) == "":
+		e.why = "names no signing cert"
+	case cert != nil && cert.Delegates():
+		e.why = "names the delegation key " + descSafe(app.Cert) +
+			", which never signs an application's tokens"
+	default:
+		e.why = "names the signing cert " + descSafe(app.Cert) +
+			", which is not one of the platform's signing certs. A cert added to an " +
+			"organization or an application never signs tokens: only the platform's own " +
+			"certs do, because only the platform holds their keys"
+	}
+	return e
+}
+
+// descSafe quotes a stored name for an error_description, whose characters RFC
+// 6749 §5.2 confines to printable ASCII without `"` or `\`. A name is a tenant's
+// input, so anything outside that set is replaced rather than trusted, and the
+// length is capped.
+func descSafe(s string) string {
+	const limit = 128
+	var b strings.Builder
+	b.WriteByte('\'')
+	for i, r := range s {
+		if i >= limit {
+			b.WriteString("...")
+			break
+		}
+		if r < 0x20 || r > 0x7e || r == '"' || r == '\\' || r == '\'' {
+			r = '?'
+		}
+		b.WriteRune(r)
+	}
+	b.WriteByte('\'')
+	return b.String()
+}
+
 // signerFor loads the application's signing cert from the trusted platform
 // signing-cert owners and builds a Signer with the given canonical issuer. Using
 // the same trusted resolution as the JWKS and verification keeps the three
@@ -761,7 +832,7 @@ func signerFor(ctx context.Context, db orm.DB, app *schema.Application, issuer s
 	// delegated token is not understood, and an ordinary token signed by it would
 	// be a token nobody can verify.
 	if cert == nil || cert.Delegates() {
-		return nil, ErrNoSigningCert
+		return nil, unsignable(app, cert)
 	}
 	return NewSignerFromCert(cert, app, issuer)
 }
@@ -770,6 +841,9 @@ func signerFor(ctx context.Context, db orm.DB, app *schema.Application, issuer s
 // anything internal, and a named one for the misconfiguration a client operator
 // can actually act on. ONE place, so every grant answers alike.
 func mintError(c *zip.Ctx, err error) error {
+	if u := (*unsignableError)(nil); errors.As(err, &u) {
+		return tokenError(c, 500, "server_error", u.describe())
+	}
 	if errors.Is(err, ErrNoSigningCert) {
 		return tokenError(c, 500, "server_error",
 			"this application has no signing cert, so no token can be issued for it")
