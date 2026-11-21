@@ -193,3 +193,32 @@ func TestRefresh_ClientAuthenticatedGrantStillRequiresTheSecret(t *testing.T) {
 		t.Fatalf("correct secret refused: status=%d body=%v", status, out)
 	}
 }
+
+// A refresh token is an opaque row, not a signed claim, so it names no issuer: one established
+// while the platform issued under hanzo.id refreshes after the issuer moves to hanzo.ai, and the
+// new access token is minted under hanzo.ai. Dropping hanzo.id from IAM_ACCEPTED_ISSUERS ends
+// verifying old access tokens; it must not end refreshing.
+func TestRefresh_ASessionOpenedBeforeTheIssuerMovedRefreshesAfter(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "pub", redirectURIs: []string{testRedirect}, refreshHours: 24})
+	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
+
+	if err := bootWith(t, "https://hanzo.id", "", "https://hanzo.ai", ""); err != nil {
+		t.Fatal(err)
+	}
+	before := grantViaPKCE(t, app, "pub", "openid offline_access")
+	if iss, _ := claimsOf(t, before["access_token"].(string)); iss["iss"] != "https://hanzo.id" {
+		t.Fatalf("setup: access token issuer = %v, want https://hanzo.id", iss["iss"])
+	}
+
+	if err := bootWith(t, "https://hanzo.ai", "", "https://hanzo.ai", "https://hanzo.id"); err != nil {
+		t.Fatal(err)
+	}
+	status, out := refresh(t, app, "pub", before["refresh_token"].(string), nil)
+	if status != 200 {
+		t.Fatalf("refresh after the issuer moved: status %d, body %v", status, out)
+	}
+	if iss, _ := claimsOf(t, out["access_token"].(string)); iss["iss"] != "https://hanzo.ai" {
+		t.Errorf("refreshed access token issuer = %v, want https://hanzo.ai", iss["iss"])
+	}
+}
