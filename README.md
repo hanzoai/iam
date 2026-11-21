@@ -1,5 +1,7 @@
 # Hanzo IAM
 
+[![Open in Hanzo](https://hanzo.app/badges/open-in-hanzo.svg)](https://hanzo.app/dev/open?repo=github.com/hanzoai/iam&ref=main&action=open) [![Edit with Hanzo](https://hanzo.app/badges/edit-with-hanzo.svg)](https://hanzo.app/dev/open?repo=github.com/hanzoai/iam&ref=main&action=edit) [![Deploy with Hanzo](https://hanzo.app/badges/deploy-with-hanzo.svg)](https://hanzo.app/dev/open?repo=github.com/hanzoai/iam&ref=main&action=deploy)
+
 **Identity & access for the Hanzo cloud — OpenID Connect / OAuth2 with PKCE, standards only.**
 
 ![Go 1.26](https://img.shields.io/badge/Go-1.26-00ADD8) ![Standards](https://img.shields.io/badge/standards-OIDC%20%C2%B7%20OAuth2%20%C2%B7%20SCIM%202.0-informational) ![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)
