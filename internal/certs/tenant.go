@@ -28,6 +28,10 @@ import (
 // algorithm every relying party reads.
 const tenantBits = 2048
 
+// maxTenantCerts is how many tenant certs one organization holds. Creating one costs a
+// key generation and a Vault write, so the cap is checked before either.
+const maxTenantCerts = 5
+
 // maxTenantName bounds a tenant cert's name, which is its JWKS `kid` and its key's
 // address in the Vault.
 const maxTenantName = 64
@@ -67,6 +71,12 @@ func (h *Handler) createTenant(ctx context.Context, in *schema.Cert) (*schema.Ce
 		return nil, zip.ErrConflict("cert already exists")
 	case !errors.Is(err, orm.ErrNotFound):
 		return nil, zip.ErrInternal(err.Error())
+	}
+
+	if n, err := store.CountTenantCerts(ctx, h.db, in.Owner); err != nil {
+		return nil, zip.ErrInternal(err.Error())
+	} else if n >= maxTenantCerts {
+		return nil, zip.ErrConflict("an organization holds at most 5 tenant certs; delete one first")
 	}
 
 	years := in.ExpireInYears
@@ -109,6 +119,12 @@ func (h *Handler) createTenant(ctx context.Context, in *schema.Cert) (*schema.Ce
 	if err := cert.CreateCtx(ctx); err != nil {
 		_ = keyring.DropTenant(context.WithoutCancel(ctx), in.Owner, in.Name)
 		return nil, zip.ErrInternal("create the cert")
+	}
+	// Creates that raced past the count above are undone here, so the cap holds.
+	if n, err := store.CountTenantCerts(ctx, h.db, in.Owner); err != nil || n > maxTenantCerts {
+		_ = cert.DeleteCtx(context.WithoutCancel(ctx))
+		_ = keyring.DropTenant(context.WithoutCancel(ctx), in.Owner, in.Name)
+		return nil, zip.ErrConflict("an organization holds at most 5 tenant certs; delete one first")
 	}
 	return cert, nil
 }

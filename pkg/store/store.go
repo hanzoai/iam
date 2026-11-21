@@ -760,45 +760,84 @@ func GetTenantCert(ctx context.Context, db orm.DB, org, name string) (*schema.Ce
 	return c, nil
 }
 
-// ListTenantCerts lists the tenant-scoped certs org owns, in name order, resolved
-// as GetTenantCert resolves them.
+// platformKids is the set of names the reserved platform owners' certs carry: one read
+// per owner, however many tenant certs are being checked against it.
+func platformKids(ctx context.Context, db orm.DB) (map[string]bool, error) {
+	kids := map[string]bool{}
+	for _, owner := range policy.SigningOwners() {
+		rows, err := orm.TypedQuery[schema.Cert](db).Filter("Owner=", owner).GetAll(ctx)
+		if err != nil && !errors.Is(err, orm.ErrNotFound) {
+			return nil, err
+		}
+		for _, c := range rows {
+			if !c.Tenant() {
+				kids[c.Name] = true
+			}
+		}
+	}
+	return kids, nil
+}
+
+// ListTenantCerts lists the tenant-scoped certs org owns, in name order, resolved as
+// GetTenantCert resolves them: three reads however many certs there are.
 func ListTenantCerts(ctx context.Context, db orm.DB, org string) ([]*schema.Cert, error) {
 	if schema.TenantOrg(org) != nil {
 		return nil, nil
 	}
-	rows, err := orm.TypedQuery[schema.Cert](db).Filter("Owner=", org).Order("Name").GetAll(ctx)
+	rows, err := orm.TypedQuery[schema.Cert](db).Filter("Owner=", org).Filter("Scope=", schema.CertTenant).Order("Name").GetAll(ctx)
+	if err != nil && !errors.Is(err, orm.ErrNotFound) {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	kids, err := platformKids(ctx, db)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]*schema.Cert, 0, len(rows))
 	for _, c := range rows {
-		if !c.Tenant() {
-			continue
+		if c.Tenant() && !kids[c.Name] {
+			out = append(out, c)
 		}
-		if platform, err := GetSigningCert(ctx, db, c.Name); err != nil {
-			return nil, err
-		} else if platform != nil {
-			continue
-		}
-		out = append(out, c)
 	}
 	return out, nil
 }
 
-// PlatformKidTaken reports whether any reserved platform owner holds a cert whose
-// name equals name, folding case: the check a tenant cert's name must pass before
-// it exists.
+// CountTenantCerts is how many tenant certs org owns.
+func CountTenantCerts(ctx context.Context, db orm.DB, org string) (int, error) {
+	n, err := orm.TypedQuery[schema.Cert](db).Filter("Owner=", org).Filter("Scope=", schema.CertTenant).Count(ctx)
+	if errors.Is(err, orm.ErrNotFound) {
+		return 0, nil
+	}
+	return n, err
+}
+
+// PlatformKidTaken reports whether a reserved platform owner holds a cert whose name equals
+// name, folding case: the check a tenant cert's name must pass before it exists. It reads
+// the platform owners' certs (a handful) and never the whole table.
 func PlatformKidTaken(ctx context.Context, db orm.DB, name string) (bool, error) {
-	certs, err := ListCerts(ctx, db)
+	kids, err := platformKids(ctx, db)
 	if err != nil {
 		return false, err
 	}
-	for _, c := range certs {
-		if c != nil && policy.IsSigningOwner(c.Owner) && strings.EqualFold(c.Name, name) {
+	for kid := range kids {
+		if strings.EqualFold(kid, name) {
 			return true, nil
 		}
 	}
 	return false, nil
+}
+
+// TenantKidTaken reports whether any organization holds a tenant cert whose name equals
+// name, folding case: the check a platform cert's name must pass before it exists, so a
+// kid a tenant already signs under is never also a platform kid.
+func TenantKidTaken(ctx context.Context, db orm.DB, name string) (bool, error) {
+	rows, err := orm.TypedQuery[schema.Cert](db).Filter("Name=", strings.ToLower(name)).Filter("Scope=", schema.CertTenant).Limit(1).GetAll(ctx)
+	if err != nil && !errors.Is(err, orm.ErrNotFound) {
+		return false, err
+	}
+	return len(rows) > 0, nil
 }
 
 // PersistToken binds a domain Token onto the store and creates it. Used to

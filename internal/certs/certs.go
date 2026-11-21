@@ -170,6 +170,16 @@ func (h *Handler) Create(ctx context.Context, in *schema.Cert) (*schema.Cert, er
 	if in.Scope == schema.CertTenant {
 		return h.createTenant(ctx, in)
 	}
+	// A platform cert never takes a name an organization's cert signs under, whatever its case.
+	if policy.IsSigningOwner(in.Owner) {
+		taken, err := store.TenantKidTaken(ctx, h.db, in.Name)
+		if err != nil {
+			return nil, zip.ErrInternal(err.Error())
+		}
+		if taken {
+			return nil, zip.ErrConflict("that name is an organization's tenant cert's; choose another")
+		}
+	}
 	switch _, err := orm.Get[schema.Cert](h.db, key(in.Owner, in.Name)); {
 	case err == nil:
 		return nil, zip.ErrConflict("cert already exists")

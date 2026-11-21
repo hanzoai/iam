@@ -88,28 +88,34 @@ func PutTenant(ctx context.Context, org, name, pem string) error {
 	return v.Put(ctx, org, name, pem)
 }
 
-// TenantKey returns the PEM held for (org, name): from the cache while fresh,
-// else from the Vault.
-func TenantKey(ctx context.Context, org, name string) (string, error) {
+// TenantKey returns the PEM held for (org, name) that satisfies matches: from the cache
+// while fresh, else from the Vault. matches binds the key to the cert row it signs for
+// (its public half), so a cert deleted and created again under the same name never
+// reuses a key cached for the old one, here or on another replica: a cached key that does
+// not match is dropped and the Vault is read; a Vault key that does not match is no key.
+func TenantKey(ctx context.Context, org, name string, matches func(pem string) bool) (string, error) {
 	v, err := vaultOf()
 	if err != nil {
 		return "", err
 	}
-	if org == "" || !addressable(name) {
+	if org == "" || !addressable(name) || matches == nil {
 		return "", ErrNoKey
 	}
 	k := [2]string{org, name}
 	vaultMu.RLock()
 	h, ok := tenant[k]
 	vaultMu.RUnlock()
-	if ok && time.Since(h.at) < tenantTTL {
+	if ok && time.Since(h.at) < tenantTTL && matches(h.pem) {
 		return h.pem, nil
 	}
+	vaultMu.Lock()
+	delete(tenant, k)
+	vaultMu.Unlock()
 	pem, err := v.Get(ctx, org, name)
 	if err != nil {
 		return "", err
 	}
-	if pem == "" {
+	if pem == "" || !matches(pem) {
 		return "", ErrNoKey
 	}
 	vaultMu.Lock()

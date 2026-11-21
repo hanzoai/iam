@@ -837,6 +837,20 @@ func signerFor(ctx context.Context, db orm.DB, app *schema.Application, issuer s
 	if s, err := tenantSigner(ctx, db, app); s != nil || err != nil {
 		return s, err
 	}
+	// A cert row of the application's own org that carries the tenant scope signs only
+	// through the tenant path above, whatever the application is: it is never read as a
+	// platform cert of the same name.
+	if app.Cert != "" {
+		row, err := store.GetCert(ctx, db, app.Owner, app.Cert)
+		if err != nil {
+			return nil, err
+		}
+		if row != nil && row.Tenant() {
+			return nil, &unsignableError{app: app.Owner + "/" + app.Name, cert: app.Cert,
+				why: "names the organization's own cert " + descSafe(app.Cert) + ", which this application may not sign with",
+				fix: " Only an application owned by and serving that organization, not shared and not the platform's, signs with its cert."}
+		}
+	}
 	cert, err := store.GetSigningCert(ctx, db, app.Cert)
 	if err != nil {
 		return nil, err

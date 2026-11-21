@@ -6,12 +6,14 @@ package oidc
 import (
 	"bytes"
 	"context"
+	"crypto"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -120,7 +122,7 @@ func tenantSigner(ctx context.Context, db orm.DB, app *schema.Application) (*Sig
 			why: "names the organization's own cert " + descSafe(app.Cert) + ", and this deployment cannot derive an issuer for the organization",
 			fix: " A platform administrator must set " + EnvTenantIssuer + " and check that the organization's name is not reserved."}
 	}
-	key, err := keyring.TenantKey(ctx, cert.Owner, cert.Name)
+	key, err := keyring.TenantKey(ctx, cert.Owner, cert.Name, func(pem string) bool { return keyMatchesCert(pem, cert) })
 	if err != nil {
 		e := &unsignableError{app: app.Owner + "/" + app.Name, cert: app.Cert,
 			why: "names the organization's own cert " + descSafe(app.Cert) + ", whose key this deployment cannot read",
@@ -130,6 +132,21 @@ func tenantSigner(ctx context.Context, db orm.DB, app *schema.Application) (*Sig
 	c := *cert
 	c.PrivateKey = key
 	return NewSignerFromCert(&c, app, iss)
+}
+
+// keyMatchesCert reports whether the private key in pem is the one whose public half the
+// cert row carries. A key is only ever used for the cert it belongs to.
+func keyMatchesCert(pem string, cert *schema.Cert) bool {
+	priv, err := parsePrivateKeyPEM(pem)
+	if err != nil {
+		return false
+	}
+	pub, _, _, err := certPublicKey(cert)
+	if err != nil {
+		return false
+	}
+	eq, ok := priv.Public().(interface{ Equal(crypto.PublicKey) bool })
+	return ok && eq.Equal(pub)
 }
 
 // tenantOrgOfToken is the organization a token's own `iss` names, read WITHOUT
@@ -203,13 +220,15 @@ func verifyIssuedBearer(ctx context.Context, db orm.DB, raw string) (*Claims, er
 	return claims, nil
 }
 
-// tenantSets holds each organization's published key set between reads.
+// tenantSets holds each organization's published key set between reads, the oldest
+// dropped first when it is full.
 var tenantSets = struct {
 	sync.Mutex
-	m map[string]*keySet
+	m     map[string]*keySet
+	order []string
 }{m: map[string]*keySet{}}
 
-// tenantSetMax bounds the sets held; past it they are dropped and re-read.
+// tenantSetMax bounds the sets held.
 const tenantSetMax = 512
 
 func tenantSetOf(org string) *keySet {
@@ -218,12 +237,24 @@ func tenantSetOf(org string) *keySet {
 	if s, ok := tenantSets.m[org]; ok {
 		return s
 	}
-	if len(tenantSets.m) >= tenantSetMax {
-		tenantSets.m = map[string]*keySet{}
+	if len(tenantSets.order) >= tenantSetMax {
+		delete(tenantSets.m, tenantSets.order[0])
+		tenantSets.order = tenantSets.order[1:]
 	}
 	s := &keySet{}
 	tenantSets.m[org] = s
+	tenantSets.order = append(tenantSets.order, org)
 	return s
+}
+
+// dropTenantSet forgets org's held set, so its next read is fresh.
+func dropTenantSet(org string) {
+	tenantSets.Lock()
+	defer tenantSets.Unlock()
+	delete(tenantSets.m, org)
+	if i := slices.Index(tenantSets.order, org); i >= 0 {
+		tenantSets.order = slices.Delete(tenantSets.order, i, i+1)
+	}
 }
 
 // publishTenant encodes the public halves of org's tenant certs that sign, as a
@@ -283,9 +314,7 @@ func tenantKeys(c *zip.Ctx, db orm.DB) (org string, body []byte, etag string, ok
 	}
 	if bytes.Equal(body, noTenantKeys) {
 		// Nothing is held for an org with no cert, so its first one is served at once.
-		tenantSets.Lock()
-		delete(tenantSets.m, org)
-		tenantSets.Unlock()
+		dropTenantSet(org)
 		_ = c.JSON(404, map[string]string{"error": "not_found"})
 		return notFound()
 	}

@@ -24,6 +24,7 @@ import (
 	"github.com/hanzoai/iam/internal/keyring"
 	"github.com/hanzoai/iam/internal/testhttp"
 	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // An ORGANIZATION'S OWN CERT is created by IAM: the key pair is generated here, the
@@ -33,11 +34,13 @@ type vault struct {
 	mu   sync.Mutex
 	m    map[[2]string]string
 	fail bool
+	puts int
 }
 
 func (v *vault) Put(_ context.Context, org, name, pem string) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
+	v.puts++
 	if v.fail {
 		return errors.New("vault down")
 	}
@@ -328,5 +331,74 @@ func TestTenantCert_ATenantTokenIsRefusedAtThePlatformGuard(t *testing.T) {
 	// The control: the platform's own token for the same person is answered.
 	if st, out := h.send(t, "GET", "/v1/iam/certs?owner=acme", h.token(t, "acme/boss"), nil); st != 200 {
 		t.Fatalf("control: %d %s", st, out)
+	}
+}
+
+// AN ORG HOLDS AT MOST FIVE TENANT CERTS, and a refused create costs no key generation and no
+// vault write; creates racing past the count are undone.
+func TestTenantCert_CapIsCheckedBeforeAnyWorkAndHoldsUnderRaces(t *testing.T) {
+	h, v := tenantHarness(t)
+	boss := h.token(t, "acme/boss")
+	for i := 0; i < maxTenantCertsForTest; i++ {
+		name := "key-" + string(rune('a'+i))
+		if st, out := h.send(t, "POST", "/v1/iam/certs", boss, map[string]any{"owner": "acme", "name": name, "scope": schema.CertTenant}); st != 200 {
+			t.Fatalf("create %s: %d %s", name, st, out)
+		}
+	}
+	puts := v.puts
+	if st, _ := h.send(t, "POST", "/v1/iam/certs", boss, map[string]any{"owner": "acme", "name": "one-more", "scope": schema.CertTenant}); st != 409 {
+		t.Fatalf("the sixth cert: status %d, want 409", st)
+	}
+	if v.puts != puts || v.held("acme", "one-more") {
+		t.Fatal("a refused create reached the vault")
+	}
+	// Another org is unaffected by acme's count.
+	seedUser(t, h.db, "orgc", "boss", true)
+	if st, out := h.send(t, "POST", "/v1/iam/certs", h.token(t, "orgc/boss"), map[string]any{"owner": "orgc", "name": "first", "scope": schema.CertTenant}); st != 200 {
+		t.Fatalf("another org: %d %s", st, out)
+	}
+
+	// Racing creates in a fresh org never leave more than the cap.
+	seedUser(t, h.db, "race", "boss", true)
+	rb := h.token(t, "race/boss")
+	var wg sync.WaitGroup
+	for i := 0; i < 12; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			h.send(t, "POST", "/v1/iam/certs", rb, map[string]any{"owner": "race", "name": "r-" + string(rune('a'+i)), "scope": schema.CertTenant})
+		}(i)
+	}
+	wg.Wait()
+	if n, err := store.CountTenantCerts(context.Background(), h.db, "race"); err != nil || n > maxTenantCertsForTest {
+		t.Fatalf("racing creates left %d tenant certs (%v)", n, err)
+	}
+	held := 0
+	for k := range v.m {
+		if k[0] == "race" {
+			held++
+		}
+	}
+	if held > maxTenantCertsForTest {
+		t.Fatalf("the vault holds %d keys for the racing org", held)
+	}
+}
+
+const maxTenantCertsForTest = 5
+
+// A platform cert never takes the name of an org's tenant cert, whatever its case.
+func TestTenantCert_APlatformCertCannotTakeATenantName(t *testing.T) {
+	h, _ := tenantHarness(t)
+	if st, out := h.send(t, "POST", "/v1/iam/certs", h.token(t, "acme/boss"), map[string]any{"owner": "acme", "name": "acme-key", "scope": schema.CertTenant}); st != 200 {
+		t.Fatalf("create: %d %s", st, out)
+	}
+	root := h.token(t, "admin/root")
+	for _, name := range []string{"acme-key", "Acme-Key"} {
+		if st, out := h.send(t, "POST", "/v1/iam/certs", root, map[string]any{"owner": "admin", "name": name, "cryptoAlgorithm": "RS256"}); st != 409 {
+			t.Errorf("platform cert %q: status %d, want 409: %s", name, st, out)
+		}
+	}
+	if st, out := h.send(t, "POST", "/v1/iam/certs", root, map[string]any{"owner": "admin", "name": "cert-fresh", "cryptoAlgorithm": "RS256"}); st != 200 {
+		t.Fatalf("an unrelated platform cert: %d %s", st, out)
 	}
 }

@@ -256,9 +256,26 @@ func InitIssuerResolver() error {
 	if err != nil {
 		return err
 	}
+	// A tenant origin that is, or lies under, a platform issuer would send platform tokens
+	// to the tenant verifier (tenantOrgOf), so the two never overlap.
+	if base != "" {
+		for _, iss := range append([]string{r.def}, mapValues(r.byHost)...) {
+			if iss = normalizeIssuer(iss); iss != "" && (iss == base || strings.HasPrefix(iss, base+"/")) {
+				return fmt.Errorf("%s %s is, or holds, the platform issuer %s", EnvTenantIssuer, base, iss)
+			}
+		}
+	}
 	activeResolver.Store(r)
 	activeTenantBase.Store(&base)
 	return nil
+}
+
+func mapValues(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for _, v := range m {
+		out = append(out, v)
+	}
+	return out
 }
 
 // EnvTenantIssuer names the origin under which every organization's own issuer lives

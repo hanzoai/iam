@@ -10,6 +10,8 @@ import (
 	"testing"
 )
 
+var any = func(string) bool { return true }
+
 type fake struct {
 	mu    sync.Mutex
 	m     map[[2]string]string
@@ -50,7 +52,7 @@ func TestVault(t *testing.T) {
 	if err := PutTenant(ctx, "acme", "k", "PEM"); !errors.Is(err, ErrNoVault) {
 		t.Fatalf("Put with no vault: %v", err)
 	}
-	if _, err := TenantKey(ctx, "acme", "k"); !errors.Is(err, ErrNoVault) {
+	if _, err := TenantKey(ctx, "acme", "k", any); !errors.Is(err, ErrNoVault) {
 		t.Fatalf("Get with no vault: %v", err)
 	}
 
@@ -68,24 +70,48 @@ func TestVault(t *testing.T) {
 		t.Fatal("a name that cannot be a kid was stored")
 	}
 	for i := 0; i < 3; i++ {
-		if k, err := TenantKey(ctx, "acme", "cert-hanzo"); err != nil || k != "TENANT" {
+		if k, err := TenantKey(ctx, "acme", "cert-hanzo", any); err != nil || k != "TENANT" {
 			t.Fatalf("read %d: %q %v", i, k, err)
 		}
 	}
 	if f.reads != 1 {
 		t.Fatalf("vault read %d times, want 1 while the key is fresh", f.reads)
 	}
-	if _, err := TenantKey(ctx, "beta", "cert-hanzo"); !errors.Is(err, ErrNoKey) {
+	if _, err := TenantKey(ctx, "beta", "cert-hanzo", any); !errors.Is(err, ErrNoKey) {
 		t.Fatalf("another org's read: %v", err)
 	}
 	if err := DropTenant(ctx, "acme", "cert-hanzo"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := TenantKey(ctx, "acme", "cert-hanzo"); !errors.Is(err, ErrNoKey) {
+	if _, err := TenantKey(ctx, "acme", "cert-hanzo", any); !errors.Is(err, ErrNoKey) {
 		t.Fatalf("after delete: %v", err)
 	}
 	// The platform ring is untouched by any of it.
 	if got := lookup("cert-hanzo"); got != "PLATFORM" {
 		t.Fatalf("platform ring = %q", got)
+	}
+}
+
+// A cached key is used only for the cert it matches: a cert deleted and created again under
+// the same name, with the old key still cached here, is signed with the new key, and a
+// vault key that matches nothing is no key.
+func TestVaultCacheIsBoundToTheCert(t *testing.T) {
+	ctx := context.Background()
+	f := &fake{m: map[[2]string]string{}}
+	UseVault(f)
+	t.Cleanup(func() { UseVault(nil) })
+	_ = f.Put(ctx, "acme", "k", "OLD")
+	is := func(want string) func(string) bool { return func(p string) bool { return p == want } }
+	if k, err := TenantKey(ctx, "acme", "k", is("OLD")); err != nil || k != "OLD" {
+		t.Fatalf("first read: %q %v", k, err)
+	}
+	// Another replica deletes the key and the cert is created again under the same name.
+	_ = f.Delete(ctx, "acme", "k")
+	_ = f.Put(ctx, "acme", "k", "NEW")
+	if k, err := TenantKey(ctx, "acme", "k", is("NEW")); err != nil || k != "NEW" {
+		t.Fatalf("after recreate: %q %v; the deleted key was reused", k, err)
+	}
+	if _, err := TenantKey(ctx, "acme", "k", is("OTHER")); !errors.Is(err, ErrNoKey) {
+		t.Fatalf("a vault key matching nothing: %v", err)
 	}
 }

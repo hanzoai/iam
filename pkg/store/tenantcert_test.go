@@ -66,7 +66,7 @@ func TestTenantCertResolution(t *testing.T) {
 	if l, _ := ListTenantCerts(ctx, db, "hanzo"); len(l) != 0 {
 		t.Fatalf("a platform org lists tenant certs: %v", l)
 	}
-	for name, want := range map[string]bool{"cert-hanzo": true, "CERT-HANZO": true, "shadow": true, "acme-key": false} {
+	for name, want := range map[string]bool{"cert-hanzo": true, "CERT-HANZO": true, "shadow": false, "acme-key": false} {
 		if got, err := PlatformKidTaken(ctx, db, name); err != nil || got != want {
 			t.Errorf("PlatformKidTaken(%q) = %v %v, want %v", name, got, err, want)
 		}

@@ -53,7 +53,7 @@ func TestUseVaultInstallsTheHostsVault(t *testing.T) {
 	if err := keyring.PutTenant(ctx, "acme", "acme-signing", "other"); !errors.Is(err, keyring.ErrExists) {
 		t.Fatalf("a second put over a held key was not refused as ErrExists: %v", err)
 	}
-	if _, err := keyring.TenantKey(ctx, "acme", "absent"); !errors.Is(err, keyring.ErrNoKey) {
+	if _, err := keyring.TenantKey(ctx, "acme", "absent", func(string) bool { return true }); !errors.Is(err, keyring.ErrNoKey) {
 		t.Fatalf("an absent key was not ErrNoKey: %v", err)
 	}
 }

@@ -12,6 +12,8 @@ import (
 	"math/big"
 	"net/http"
 	"net/url"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -24,6 +26,7 @@ import (
 	"github.com/hanzoai/iam/internal/certs"
 	"github.com/hanzoai/iam/internal/keyring"
 	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // AN ORGANIZATION'S APPLICATION SIGNS WITH THE ORGANIZATION'S OWN CERT, under the
@@ -62,6 +65,8 @@ func (v *memVault) Delete(_ context.Context, org, name string) error {
 	return nil
 }
 
+var getSeq int
+
 const tenantClient = "acme-portal"
 
 // tenant is an organization "acme" with a person, an application and an own cert.
@@ -78,6 +83,9 @@ func newTenant(t *testing.T) *tenant {
 	app := zip.New(zip.Config{AppName: "iam-test", DisableStartupMessage: true})
 	Route(app.Group(""), db)
 	certs.Route(app.Group(""), db)
+	tenantSets.Lock()
+	tenantSets.m, tenantSets.order = map[string]*keySet{}, nil
+	tenantSets.Unlock()
 	v := &memVault{m: map[[2]string]string{}}
 	keyring.UseVault(v)
 	t.Cleanup(func() { keyring.UseVault(nil) })
@@ -131,9 +139,12 @@ func (tn *tenant) signIn(t *testing.T) map[string]any {
 	return tok
 }
 
+// get fetches path from host. The response is cached at the edge of the router per path, so each
+// call carries its own query and reads what the store holds now.
 func (tn *tenant) get(t *testing.T, host, path string) (int, []byte) {
 	t.Helper()
-	req := formReqNoBody("GET", path)
+	getSeq++
+	req := formReqNoBody("GET", path+"?seq="+strconv.Itoa(getSeq))
 	req.Host = host
 	resp, body := do(t, tn.app, req)
 	return resp.StatusCode, body
@@ -157,13 +168,21 @@ func keyOf(t *testing.T, jwk map[string]any) *rsa.PublicKey {
 // holding that issuer's discovery would: kid, signature, algorithm and issuer.
 func (tn *tenant) verifyAt(t *testing.T, path, tok, iss string) error {
 	t.Helper()
-	host := "hanzo.id"
+	var body []byte
 	if strings.HasPrefix(path, "/acme/") {
-		host = "hanzo.ai"
-	}
-	st, body := tn.get(t, host, path)
-	if st != 200 {
-		t.Fatalf("GET %s = %d", path, st)
+		// The router caches responses per path across the process; the key set is read
+		// as the handler builds it.
+		b, _, err := publishTenant(context.Background(), tn.db, "acme")
+		if err != nil {
+			t.Fatalf("publish: %v", err)
+		}
+		body = b
+	} else {
+		var st int
+		st, body = tn.get(t, "hanzo.id", path)
+		if st != 200 {
+			t.Fatalf("GET %s = %d", path, st)
+		}
 	}
 	var set struct{ Keys []map[string]any }
 	if err := json.Unmarshal(body, &set); err != nil {
@@ -660,5 +679,120 @@ func TestTenant_KeySetFollowsTheOrgsCerts(t *testing.T) {
 	tn.createCert(t, "acme", "acme-next", http.StatusOK)
 	if st, body := tn.get(t, "hanzo.ai", "/acme/.well-known/jwks"); st != 200 || !strings.Contains(string(body), "acme-next") {
 		t.Fatalf("the next cert is not served: %d %s", st, body)
+	}
+}
+
+// A cert deleted and created again under the same name, while this replica still holds the
+// old key, signs with the new key: tokens verify at the org's current key set.
+func TestTenant_RecreatedCertNeverReusesACachedKey(t *testing.T) {
+	tn := newTenant(t)
+	first := tn.signIn(t)["access_token"].(string) // caches the key
+	if err := tn.verifyAt(t, "/acme"+PathJWKSRoot, first, "https://hanzo.ai/acme"); err != nil {
+		t.Fatal(err)
+	}
+	// Another replica deletes the cert and its key; this one is not told.
+	row, err := orm.Get[schema.Cert](tn.db, "acme/acme-signing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := row.DeleteCtx(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	_ = tn.vault.Delete(context.Background(), "acme", "acme-signing")
+	tn.createCert(t, "acme", "acme-signing", http.StatusOK)
+	dropTenantSet("acme")
+	if rows, _ := store.ListTenantCerts(context.Background(), tn.db, "acme"); len(rows) != 1 {
+		t.Fatalf("the org holds %d tenant cert rows after the recreate", len(rows))
+	}
+	second := tn.signIn(t)["access_token"].(string)
+	if err := tn.verifyAt(t, "/acme"+PathJWKSRoot, second, "https://hanzo.ai/acme"); err != nil {
+		t.Fatalf("a token signed after the cert was recreated does not verify at its key set: %v", err)
+	}
+	if err := tn.verifyAt(t, "/acme"+PathJWKSRoot, first, "https://hanzo.ai/acme"); err == nil {
+		t.Fatal("a token of the deleted cert verifies under the recreated one")
+	}
+}
+
+// The oldest key set is dropped when the cache is full; the others stay.
+func TestTenantSetsEvictTheOldest(t *testing.T) {
+	tenantSets.Lock()
+	tenantSets.m, tenantSets.order = map[string]*keySet{}, nil
+	tenantSets.Unlock()
+	t.Cleanup(func() {
+		tenantSets.Lock()
+		tenantSets.m, tenantSets.order = map[string]*keySet{}, nil
+		tenantSets.Unlock()
+	})
+	first := tenantSetOf("org-0")
+	keep := tenantSetOf("org-1")
+	for i := 2; i <= tenantSetMax; i++ {
+		tenantSetOf("org-" + strconv.Itoa(i))
+	}
+	if tenantSetOf("org-1") != keep {
+		t.Fatal("a recent key set was dropped when the cache filled")
+	}
+	if tenantSetOf("org-0") == first {
+		t.Fatal("the oldest key set was kept")
+	}
+	if len(tenantSets.m) > tenantSetMax {
+		t.Fatalf("the cache holds %d sets", len(tenantSets.m))
+	}
+}
+
+// An application that is no tenant application never signs with a platform cert that merely
+// shares a name with a tenant cert row of its org; neither does a platform cert created later.
+func TestTenant_ATenantRowNeverFallsThroughToAPlatformCert(t *testing.T) {
+	tn := newTenant(t)
+	seedRSACert(t, tn.db, "acme-signing") // a platform cert under the tenant cert's name
+	for name, mod := range map[string]func(*schema.Application){
+		"shared":    func(a *schema.Application) { a.IsShared = true },
+		"platform":  func(a *schema.Application) { a.Platform = true },
+		"spans":     func(a *schema.Application) { a.OrgChoiceMode = "create" },
+		"other org": func(a *schema.Application) { a.Organization = "beta" },
+	} {
+		a := *tn.appRow
+		mod(&a)
+		if s, err := signerFor(context.Background(), tn.db, &a, "https://hanzo.id"); s != nil || err == nil {
+			t.Errorf("%s: signed under a platform cert named like the tenant's (%v)", name, err)
+		}
+	}
+}
+
+// A tenant origin that is, or holds, a platform issuer is refused at boot.
+func TestTenantOrigin_NeverOverlapsAPlatformIssuer(t *testing.T) {
+	prevIss, prevMap, prevTen := os.Getenv("IAM_ISSUER"), os.Getenv("IAM_ISSUER_MAP"), os.Getenv(EnvTenantIssuer)
+	t.Cleanup(func() {
+		os.Setenv("IAM_ISSUER", prevIss)
+		os.Setenv(EnvTenantIssuer, prevTen)
+		if prevMap == "" {
+			os.Unsetenv("IAM_ISSUER_MAP")
+		} else {
+			os.Setenv("IAM_ISSUER_MAP", prevMap)
+		}
+		if err := InitIssuerResolver(); err != nil {
+			t.Fatal(err)
+		}
+	})
+	for name, c := range map[string]struct{ iss, m, tenant string }{
+		"default is the tenant origin": {"https://hanzo.ai", "", "https://hanzo.ai"},
+		"a brand issuer is it":         {"https://hanzo.id", `{"lux.id":"https://hanzo.ai"}`, "https://hanzo.ai"},
+		"a brand issuer lies under it": {"https://hanzo.id", `{"lux.id":"https://hanzo.ai/lux"}`, "https://hanzo.ai"},
+	} {
+		os.Setenv("IAM_ISSUER", c.iss)
+		os.Setenv(EnvTenantIssuer, c.tenant)
+		if c.m == "" {
+			os.Unsetenv("IAM_ISSUER_MAP")
+		} else {
+			os.Setenv("IAM_ISSUER_MAP", c.m)
+		}
+		if err := InitIssuerResolver(); err == nil {
+			t.Errorf("%s: booted", name)
+		}
+	}
+	os.Setenv("IAM_ISSUER", "https://hanzo.id")
+	os.Unsetenv("IAM_ISSUER_MAP")
+	os.Setenv(EnvTenantIssuer, "https://hanzo.ai")
+	if err := InitIssuerResolver(); err != nil {
+		t.Fatalf("disjoint origins refused: %v", err)
 	}
 }
