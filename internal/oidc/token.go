@@ -764,6 +764,7 @@ type unsignableError struct {
 	cert    string // the cert it names; "" when it names none
 	why     string // what the name resolved to, in the operator's terms
 	explain string // why that cannot sign, when the name alone does not say
+	fix     string // what the operator does about it; "" for the default
 }
 
 func (e *unsignableError) Error() string { return "token: " + e.describe() }
@@ -773,10 +774,14 @@ func (e *unsignableError) Unwrap() error { return ErrNoSigningCert }
 
 // describe is the error_description the token endpoint answers with.
 func (e *unsignableError) describe() string {
+	fix := e.fix
+	if fix == "" {
+		fix = " Create a cert for the organization (POST /v1/iam/certs with scope \"tenant\") and set " +
+			"the application's cert to it, or ask a platform administrator to set it to one of the " +
+			"platform's signing certs (a kid this issuer's JWKS publishes)."
+	}
 	return "application " + descSafe(e.app) + " " + e.why +
-		", so no token can be issued for it." + e.explain +
-		" Ask a platform administrator to set the application's cert to one of the " +
-		"platform's signing certs (a kid this issuer's JWKS publishes)."
+		", so no token can be issued for it." + e.explain + fix
 }
 
 // unsignable names why app.Cert resolved to nothing an application may sign with.
@@ -792,8 +797,9 @@ func unsignable(app *schema.Application, cert *schema.Cert) error {
 	default:
 		e.why = "names the signing cert " + descSafe(app.Cert) +
 			", which is not one of the platform's signing certs"
-		e.explain = " A cert added to an organization or an application never signs " +
-			"tokens: only the platform's own certs do, because only the platform holds their keys."
+		e.explain = " A cert added to an organization or an application signs only when it was " +
+			"created as the organization's tenant cert; any other is a record, because only the " +
+			"platform and the tenant key vault hold keys."
 	}
 	return e
 }
@@ -825,6 +831,26 @@ func descSafe(s string) string {
 // the same trusted resolution as the JWKS and verification keeps the three
 // consistent: a token is signed by a key iam will also publish and verify.
 func signerFor(ctx context.Context, db orm.DB, app *schema.Application, issuer string) (*Signer, error) {
+	// An organization's application naming the organization's own cert signs with
+	// it, under the organization's own issuer (tenant.go). Naming none, it falls to
+	// the platform resolution below, which says what it can sign with.
+	if s, err := tenantSigner(ctx, db, app); s != nil || err != nil {
+		return s, err
+	}
+	// A cert row of the application's own org that carries the tenant scope signs only
+	// through the tenant path above, whatever the application is: it is never read as a
+	// platform cert of the same name.
+	if app.Cert != "" {
+		row, err := store.GetCert(ctx, db, app.Owner, app.Cert)
+		if err != nil {
+			return nil, err
+		}
+		if row != nil && row.Tenant() {
+			return nil, &unsignableError{app: app.Owner + "/" + app.Name, cert: app.Cert,
+				why: "names the organization's own cert " + descSafe(app.Cert) + ", which this application may not sign with",
+				fix: " Only an application owned by and serving that organization, not shared and not the platform's, signs with its cert."}
+		}
+	}
 	cert, err := store.GetSigningCert(ctx, db, app.Cert)
 	if err != nil {
 		return nil, err

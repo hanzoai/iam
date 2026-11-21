@@ -9,6 +9,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	policy "github.com/hanzoai/authz"
 )
 
 // orgNameRe is THE shape of an organization name: lowercase ASCII letters and
@@ -26,6 +28,21 @@ var orgNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,53}[a-z0-9]$`)
 func OrgName(name string) error {
 	if !orgNameRe.MatchString(name) {
 		return fmt.Errorf("an organization name is lowercase letters, digits and inner hyphens, not %q", name)
+	}
+	return nil
+}
+
+// TenantOrg reports whether org may hold an issuer of its own: an organization name that
+// no platform or estate org uses (policy.IsInternalOrg) and that is not a reserved slug
+// (ReservedSlug). The platform orgs sign under the platform's issuers, and a reserved
+// slug is a path another route owns, so an org named like either gets no issuer of its
+// own and never shadows the route.
+func TenantOrg(org string) error {
+	if err := OrgName(org); err != nil {
+		return err
+	}
+	if policy.IsInternalOrg(org) || ReservedSlug(org) {
+		return fmt.Errorf("the organization name %q is reserved and holds no issuer of its own", org)
 	}
 	return nil
 }

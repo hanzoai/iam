@@ -1775,6 +1775,75 @@ onboarding state (two such rows, one staff and one service). 50 accounts outside
 carry no registration (legacy rows, staff and brand-org accounts), 4 are shadowed
 by an account living in `hanzo` with the same address.
 
+## Tenant certs — an organization signs with its own key, under its own issuer
+
+An organization's application is not a platform application, so it never signs with
+a platform key. An org admin (or a SuperAdmin) creates a **tenant cert** for the org:
+`POST /v1/iam/certs` with `scope: "tenant"` (`schema.CertTenant`), a lowercase `name`
+and, optionally, `expireInYears` (default 10, at most 20). IAM generates the RS256
+2048 key pair, stores the PRIVATE half in the host's `keyring.Vault` and the public
+half (a self-signed certificate) on the row. A caller can never supply key material,
+and no response carries the private half. A tenant cert is immutable but for its
+display name; deleting it forgets its key. The name is the org's `kid`, refused when
+any platform cert holds it (case folded) and when it is not `[a-z0-9._-]`, 64 at most.
+Only orgs that may hold an issuer own one (`schema.TenantOrg`): not the reserved orgs,
+brands, directories, estate orgs, nor a reserved slug.
+
+**Custody is the host's, through `keyring.Vault`** (`Put` never overwrites, `Get`,
+`Delete`, keyed by org and cert name). IAM itself holds no KMS credential, so cloud
+supplies the Vault over its KMS custody (`orgs/<org>/iam/signing/<name>`) and installs
+it with `keyring.UseVault`. With none installed a tenant cert cannot be created and
+never signs: the create answers 503 and the exchange says the key cannot be read. The
+platform ring (`IAM_SIGNING_KEYS`) is never consulted for a tenant cert, and
+`keyring.Fill` never gives a tenant row key material.
+
+**Who signs with it.** An application owned by the org it serves (`owner ==
+organization`), not `Platform`, not spanning, whose `cert` names a tenant cert the SAME
+org owns. There is no fallback: an application naming anything else is refused as
+before (`unsignableError`, which now names the tenant-cert fix), and a tenant cert whose
+name a platform cert has since taken is refused, never resolved to the platform's key.
+A platform cert named on an org's application is still a SuperAdmin's to set
+(`authz.AuthorizeCert`).
+
+**The issuer is the org's own**: `iss` = `<tenant origin>/<org>`, where the tenant origin
+is deployment config, `IAM_TENANT_ISSUER` (an https origin, validated like a sign-in
+origin, pinned at boot with `IAM_ISSUER`, never read from a request): the hanzo
+deployment sets `https://hanzo.ai`, so `https://hanzo.ai/acme`. Unset, no tenant issuer
+can be derived: tenant certs do not sign (the exchange names the knob) and the org paths
+answer 404. `aud` stays the application's client id. Discovery and the key set live under
+it, per OIDC Discovery §4: `<iss>/.well-known/openid-configuration` (the org's `issuer`
+and `jwks_uri`, the platform's protocol endpoints) and `<iss>/.well-known/jwks` (only that
+org's tenant certs that sign, public halves, `kid` = cert name). They are served only on
+the tenant origin's host, so the host's edge must route `/<org>/.well-known/*` to IAM.
+Both answer 404 for an unknown org, a name that cannot hold an issuer, and an org with no
+published tenant cert, never with a platform document. The issuer is built from the
+pinned origin and a validated org (`schema.TenantOrg`, the org row, the cert row).
+A custom-domain issuer is not served: `Application.Domain` is a tenant-writable field
+with no domain verification, so it cannot be a trust root.
+
+**Reserved slugs.** An org named like a path the origin's site answers would shadow it,
+so `schema.reservedSlugs` (pkg/schema/slug.go) is the ONE table of names no org may take:
+the hanzo.ai pages and static directories (hanzo-inc/app `app/`, `public/`), the edge
+paths (universe `infra/sites/sites.yaml`, `docs/urls.md`), IAM's root routes, the
+well-known and framework paths, and the platform and brand names. `schema.ReservedSlug`
+(that table plus `policy.IsHeldOrg`) is asked by every path that founds an org (the
+organizations create, onboard, provision, signup's derivation), and `schema.TenantOrg`
+asks it at every tenant issuer derivation, so an existing org that collides gets no issuer
+and answers 404. Run `schema.ReservedSlug` over the org list to find collisions. A page the
+site gains is added to the table with the page.
+
+**What a tenant token can and cannot do.** It is an identity assertion for the org's
+relying party. The platform's key set, discovery and `issues()` never mention it, and
+every platform-authority path (`verifyBearer`, `VerifyToken`: the Guard, `PlatformBearer`,
+admin and sudo ops, assume, impersonate, delegation, token exchange, registry) resolves
+`kid` among platform certs only and requires a platform issuer, so it refuses one.
+IAM's own endpoints that a tenant's relying party calls accept it through
+`parseIssued`, which resolves the `kid` inside the org its `iss` names and nowhere else
+and requires the exact org issuer and `owner == org`: userinfo, introspection,
+`id_token_hint` (authorize, logout). Revocation and refresh key on the stored grant
+and re-sign with the same cert. Cloud's boundary trusts platform issuers and platform
+kids only, so a tenant token is refused there on both counts.
+
 ## Brand rules (hard)
 - Never call Hanzo an "LLM gateway"; never position vs LiteLLM. Full AI cloud, not a proxy.
 - `/v1/` only, never `/api/`. Zen models are our own family — never name upstream models.

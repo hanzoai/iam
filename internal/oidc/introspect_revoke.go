@@ -107,7 +107,7 @@ func introspectHandler(db orm.DB) zip.Handler {
 		if row == nil {
 			return c.JSON(200, inactiveToken())
 		}
-		claims, err := verifyToken(ctx, db, tokenStr)
+		claims, err := parseIssued(ctx, db, tokenStr)
 		if err != nil {
 			return c.JSON(200, inactiveToken())
 		}

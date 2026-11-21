@@ -184,5 +184,10 @@ func isSigningCert(cert *schema.Cert) bool {
 	if cert.Delegates() {
 		return false
 	}
+	// An organization's own cert is published in that organization's key set
+	// (tenant.go), never in this one, whatever owner its row sits under.
+	if cert.Tenant() {
+		return false
+	}
 	return signingAlgs[strings.ToUpper(strings.ReplaceAll(cert.CryptoAlgorithm, "-", ""))]
 }

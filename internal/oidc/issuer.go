@@ -252,8 +252,60 @@ func InitIssuerResolver() error {
 	if err != nil {
 		return err
 	}
+	base, err := newTenantBase(os.Getenv(EnvTenantIssuer))
+	if err != nil {
+		return err
+	}
+	// A tenant origin that is, or lies under, a platform issuer would send platform tokens
+	// to the tenant verifier (tenantOrgOf), so the two never overlap.
+	if base != "" {
+		for _, iss := range append([]string{r.def}, mapValues(r.byHost)...) {
+			if iss = normalizeIssuer(iss); iss != "" && (iss == base || strings.HasPrefix(iss, base+"/")) {
+				return fmt.Errorf("%s %s is, or holds, the platform issuer %s", EnvTenantIssuer, base, iss)
+			}
+		}
+	}
 	activeResolver.Store(r)
+	activeTenantBase.Store(&base)
 	return nil
+}
+
+func mapValues(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for _, v := range m {
+		out = append(out, v)
+	}
+	return out
+}
+
+// EnvTenantIssuer names the origin under which every organization's own issuer lives
+// (tenant.go): `<origin>/<org>`. It is deployment config, pinned like IAM_ISSUER and
+// never read from a request, so the hanzo deployment sets https://hanzo.ai and another
+// brand sets its own. Unset, no tenant issuer can be derived: tenant certs do not sign.
+const EnvTenantIssuer = "IAM_TENANT_ISSUER"
+
+// activeTenantBase is the validated tenant issuer origin; "" when unset.
+var activeTenantBase atomic.Pointer[string]
+
+// newTenantBase validates the tenant issuer origin: an https origin with no path, query or
+// user, as a sign-in origin is (signinOrigin). "" is allowed and means none.
+func newTenantBase(raw string) (string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return "", nil
+	}
+	o, err := signinOrigin(raw)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", EnvTenantIssuer, err)
+	}
+	return o, nil
+}
+
+// tenantBase is the origin organizations' issuers live under, or "".
+func tenantBase() string {
+	if p := activeTenantBase.Load(); p != nil {
+		return *p
+	}
+	return ""
 }
 
 // resolveIssuer is THE seam every issuer read routes through. host is the TRUSTED

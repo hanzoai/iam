@@ -108,7 +108,7 @@ func provision(ctx context.Context, db orm.DB, cl claim) (provisioned, error) {
 	if len(cl.slug) < minOrgSlug {
 		return provisioned{}, &fault{400, "org name too short"}
 	}
-	if policy.IsHeldOrg(cl.slug) {
+	if schema.ReservedSlug(cl.slug) {
 		return provisioned{}, &fault{400, "\"" + cl.slug + "\" is reserved"}
 	}
 

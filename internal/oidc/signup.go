@@ -497,7 +497,7 @@ const orgChoiceCreate = "create"
 // derivation that walked only past TAKEN names would hand provision a name it
 // refuses, and the person's signup would fail on a rule they never saw.
 func orgSlugFree(ctx context.Context, db orm.DB, slug string) (bool, error) {
-	if len(slug) < minOrgSlug || len(slug) > maxOrgSlug || policy.IsHeldOrg(slug) {
+	if len(slug) < minOrgSlug || len(slug) > maxOrgSlug || schema.ReservedSlug(slug) {
 		return false, nil
 	}
 	org, err := store.GetOrganizationByName(ctx, db, slug)

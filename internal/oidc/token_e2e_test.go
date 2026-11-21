@@ -165,6 +165,7 @@ func mustGenRSA(t *testing.T) *rsa.PrivateKey {
 // needs other issuers installs them for itself and restores these.
 func TestMain(m *testing.M) {
 	os.Setenv("IAM_ISSUER", "https://hanzo.id")
+	os.Setenv(EnvTenantIssuer, "https://hanzo.ai")
 	for _, k := range []string{"IAM_ISSUER_MAP", "IAM_FEDERATION_ORIGIN_MAP", "IAM_FEDERATION_ORIGIN", "IAM_DEV_HOST_RELATIVE"} {
 		os.Unsetenv(k)
 	}

@@ -728,11 +728,116 @@ func GetSigningCert(ctx context.Context, db orm.DB, name string) (*schema.Cert, 
 		if err != nil {
 			return nil, err
 		}
-		if c != nil {
+		// A tenant-scoped row is an organization's key, never a platform kid, even
+		// under a reserved owner.
+		if c != nil && !c.Tenant() {
 			return c, nil
 		}
 	}
 	return nil, nil
+}
+
+// GetTenantCert resolves an organization's OWN signing cert by name: the row owned
+// by org that carries the tenant scope, usable only when org may hold an issuer of
+// its own and no platform cert answers to the same name. Returns (nil, nil) when
+// there is none. The private half is not loaded here; the keyring Vault holds it.
+//
+// A name a platform cert also holds resolves to nothing: a tenant kid and a
+// platform kid are never the same kid, so a cert created before a platform one
+// took its name stops being usable rather than being ambiguous.
+func GetTenantCert(ctx context.Context, db orm.DB, org, name string) (*schema.Cert, error) {
+	if name == "" || schema.TenantOrg(org) != nil {
+		return nil, nil
+	}
+	c, err := GetCert(ctx, db, org, name)
+	if err != nil || c == nil || !c.Tenant() {
+		return nil, err
+	}
+	platform, err := GetSigningCert(ctx, db, name)
+	if err != nil || platform != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// platformKids is the set of names the reserved platform owners' certs carry: one read
+// per owner, however many tenant certs are being checked against it.
+func platformKids(ctx context.Context, db orm.DB) (map[string]bool, error) {
+	kids := map[string]bool{}
+	for _, owner := range policy.SigningOwners() {
+		rows, err := orm.TypedQuery[schema.Cert](db).Filter("Owner=", owner).GetAll(ctx)
+		if err != nil && !errors.Is(err, orm.ErrNotFound) {
+			return nil, err
+		}
+		for _, c := range rows {
+			if !c.Tenant() {
+				kids[c.Name] = true
+			}
+		}
+	}
+	return kids, nil
+}
+
+// ListTenantCerts lists the tenant-scoped certs org owns, in name order, resolved as
+// GetTenantCert resolves them: three reads however many certs there are.
+func ListTenantCerts(ctx context.Context, db orm.DB, org string) ([]*schema.Cert, error) {
+	if schema.TenantOrg(org) != nil {
+		return nil, nil
+	}
+	rows, err := orm.TypedQuery[schema.Cert](db).Filter("Owner=", org).Filter("Scope=", schema.CertTenant).Order("Name").GetAll(ctx)
+	if err != nil && !errors.Is(err, orm.ErrNotFound) {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	kids, err := platformKids(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*schema.Cert, 0, len(rows))
+	for _, c := range rows {
+		if c.Tenant() && !kids[c.Name] {
+			out = append(out, c)
+		}
+	}
+	return out, nil
+}
+
+// CountTenantCerts is how many tenant certs org owns.
+func CountTenantCerts(ctx context.Context, db orm.DB, org string) (int, error) {
+	n, err := orm.TypedQuery[schema.Cert](db).Filter("Owner=", org).Filter("Scope=", schema.CertTenant).Count(ctx)
+	if errors.Is(err, orm.ErrNotFound) {
+		return 0, nil
+	}
+	return n, err
+}
+
+// PlatformKidTaken reports whether a reserved platform owner holds a cert whose name equals
+// name, folding case: the check a tenant cert's name must pass before it exists. It reads
+// the platform owners' certs (a handful) and never the whole table.
+func PlatformKidTaken(ctx context.Context, db orm.DB, name string) (bool, error) {
+	kids, err := platformKids(ctx, db)
+	if err != nil {
+		return false, err
+	}
+	for kid := range kids {
+		if strings.EqualFold(kid, name) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// TenantKidTaken reports whether any organization holds a tenant cert whose name equals
+// name, folding case: the check a platform cert's name must pass before it exists, so a
+// kid a tenant already signs under is never also a platform kid.
+func TenantKidTaken(ctx context.Context, db orm.DB, name string) (bool, error) {
+	rows, err := orm.TypedQuery[schema.Cert](db).Filter("Name=", strings.ToLower(name)).Filter("Scope=", schema.CertTenant).Limit(1).GetAll(ctx)
+	if err != nil && !errors.Is(err, orm.ErrNotFound) {
+		return false, err
+	}
+	return len(rows) > 0, nil
 }
 
 // PersistToken binds a domain Token onto the store and creates it. Used to
@@ -874,7 +979,7 @@ func PlatformSigningCert(ctx context.Context, db orm.DB) (*schema.Cert, error) {
 	pick := func(eligible func(*schema.Cert) bool) *schema.Cert {
 		var best *schema.Cert
 		for _, c := range certs {
-			if c == nil || c.PrivateKey == "" || !policy.IsSigningOwner(c.Owner) || c.Delegates() || !eligible(c) {
+			if c == nil || c.PrivateKey == "" || !policy.IsSigningOwner(c.Owner) || c.Delegates() || c.Tenant() || !eligible(c) {
 				continue
 			}
 			if best == nil || c.Owner+"/"+c.Name < best.Owner+"/"+best.Name {
