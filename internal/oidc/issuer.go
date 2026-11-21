@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -385,6 +386,38 @@ func issues(iss string) bool {
 		}
 	}
 	return r.def == "" && len(r.byHost) == 0 && r.devHostRelative
+}
+
+// peerOrigins are the origins of the two platform issuers while the issuer moves: the
+// default issuer and the one IAM_ACCEPTED_ISSUERS names. A browser's session is host-only,
+// so a person who signed in on one is signed in on the other only if each asks the other
+// (authorize.go peerHop) and a sign-out on one ends both (signoutOrigins). It is empty when
+// the deployment is not moving an issuer, and when the accepted set is not exactly one
+// issuer apart from the default.
+func peerOrigins() []string {
+	r := activeResolver.Load()
+	if r == nil || r.def == "" {
+		return nil
+	}
+	out := []string{oneSpelling(r.def)}
+	for o := range r.accepted {
+		out = append(out, o)
+	}
+	slices.Sort(out)
+	out = slices.Compact(out)
+	if len(out) != 2 {
+		return nil
+	}
+	return out
+}
+
+// homeOrigin is the default issuer's origin: where a person signs in when neither peer
+// holds a session.
+func homeOrigin() string {
+	if r := activeResolver.Load(); r != nil && r.def != "" {
+		return oneSpelling(r.def)
+	}
+	return ""
 }
 
 // accepts reports whether a token under iss is one this IAM VERIFIES: an issuer it

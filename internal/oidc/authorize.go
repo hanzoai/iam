@@ -4,6 +4,7 @@
 package oidc
 
 import (
+	"net/http"
 	"net/url"
 	"strings"
 
@@ -194,6 +195,13 @@ func authorizeHandler(db orm.DB) zip.Handler {
 			if refusal == "" {
 				return authorizeCodeRedirect(c, q, code)
 			}
+			// No session on this host: the person may hold one on the other platform host
+			// while the issuer moves (peerHop), which asks there before a page is shown.
+			if refusal == errLoginRequired {
+				if loc, ok := peerHop(c, p.none); ok {
+					return c.Redirect(302, loc)
+				}
+			}
 			if p.none {
 				return authorizeErrorRedirect(c, q, refusal, "no interaction was permitted and the request could not be answered from an existing session")
 			}
@@ -224,6 +232,48 @@ func authorizeHandler(db orm.DB) zip.Handler {
 		}
 		return c.Redirect(302, hostedLoginTarget(app, iss)+"?"+authorizeForwardQuery(q, method))
 	}
+}
+
+// peerMarker is the query parameter an authorize request carries once the other platform
+// host has been asked for a session, so the pair never ask each other twice. It is a hint
+// to skip a hop, never a grant: a request that spells it only goes to the page.
+const peerMarker = "_peer"
+
+// peerHop is where an authorize request that found no session on this host goes next, and
+// whether it goes anywhere. While the platform issuer moves, a person's session cookie is
+// host-only and sits on whichever of the two platform hosts they signed in on, so each
+// host asks the other before it shows a page. The first host to find none sends the
+// request to the other, marked; the other answers from its session, or, with none either,
+// returns it to the issuer's own host (the default issuer, trusted config) to show the
+// login. prompt=none is answered where it stands. A host that is neither (an alias holds
+// no session), a request that is not a GET, and a deployment not moving its issuer
+// (peerOrigins) never hop.
+func peerHop(c *zip.Ctx, none bool) (string, bool) {
+	if c.Fiber().Method() != http.MethodGet {
+		return "", false
+	}
+	peers := peerOrigins()
+	if len(peers) != 2 {
+		return "", false
+	}
+	host := strings.TrimSpace(c.Host())
+	here, other := "", ""
+	for i, o := range peers {
+		if u, err := url.Parse(o); err == nil && sameAddress(u.Host, host) {
+			here, other = o, peers[1-i]
+		}
+	}
+	if here == "" {
+		return "", false
+	}
+	target := other + c.Fiber().OriginalURL()
+	if param(c, peerMarker) == "" {
+		return target + "&" + peerMarker + "=1", true
+	}
+	if none || here == homeOrigin() {
+		return "", false
+	}
+	return target, true
 }
 
 // authorizeParams reads the authorize parameters from the query (GET) or form

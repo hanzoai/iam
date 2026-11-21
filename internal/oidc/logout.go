@@ -510,8 +510,8 @@ func chainMAC(key []byte, origin string) string {
 }
 
 // signoutOrigins is every origin a browser may hold a session of iss's on: iss
-// itself and each sign-in origin the map names for a host whose issuer is iss,
-// sorted and without repeats.
+// itself, each sign-in origin the map names for a host whose issuer is iss, and, while the
+// platform issuer moves, the other platform host (peerOrigins), sorted and without repeats.
 func signoutOrigins(iss string) []string {
 	out := []string{oneSpelling(iss)}
 	if r := activeFederationResolver.Load(); r != nil {
@@ -520,6 +520,9 @@ func signoutOrigins(iss string) []string {
 				out = append(out, origin)
 			}
 		}
+	}
+	if peers := peerOrigins(); slices.Contains(peers, out[0]) {
+		out = append(out, peers...)
 	}
 	slices.Sort(out)
 	return slices.Compact(out)
