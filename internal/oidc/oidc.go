@@ -114,6 +114,10 @@ func Route(r *zip.Group, db orm.DB) {
 	// find it.
 	r.Raw(http.MethodGet, PathJWKS, jwksHandler(db))
 	r.Raw(http.MethodGet, PathJWKSRoot, jwksHandler(db))
+	// An organization's own issuer is `<origin>/<org>`: its discovery document and
+	// key set, from its own tenant certs and no platform cert (tenant.go).
+	r.Raw(http.MethodGet, "/:org"+PathDiscovery, tenantDiscovery(db))
+	r.Raw(http.MethodGet, "/:org"+PathJWKSRoot, tenantJWKSHandler(db))
 	// The delegation key, which the set above never carries: served only to a
 	// client allowed to delegate (delegate.go).
 	r.Raw(http.MethodGet, PathDelegationKeys, delegationKeysHandler(db))
@@ -193,19 +197,37 @@ func Discovery(c *zip.Ctx) error {
 	// when a provider button is pressed, so a cached copy takes a round trip off
 	// every press.
 	c.SetHeader("Cache-Control", "public, max-age=3600")
-	doc := map[string]any{
-		"issuer":                        iss,
-		"authorization_endpoint":        iss + PathAuthorize,
-		"token_endpoint":                iss + PathToken,
-		"userinfo_endpoint":             iss + PathUserInfo,
-		"introspection_endpoint":        iss + PathIntrospect,
-		"revocation_endpoint":           iss + PathRevoke,
-		"end_session_endpoint":          iss + PathLogout,
-		"device_authorization_endpoint": iss + PathDevice,
-		"jwks_uri":                      iss + PathJWKS,
+	doc := discoveryDoc(iss, iss, iss+PathJWKS)
+	// Advertised only where the endpoint is served: a client that reads it asks for
+	// a client_id there, and a 404 would be its answer.
+	if registration.Load() != nil {
+		doc["registration_endpoint"] = iss + PathRegister
+	}
+	// The auth.md bootstrap block, only where this issuer offers agent registration
+	// and only what is implemented (agentAuthMetadata).
+	if block := agentAuthMetadata(iss); block != nil {
+		doc["agent_auth"] = block
+	}
+	return c.JSON(200, doc)
+}
+
+// discoveryDoc is the OpenID configuration of an issuer whose protocol endpoints
+// are served under base: the platform's own (issuer and base are one value), or an
+// organization's (tenant.go: its own issuer and key set, the platform's endpoints).
+func discoveryDoc(base, issuer, jwks string) map[string]any {
+	return map[string]any{
+		"issuer":                        issuer,
+		"authorization_endpoint":        base + PathAuthorize,
+		"token_endpoint":                base + PathToken,
+		"userinfo_endpoint":             base + PathUserInfo,
+		"introspection_endpoint":        base + PathIntrospect,
+		"revocation_endpoint":           base + PathRevoke,
+		"end_session_endpoint":          base + PathLogout,
+		"device_authorization_endpoint": base + PathDevice,
+		"jwks_uri":                      jwks,
 		"response_types_supported":      []string{"code"},
 		"response_modes_supported":      []string{"query", "fragment", "form_post"},
-		"grant_types_supported":         grantsSupported(iss),
+		"grant_types_supported":         grantsSupported(base),
 		// The sign-in modes a client may ask for. Advertised because a relying
 		// party CANNOT discover them by trying: a server that ignores prompt=none
 		// answers with a login page, which to the client is indistinguishable from
@@ -235,15 +257,4 @@ func Discovery(c *zip.Ctx) error {
 			"wallets", "did",
 		},
 	}
-	// Advertised only where the endpoint is served: a client that reads it asks for
-	// a client_id there, and a 404 would be its answer.
-	if registration.Load() != nil {
-		doc["registration_endpoint"] = iss + PathRegister
-	}
-	// The auth.md bootstrap block, only where this issuer offers agent registration
-	// and only what is implemented (agentAuthMetadata).
-	if block := agentAuthMetadata(iss); block != nil {
-		doc["agent_auth"] = block
-	}
-	return c.JSON(200, doc)
 }

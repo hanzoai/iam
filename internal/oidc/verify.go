@@ -48,7 +48,9 @@ var errConfined = errors.New("verify: a confined token is not a bearer here")
 
 // verifyBearer is the verification of a credential presented to act: verifyToken,
 // then the token must be an access token (tokenType "access-token"), name an
-// audience, carry an issuer this IAM mints under, and not be confined.
+// audience, carry an issuer this IAM mints under, and not be confined. It is the
+// PLATFORM's: a token an organization's own cert signed resolves no kid here and
+// carries no platform issuer, so every route that grants authority refuses it.
 func verifyBearer(ctx context.Context, db orm.DB, tokenStr string) (*Claims, error) {
 	claims, err := verifyToken(ctx, db, tokenStr)
 	if err != nil {
@@ -72,7 +74,8 @@ func verifyToken(ctx context.Context, db orm.DB, tokenStr string) (*Claims, erro
 
 // verifyHint verifies an id_token_hint: the SAME signature check, the SAME
 // closed algorithm allowlist and the SAME trusted-kid resolution as any bearer,
-// with the expiry deliberately not enforced.
+// with the expiry deliberately not enforced. A hint an organization's own cert
+// signed (tenant.go) is held to that organization's keys and issuer alone.
 //
 // A hint is not a credential and grants nothing — it only NARROWS what the
 // caller may receive, by naming the person the client believes is signed in. And
@@ -86,7 +89,7 @@ func verifyToken(ctx context.Context, db orm.DB, tokenStr string) (*Claims, erro
 //
 // The signature is still mandatory, so nobody can invent a hint.
 func verifyHint(ctx context.Context, db orm.DB, tokenStr string) (*Claims, error) {
-	return parseToken(ctx, db, tokenStr, jwt.WithoutClaimsValidation())
+	return parseIssued(ctx, db, tokenStr, jwt.WithoutClaimsValidation())
 }
 
 // parseToken is the one verification path: trusted-kid key resolution, a closed

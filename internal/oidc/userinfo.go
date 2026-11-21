@@ -40,7 +40,9 @@ func userinfoHandler(db orm.DB) zip.Handler {
 		if row == nil {
 			return userinfoUnauthorized(c, "the access token is invalid or revoked")
 		}
-		claims, err := verifyBearer(ctx, db, bearer)
+		// A tenant's own relying party calls this with a token under its organization's
+		// issuer; the platform-authority paths verify the platform's alone.
+		claims, err := verifyIssuedBearer(ctx, db, bearer)
 		if err != nil {
 			return userinfoUnauthorized(c, "the access token is invalid")
 		}
@@ -60,6 +62,9 @@ func userinfoHandler(db orm.DB) zip.Handler {
 		iss, err := tokenIssuer(c)
 		if err != nil {
 			return c.JSON(500, map[string]string{"error": "server_error"})
+		}
+		if _, own := tenantOrgOf(claims.Issuer); own {
+			iss = claims.Issuer // already verified to be the organization's exact issuer
 		}
 		// The membership set is read from the store, not echoed from the token, for
 		// the reason isAdmin is: a grant revoked a minute ago must stop counting now

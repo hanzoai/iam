@@ -728,11 +728,77 @@ func GetSigningCert(ctx context.Context, db orm.DB, name string) (*schema.Cert, 
 		if err != nil {
 			return nil, err
 		}
-		if c != nil {
+		// A tenant-scoped row is an organization's key, never a platform kid, even
+		// under a reserved owner.
+		if c != nil && !c.Tenant() {
 			return c, nil
 		}
 	}
 	return nil, nil
+}
+
+// GetTenantCert resolves an organization's OWN signing cert by name: the row owned
+// by org that carries the tenant scope, usable only when org may hold an issuer of
+// its own and no platform cert answers to the same name. Returns (nil, nil) when
+// there is none. The private half is not loaded here; the keyring Vault holds it.
+//
+// A name a platform cert also holds resolves to nothing: a tenant kid and a
+// platform kid are never the same kid, so a cert created before a platform one
+// took its name stops being usable rather than being ambiguous.
+func GetTenantCert(ctx context.Context, db orm.DB, org, name string) (*schema.Cert, error) {
+	if name == "" || schema.TenantOrg(org) != nil {
+		return nil, nil
+	}
+	c, err := GetCert(ctx, db, org, name)
+	if err != nil || c == nil || !c.Tenant() {
+		return nil, err
+	}
+	platform, err := GetSigningCert(ctx, db, name)
+	if err != nil || platform != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// ListTenantCerts lists the tenant-scoped certs org owns, in name order, resolved
+// as GetTenantCert resolves them.
+func ListTenantCerts(ctx context.Context, db orm.DB, org string) ([]*schema.Cert, error) {
+	if schema.TenantOrg(org) != nil {
+		return nil, nil
+	}
+	rows, err := orm.TypedQuery[schema.Cert](db).Filter("Owner=", org).Order("Name").GetAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*schema.Cert, 0, len(rows))
+	for _, c := range rows {
+		if !c.Tenant() {
+			continue
+		}
+		if platform, err := GetSigningCert(ctx, db, c.Name); err != nil {
+			return nil, err
+		} else if platform != nil {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out, nil
+}
+
+// PlatformKidTaken reports whether any reserved platform owner holds a cert whose
+// name equals name, folding case: the check a tenant cert's name must pass before
+// it exists.
+func PlatformKidTaken(ctx context.Context, db orm.DB, name string) (bool, error) {
+	certs, err := ListCerts(ctx, db)
+	if err != nil {
+		return false, err
+	}
+	for _, c := range certs {
+		if c != nil && policy.IsSigningOwner(c.Owner) && strings.EqualFold(c.Name, name) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // PersistToken binds a domain Token onto the store and creates it. Used to
@@ -874,7 +940,7 @@ func PlatformSigningCert(ctx context.Context, db orm.DB) (*schema.Cert, error) {
 	pick := func(eligible func(*schema.Cert) bool) *schema.Cert {
 		var best *schema.Cert
 		for _, c := range certs {
-			if c == nil || c.PrivateKey == "" || !policy.IsSigningOwner(c.Owner) || c.Delegates() || !eligible(c) {
+			if c == nil || c.PrivateKey == "" || !policy.IsSigningOwner(c.Owner) || c.Delegates() || c.Tenant() || !eligible(c) {
 				continue
 			}
 			if best == nil || c.Owner+"/"+c.Name < best.Owner+"/"+best.Name {

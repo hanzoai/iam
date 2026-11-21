@@ -6,9 +6,12 @@ package schema
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	policy "github.com/hanzoai/authz"
 )
 
 // orgNameRe is THE shape of an organization name: lowercase ASCII letters and
@@ -26,6 +29,29 @@ var orgNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,53}[a-z0-9]$`)
 func OrgName(name string) error {
 	if !orgNameRe.MatchString(name) {
 		return fmt.Errorf("an organization name is lowercase letters, digits and inner hyphens, not %q", name)
+	}
+	return nil
+}
+
+// tenantReserved are the first path segments the host root answers for itself.
+// An org's issuer is `<origin>/<org>`, so an org named like one of these would put
+// its discovery and key set on a path another route owns.
+var tenantReserved = []string{
+	"v1", "login", "logout", "oauth", "static", "assets", "healthz", "readyz", "metrics",
+	"well-known", "api", "admin", "console", "auth", "iam", "jwks", "openid-configuration",
+}
+
+// TenantOrg reports whether org may hold an issuer of its own: an organization
+// name that no platform or estate org uses and no host-root path answers to. The
+// platform orgs (the reserved ones, the brands, their directories, the estate's)
+// sign under the platform's issuers, so an org named like one would read as the
+// platform at its own address.
+func TenantOrg(org string) error {
+	if err := OrgName(org); err != nil {
+		return err
+	}
+	if policy.IsInternalOrg(org) || slices.Contains(tenantReserved, org) {
+		return fmt.Errorf("the organization name %q is reserved and holds no issuer of its own", org)
 	}
 	return nil
 }

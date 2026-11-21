@@ -85,6 +85,19 @@ const CertDelegation = "delegation"
 // Delegates reports whether the cert is a delegation key (CertDelegation).
 func (c *Cert) Delegates() bool { return c != nil && c.Scope == CertDelegation }
 
+// CertTenant is the Scope of an ORGANIZATION'S OWN signing Cert: a key IAM
+// generated for one org's applications and holds in the org's custody (the
+// keyring Vault), never in the deployment's platform mount. It is owned by that
+// org, signs only for that org's applications, and is published only in that
+// org's own JWKS under the org's own issuer (iam LLM.md "Tenant certs"). It is
+// never a platform kid: no platform verifier resolves it, and nothing it signs
+// carries a platform issuer.
+const CertTenant = "tenant"
+
+// Tenant reports whether the cert is an organization's own signing cert
+// (CertTenant).
+func (c *Cert) Tenant() bool { return c != nil && c.Scope == CertTenant }
+
 // Mask returns a copy of the cert with its secret material removed — the one
 // place a Cert is prepared to cross the API. The private key signs every token
 // this IAM issues: it is mounted by the deployment, held in memory, signs in

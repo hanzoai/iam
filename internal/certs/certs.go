@@ -19,6 +19,7 @@ import (
 
 	policy "github.com/hanzoai/authz"
 
+	"github.com/hanzoai/iam/internal/keyring"
 	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
@@ -154,9 +155,20 @@ func (h *Handler) Get(ctx context.Context, in *Ref) (*schema.Cert, error) {
 // nor accepted here. It is supplied to the process by the deployment, under the
 // name registered here (internal/keyring). Staging a rotation is therefore two
 // halves — this call names the key, and the deployment provides it.
+//
+// A cert created with scope "tenant" is the one exception, and it is the
+// organization's own: IAM generates its key pair, keeps the private half in the
+// deployment's tenant key vault and stores the public half, so the organization's
+// applications can sign with a key no platform verifier trusts. It is published
+// only in the organization's own key set, under the organization's own issuer.
+// Send a lowercase name and, optionally, expireInYears; any key material in the
+// request is refused. Its name may not be one a platform signing cert holds.
 func (h *Handler) Create(ctx context.Context, in *schema.Cert) (*schema.Cert, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
+	}
+	if in.Scope == schema.CertTenant {
+		return h.createTenant(ctx, in)
 	}
 	switch _, err := orm.Get[schema.Cert](h.db, key(in.Owner, in.Name)); {
 	case err == nil:
@@ -212,6 +224,20 @@ func (h *Handler) Update(ctx context.Context, in *schema.Cert) (*schema.Cert, er
 	if err != nil {
 		return nil, mapErr(err)
 	}
+	// A cert is a tenant cert only by being created as one, and stays what it was
+	// made: its key pair, algorithm and scope never change, only its display name.
+	if in.Scope == schema.CertTenant && !cert.Tenant() {
+		return nil, zip.ErrBadRequest("a tenant cert is created as one")
+	}
+	if cert.Tenant() {
+		if in.DisplayName != "" {
+			cert.DisplayName = in.DisplayName
+		}
+		if err := cert.UpdateCtx(ctx); err != nil {
+			return nil, zip.ErrInternal(err.Error())
+		}
+		return cert.Mask(), nil
+	}
 	dst := reflect.ValueOf(cert).Elem()
 	src := reflect.ValueOf(in).Elem()
 	fields := src.Type()
@@ -245,6 +271,13 @@ func (h *Handler) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 	}
 	if err := cert.DeleteCtx(ctx); err != nil {
 		return nil, zip.ErrInternal(err.Error())
+	}
+	// A tenant cert's key goes with its row. With no Vault installed there is no
+	// key to forget.
+	if cert.Tenant() {
+		if err := keyring.DropTenant(ctx, cert.Owner, cert.Name); err != nil && !errors.Is(err, keyring.ErrNoVault) {
+			return nil, zip.ErrInternal("the cert is removed; its key is still held by the vault")
+		}
 	}
 	return &DeleteOutput{Deleted: true}, nil
 }
