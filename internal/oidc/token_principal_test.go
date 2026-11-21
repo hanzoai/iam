@@ -85,6 +85,9 @@ func TestCodeExchange_NamesTheUsernameNotTheDisplayName(t *testing.T) {
 		if got.Email != "z@hanzo.ai" {
 			t.Errorf("%s: email = %q", shape, got.Email)
 		}
+		if got.EmailVerified == nil || !*got.EmailVerified {
+			t.Errorf("%s: email_verified = %v; a verified address must say so beside email", shape, got.EmailVerified)
+		}
 	}
 
 	// UserInfo, reached with that same token, must name the same principal — a

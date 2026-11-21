@@ -958,14 +958,15 @@ func identityOf(ctx context.Context, db orm.DB, u *schema.User) Identity {
 	refs := store.MemberOrgRefs(ctx, db, u)
 	sub := subjectOf(u)
 	return Identity{
-		Id:      sub,
-		Email:   u.Email,
-		Name:    u.Name,
-		Display: u.DisplayName,
-		Billing: store.BillingAccount(u, refs),
-		Orgs:    refs,
-		Wallets: store.WalletRefs(ctx, db, u),
-		DID:     schema.DID(sub),
+		Id:            sub,
+		Email:         u.Email,
+		EmailVerified: u.EmailVerified,
+		Name:          u.Name,
+		Display:       u.DisplayName,
+		Billing:       store.BillingAccount(u, refs),
+		Orgs:          refs,
+		Wallets:       store.WalletRefs(ctx, db, u),
+		DID:           schema.DID(sub),
 	}
 }
 

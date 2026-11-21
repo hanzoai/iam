@@ -44,6 +44,11 @@ type Claims struct {
 	Owner        string `json:"owner,omitempty"`
 	Organization string `json:"organization,omitempty"`
 	Email        string `json:"email,omitempty"`
+	// EmailVerified is the OIDC email_verified claim, stated whenever email is:
+	// a relying party that admits only proven addresses (the forge among them) reads
+	// an absent claim as unproven. It is User.EmailVerified, which only a verifying
+	// flow sets.
+	EmailVerified *bool `json:"email_verified,omitempty"`
 	// Name is the IAM USERNAME (the `<name>` half of `<owner>/<name>`, e.g. "z"),
 	// never a display name. With Owner it forms the ONE address every Hanzo surface
 	// names a principal by — `hanzo auth login` files its credential under
@@ -182,14 +187,15 @@ type Claims struct {
 // machine token, or a since-deleted user); every claim it feeds is omitempty, so
 // the token omits them rather than emitting them empty.
 type Identity struct {
-	Id      string // the OIDC `sub` — stable and opaque
-	Email   string
-	Name    string // the IAM USERNAME, the `<name>` half of `<owner>/<name>`
-	Display string // the human-facing name; never an address
-	Billing string
-	Type    string // the identity CLASS; empty for a person (schema.Program)
-	Orgs    []schema.OrgRef
-	Assumed string // the organization a platform operator has stepped into
+	Id            string // the OIDC `sub` — stable and opaque
+	Email         string
+	EmailVerified bool
+	Name          string // the IAM USERNAME, the `<name>` half of `<owner>/<name>`
+	Display       string // the human-facing name; never an address
+	Billing       string
+	Type          string // the identity CLASS; empty for a person (schema.Program)
+	Orgs          []schema.OrgRef
+	Assumed       string // the organization a platform operator has stepped into
 	// Wallets is the set of chain-qualified addresses the person has proved
 	// control of, and DID is the identifier derived from Id (schema.DID). Both
 	// are resolved in identityOf beside everything else, so a mint path cannot
@@ -301,6 +307,7 @@ func (s *Signer) claims(id Identity, owner string, aud jwt.ClaimStrings, azp, sc
 		Owner:             owner,
 		Organization:      owner,
 		Email:             id.Email,
+		EmailVerified:     emailVerified(id),
 		Name:              id.Name,
 		PreferredUsername: id.Name,
 		Display:           id.Display,
@@ -316,6 +323,15 @@ func (s *Signer) claims(id Identity, owner string, aud jwt.ClaimStrings, azp, sc
 		Act:               id.Act,
 		Imp:               id.Imp,
 	}, nil
+}
+
+// emailVerified states email_verified beside an email and never without one.
+func emailVerified(id Identity) *bool {
+	if id.Email == "" {
+		return nil
+	}
+	v := id.EmailVerified
+	return &v
 }
 
 // groupsOf flattens the membership set to the names a groups claim carries. A
