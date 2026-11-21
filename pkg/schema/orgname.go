@@ -6,7 +6,6 @@ package schema
 import (
 	"fmt"
 	"regexp"
-	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -33,24 +32,16 @@ func OrgName(name string) error {
 	return nil
 }
 
-// tenantReserved are the first path segments the host root answers for itself.
-// An org's issuer is `<origin>/<org>`, so an org named like one of these would put
-// its discovery and key set on a path another route owns.
-var tenantReserved = []string{
-	"v1", "login", "logout", "oauth", "static", "assets", "healthz", "readyz", "metrics",
-	"well-known", "api", "admin", "console", "auth", "iam", "jwks", "openid-configuration",
-}
-
-// TenantOrg reports whether org may hold an issuer of its own: an organization
-// name that no platform or estate org uses and no host-root path answers to. The
-// platform orgs (the reserved ones, the brands, their directories, the estate's)
-// sign under the platform's issuers, so an org named like one would read as the
-// platform at its own address.
+// TenantOrg reports whether org may hold an issuer of its own: an organization name that
+// no platform or estate org uses (policy.IsInternalOrg) and that is not a reserved slug
+// (ReservedSlug). The platform orgs sign under the platform's issuers, and a reserved
+// slug is a path another route owns, so an org named like either gets no issuer of its
+// own and never shadows the route.
 func TenantOrg(org string) error {
 	if err := OrgName(org); err != nil {
 		return err
 	}
-	if policy.IsInternalOrg(org) || slices.Contains(tenantReserved, org) {
+	if policy.IsInternalOrg(org) || ReservedSlug(org) {
 		return fmt.Errorf("the organization name %q is reserved and holds no issuer of its own", org)
 	}
 	return nil

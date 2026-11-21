@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -27,44 +28,51 @@ import (
 
 // Tenant issuers. An organization's applications sign with the organization's own
 // cert (schema.CertTenant) and speak under the organization's own issuer,
-// `<origin>/<org>`, where <origin> is the platform issuer this host serves. The
-// issuer's discovery document and key set live under it, per OIDC Discovery §4
-// (an issuer with a path) and RFC 8414 §3:
+// `<tenant origin>/<org>`, where the origin is deployment config (IAM_TENANT_ISSUER,
+// issuer.go), never a request value. The issuer's discovery document and key set live
+// under it, per OIDC Discovery §4 (an issuer with a path) and RFC 8414 §3:
 //
-//	<origin>/<org>/.well-known/openid-configuration
-//	<origin>/<org>/.well-known/jwks
+//	<tenant origin>/<org>/.well-known/openid-configuration
+//	<tenant origin>/<org>/.well-known/jwks
 //
-// Nothing a tenant cert signs carries a platform issuer, and nothing at the
-// platform's discovery or key set mentions a tenant cert. A platform verifier
-// trusts an exact issuer set and exact kids it resolves among platform certs, so a
-// token of this kind is refused there on both counts; the endpoints below that DO
-// accept one resolve its kid inside the org its `iss` names and nowhere else.
+// Nothing a tenant cert signs carries a platform issuer, and nothing at the platform's
+// discovery or key set mentions a tenant cert. A platform verifier trusts an exact issuer
+// set and exact kids it resolves among platform certs, so a token of this kind is refused
+// there on both counts; the endpoints below that DO accept one resolve its kid inside the
+// org its `iss` names and nowhere else.
 
 // noTenantKeys is the key set of an organization that publishes nothing. publishTenant
 // answers it rather than an error so the held set (jwks.go keySet) is replaced by it,
 // where an error would leave the last good set standing after the org's last cert is gone.
 var noTenantKeys = []byte(`{"keys":[]}`)
 
-// tenantIssuer is org's own issuer under the platform issuer platform. org must be
-// able to hold one (schema.TenantOrg), which is what keeps it from ever reading as
-// a platform issuer: the platform orgs, brand names and root path words never
-// become the last segment.
-func tenantIssuer(platform, org string) (string, error) {
+// errNoTenantIssuer is a deployment that names no tenant issuer origin.
+var errNoTenantIssuer = errors.New("this deployment has no tenant issuer configured (" + EnvTenantIssuer + ")")
+
+// tenantIssuer is org's own issuer. org must be able to hold one (schema.TenantOrg),
+// which keeps a platform org, a brand and every reserved slug from ever becoming the last
+// segment; with no tenant origin configured there is none to derive.
+func tenantIssuer(org string) (string, error) {
+	base := tenantBase()
+	if base == "" {
+		return "", errNoTenantIssuer
+	}
 	if err := schema.TenantOrg(org); err != nil {
 		return "", err
 	}
-	return normalizeIssuer(platform) + "/" + org, nil
+	return base + "/" + org, nil
 }
 
-// tenantOrgOf is the organization whose own issuer iss is, or false. It matches
-// exactly `<platform issuer>/<org>` for an issuer this process serves, so a string
-// that merely starts or ends like one is no tenant issuer.
+// tenantOrgOf is the organization whose own issuer iss is, or false. It matches exactly
+// `<tenant origin>/<org>`, so a string that merely starts or ends like one, or a platform
+// issuer, is no tenant issuer.
 func tenantOrgOf(iss string) (string, bool) {
-	iss = normalizeIssuer(iss)
-	for _, base := range issuerValues() {
-		if rest, ok := strings.CutPrefix(iss, normalizeIssuer(base)+"/"); ok && schema.TenantOrg(rest) == nil {
-			return rest, true
-		}
+	base := tenantBase()
+	if base == "" {
+		return "", false
+	}
+	if rest, ok := strings.CutPrefix(normalizeIssuer(iss), base+"/"); ok && schema.TenantOrg(rest) == nil {
+		return rest, true
 	}
 	return "", false
 }
@@ -79,11 +87,11 @@ func tenantApp(app *schema.Application) bool {
 }
 
 // tenantSigner is the Signer for an application that names its organization's own
-// cert, with `iss` the organization's issuer under platform. It answers (nil, nil)
+// cert, with `iss` the organization's issuer. It answers (nil, nil)
 // when the application names none, which leaves the platform resolution to say so.
 // A cert it names whose key the Vault cannot give is an error that names the
 // registration and never the key.
-func tenantSigner(ctx context.Context, db orm.DB, app *schema.Application, platform string) (*Signer, error) {
+func tenantSigner(ctx context.Context, db orm.DB, app *schema.Application) (*Signer, error) {
 	if !tenantApp(app) {
 		return nil, nil
 	}
@@ -106,9 +114,11 @@ func tenantSigner(ctx context.Context, db orm.DB, app *schema.Application, platf
 	if org, err := store.GetOrganizationByName(ctx, db, app.Owner); err != nil || org == nil {
 		return nil, err
 	}
-	iss, err := tenantIssuer(platform, app.Owner)
+	iss, err := tenantIssuer(app.Owner)
 	if err != nil {
-		return nil, err
+		return nil, &unsignableError{app: app.Owner + "/" + app.Name, cert: app.Cert,
+			why: "names the organization's own cert " + descSafe(app.Cert) + ", and this deployment cannot derive an issuer for the organization",
+			fix: " A platform administrator must set " + EnvTenantIssuer + " and check that the organization's name is not reserved."}
 	}
 	key, err := keyring.TenantKey(ctx, cert.Owner, cert.Name)
 	if err != nil {
@@ -255,7 +265,9 @@ func tenantKeys(c *zip.Ctx, db orm.DB) (org string, body []byte, etag string, ok
 	notFound := func() (string, []byte, string, bool) {
 		return "", nil, "", false
 	}
-	if schema.TenantOrg(org) != nil {
+	// Only the host the issuer lives on answers for it, so these paths never appear
+	// at another host's root, and with no tenant origin configured nothing answers.
+	if u, err := url.Parse(tenantBase()); err != nil || u.Host == "" || normalizeHost(c.Host()) != normalizeHost(u.Host) || schema.TenantOrg(org) != nil {
 		_ = c.JSON(404, map[string]string{"error": "not_found"})
 		return notFound()
 	}
@@ -281,7 +293,7 @@ func tenantKeys(c *zip.Ctx, db orm.DB) (org string, body []byte, etag string, ok
 }
 
 // tenantJWKSHandler serves an organization's own key set at
-// `<origin>/<org>/.well-known/jwks`, with the platform key set's caching.
+// `<tenant origin>/<org>/.well-known/jwks`, with the platform key set's caching.
 func tenantJWKSHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		_, body, etag, ok := tenantKeys(c, db)
@@ -299,7 +311,7 @@ func tenantJWKSHandler(db orm.DB) zip.Handler {
 }
 
 // tenantDiscovery serves an organization's OpenID configuration at
-// `<origin>/<org>/.well-known/openid-configuration`: its own issuer and key set,
+// `<tenant origin>/<org>/.well-known/openid-configuration`: its own issuer and key set,
 // and the platform's protocol endpoints, which are where every sign-in happens.
 func tenantDiscovery(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
@@ -311,7 +323,7 @@ func tenantDiscovery(db orm.DB) zip.Handler {
 		if err != nil {
 			return c.JSON(503, map[string]string{"error": "temporarily_unavailable"})
 		}
-		iss, err := tenantIssuer(base, org)
+		iss, err := tenantIssuer(org)
 		if err != nil {
 			return c.JSON(404, map[string]string{"error": "not_found"})
 		}

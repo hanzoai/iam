@@ -834,7 +834,7 @@ func signerFor(ctx context.Context, db orm.DB, app *schema.Application, issuer s
 	// An organization's application naming the organization's own cert signs with
 	// it, under the organization's own issuer (tenant.go). Naming none, it falls to
 	// the platform resolution below, which says what it can sign with.
-	if s, err := tenantSigner(ctx, db, app, issuer); s != nil || err != nil {
+	if s, err := tenantSigner(ctx, db, app); s != nil || err != nil {
 		return s, err
 	}
 	cert, err := store.GetSigningCert(ctx, db, app.Cert)

@@ -1787,7 +1787,7 @@ and no response carries the private half. A tenant cert is immutable but for its
 display name; deleting it forgets its key. The name is the org's `kid`, refused when
 any platform cert holds it (case folded) and when it is not `[a-z0-9._-]`, 64 at most.
 Only orgs that may hold an issuer own one (`schema.TenantOrg`): not the reserved orgs,
-brands, directories, estate orgs, nor a root path word (`v1`, `login`, ...).
+brands, directories, estate orgs, nor a reserved slug.
 
 **Custody is the host's, through `keyring.Vault`** (`Put` never overwrites, `Get`,
 `Delete`, keyed by org and cert name). IAM itself holds no KMS credential, so cloud
@@ -1805,18 +1805,32 @@ name a platform cert has since taken is refused, never resolved to the platform'
 A platform cert named on an org's application is still a SuperAdmin's to set
 (`authz.AuthorizeCert`).
 
-**The issuer is the org's own**: `iss` = `<platform issuer for this host>/<org>`, for
-example `https://hanzo.id/acme`. Discovery and the key set live under it, per OIDC
-Discovery §4: `<iss>/.well-known/openid-configuration` (the org's `issuer` and
-`jwks_uri`, the platform's protocol endpoints) and `<iss>/.well-known/jwks` (only that
-org's tenant certs that sign, public halves, `kid` = cert name). Both answer 404 for an
-unknown org, a name that cannot hold an issuer, and an org with no published tenant
-cert, never with a platform document. `aud` stays the application's client id. The
-issuer is built from the trusted host's issuer and a validated org (`schema.TenantOrg`,
-the org row, the cert row); nothing is read from a request string. A custom-domain
-issuer is not served: `Application.Domain` is a tenant-writable field with no domain
-verification, so it cannot be a trust root (an issuer on a host the org proves it owns
-needs that verification first). Tenant issuers need a configured issuer (`IAM_ISSUER`), not the host-relative dev mode.
+**The issuer is the org's own**: `iss` = `<tenant origin>/<org>`, where the tenant origin
+is deployment config, `IAM_TENANT_ISSUER` (an https origin, validated like a sign-in
+origin, pinned at boot with `IAM_ISSUER`, never read from a request): the hanzo
+deployment sets `https://hanzo.ai`, so `https://hanzo.ai/acme`. Unset, no tenant issuer
+can be derived: tenant certs do not sign (the exchange names the knob) and the org paths
+answer 404. `aud` stays the application's client id. Discovery and the key set live under
+it, per OIDC Discovery §4: `<iss>/.well-known/openid-configuration` (the org's `issuer`
+and `jwks_uri`, the platform's protocol endpoints) and `<iss>/.well-known/jwks` (only that
+org's tenant certs that sign, public halves, `kid` = cert name). They are served only on
+the tenant origin's host, so the host's edge must route `/<org>/.well-known/*` to IAM.
+Both answer 404 for an unknown org, a name that cannot hold an issuer, and an org with no
+published tenant cert, never with a platform document. The issuer is built from the
+pinned origin and a validated org (`schema.TenantOrg`, the org row, the cert row).
+A custom-domain issuer is not served: `Application.Domain` is a tenant-writable field
+with no domain verification, so it cannot be a trust root.
+
+**Reserved slugs.** An org named like a path the origin's site answers would shadow it,
+so `schema.reservedSlugs` (pkg/schema/slug.go) is the ONE table of names no org may take:
+the hanzo.ai pages and static directories (hanzo-inc/app `app/`, `public/`), the edge
+paths (universe `infra/sites/sites.yaml`, `docs/urls.md`), IAM's root routes, the
+well-known and framework paths, and the platform and brand names. `schema.ReservedSlug`
+(that table plus `policy.IsHeldOrg`) is asked by every path that founds an org (the
+organizations create, onboard, provision, signup's derivation), and `schema.TenantOrg`
+asks it at every tenant issuer derivation, so an existing org that collides gets no issuer
+and answers 404. Run `schema.ReservedSlug` over the org list to find collisions. A page the
+site gains is added to the table with the page.
 
 **What a tenant token can and cannot do.** It is an identity assertion for the org's
 relying party. The platform's key set, discovery and `issues()` never mention it, and

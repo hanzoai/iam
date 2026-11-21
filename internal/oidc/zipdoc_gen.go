@@ -19,6 +19,12 @@ func init() {
 	zip.Describe("github.com/hanzoai/iam/internal/oidc GET /.well-known/openid-configuration", zip.Doc{
 		Description: "Returns the OpenID Connect discovery document — the one URL you\npoint a standards-compliant client at so it can find every other endpoint on\nits own, instead of you configuring them by hand.\n\nIt advertises only what is actually implemented, so a client that reads it\ncannot ask for a flow that will fail: the authorization-code flow, PKCE with\nS256, the supported grants, and the signing algorithms whose public keys the\nJWKS really publishes.\n\nThe issuer is derived from the host you asked on and is the same value the\ntokens carry, so a client that pins the issuer never sees it change.",
 	})
+	zip.Describe("github.com/hanzoai/iam/internal/oidc GET /:org/.well-known/jwks", zip.Doc{
+		Description: "Serves an organization's own key set at\n`<tenant origin>/<org>/.well-known/jwks`, with the platform key set's caching.",
+	})
+	zip.Describe("github.com/hanzoai/iam/internal/oidc GET /:org/.well-known/openid-configuration", zip.Doc{
+		Description: "Serves an organization's OpenID configuration at\n`<tenant origin>/<org>/.well-known/openid-configuration`: its own issuer and key set,\nand the platform's protocol endpoints, which are where every sign-in happens.",
+	})
 	zip.Describe("github.com/hanzoai/iam/internal/oidc GET /v1/iam/.well-known/jwks", zip.Doc{
 		Description: "Publishes the public keys that verify the tokens issued here — the\none URL you point a service at so it can check a token itself, offline, without\ncalling back and without holding any secret of ours.\n\nKeys appear here before they start signing and stay after they stop, so a\nrotation never leaves a live token unverifiable. Nothing private is ever\npublished.",
 	})

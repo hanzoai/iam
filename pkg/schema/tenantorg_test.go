@@ -16,7 +16,7 @@ func TestTenantOrg(t *testing.T) {
 	for _, no := range []string{
 		"", "a", "Acme", "a/b", "a.b", "-a", "admin", "built-in", "app", "hanzo", "lux", "zoo", "pars", "platform",
 		"hanzo-id", "lux-id", "hanzoai", "luxfi", "hanzo-inc", "adnexus", "bootnode", "osage", "z24",
-		"v1", "login", "healthz", "metrics", "api", "iam",
+		"v1", "login", "healthz", "metrics", "api", "iam", "pricing", "download", "signup", "images",
 	} {
 		if TenantOrg(no) == nil {
 			t.Errorf("TenantOrg(%q) = nil, want a refusal", no)

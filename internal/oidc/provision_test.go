@@ -560,7 +560,7 @@ func TestProvision_ConcurrentSameSlugOneWinner(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			if _, err := provision(ctx, db, claim{move: true, owner: "landing", name: fmt.Sprintf("u%d", i), slug: "team", display: "Team", personal: false}); err == nil {
+			if _, err := provision(ctx, db, claim{move: true, owner: "landing", name: fmt.Sprintf("u%d", i), slug: "squadron", display: "Squadron", personal: false}); err == nil {
 				atomic.AddInt64(&success, 1)
 			}
 		}(i)
@@ -570,10 +570,10 @@ func TestProvision_ConcurrentSameSlugOneWinner(t *testing.T) {
 	if success != 1 {
 		t.Fatalf("want exactly 1 winner, got %d", success)
 	}
-	if c := countOrgs(t, db, "team"); c != 1 {
+	if c := countOrgs(t, db, "squadron"); c != 1 {
 		t.Fatalf("want exactly 1 org, got %d", c)
 	}
-	if c := countKeys(t, db, "team"); c != 1 {
+	if c := countKeys(t, db, "squadron"); c != 1 {
 		t.Fatalf("want exactly 1 key, got %d", c)
 	}
 }

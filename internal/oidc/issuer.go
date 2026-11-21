@@ -252,8 +252,43 @@ func InitIssuerResolver() error {
 	if err != nil {
 		return err
 	}
+	base, err := newTenantBase(os.Getenv(EnvTenantIssuer))
+	if err != nil {
+		return err
+	}
 	activeResolver.Store(r)
+	activeTenantBase.Store(&base)
 	return nil
+}
+
+// EnvTenantIssuer names the origin under which every organization's own issuer lives
+// (tenant.go): `<origin>/<org>`. It is deployment config, pinned like IAM_ISSUER and
+// never read from a request, so the hanzo deployment sets https://hanzo.ai and another
+// brand sets its own. Unset, no tenant issuer can be derived: tenant certs do not sign.
+const EnvTenantIssuer = "IAM_TENANT_ISSUER"
+
+// activeTenantBase is the validated tenant issuer origin; "" when unset.
+var activeTenantBase atomic.Pointer[string]
+
+// newTenantBase validates the tenant issuer origin: an https origin with no path, query or
+// user, as a sign-in origin is (signinOrigin). "" is allowed and means none.
+func newTenantBase(raw string) (string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return "", nil
+	}
+	o, err := signinOrigin(raw)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", EnvTenantIssuer, err)
+	}
+	return o, nil
+}
+
+// tenantBase is the origin organizations' issuers live under, or "".
+func tenantBase() string {
+	if p := activeTenantBase.Load(); p != nil {
+		return *p
+	}
+	return ""
 }
 
 // resolveIssuer is THE seam every issuer read routes through. host is the TRUSTED

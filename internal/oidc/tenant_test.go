@@ -8,6 +8,7 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -156,7 +157,11 @@ func keyOf(t *testing.T, jwk map[string]any) *rsa.PublicKey {
 // holding that issuer's discovery would: kid, signature, algorithm and issuer.
 func (tn *tenant) verifyAt(t *testing.T, path, tok, iss string) error {
 	t.Helper()
-	st, body := tn.get(t, "hanzo.id", path)
+	host := "hanzo.id"
+	if strings.HasPrefix(path, "/acme/") {
+		host = "hanzo.ai"
+	}
+	st, body := tn.get(t, host, path)
 	if st != 200 {
 		t.Fatalf("GET %s = %d", path, st)
 	}
@@ -195,7 +200,7 @@ func TestTenant_SignsUnderTheOrgsOwnIssuerAndVerifiesOnlyAtItsOwnKeys(t *testing
 	access, id := tok["access_token"].(string), tok["id_token"].(string)
 	for name, raw := range map[string]string{"access_token": access, "id_token": id} {
 		c, h := claimsOf(t, raw)
-		if c["iss"] != "https://hanzo.id/acme" || c["owner"] != "acme" || h["kid"] != "acme-signing" {
+		if c["iss"] != "https://hanzo.ai/acme" || c["owner"] != "acme" || h["kid"] != "acme-signing" {
 			t.Fatalf("%s: iss=%v owner=%v kid=%v", name, c["iss"], c["owner"], h["kid"])
 		}
 		if aud, _ := c["aud"].(string); aud != tenantClient {
@@ -204,12 +209,12 @@ func TestTenant_SignsUnderTheOrgsOwnIssuerAndVerifiesOnlyAtItsOwnKeys(t *testing
 			}
 		}
 		// Verifies at the organization's key set, under the organization's issuer.
-		if err := tn.verifyAt(t, "/acme"+PathJWKSRoot, raw, "https://hanzo.id/acme"); err != nil {
+		if err := tn.verifyAt(t, "/acme"+PathJWKSRoot, raw, "https://hanzo.ai/acme"); err != nil {
 			t.Fatalf("%s does not verify at the org's key set: %v", name, err)
 		}
 		// And at neither platform key set, nor under a platform issuer.
 		for _, p := range []string{PathJWKS, PathJWKSRoot} {
-			if err := tn.verifyAt(t, p, raw, "https://hanzo.id/acme"); err == nil {
+			if err := tn.verifyAt(t, p, raw, "https://hanzo.ai/acme"); err == nil {
 				t.Fatalf("%s verified at the platform key set %s", name, p)
 			}
 		}
@@ -246,14 +251,14 @@ func TestTenant_UserinfoAndIntrospectionServeTheOrgsToken(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("userinfo: %d %s", resp.StatusCode, body)
 	}
-	if m := decode(t, body); m["iss"] != "https://hanzo.id/acme" || m["owner"] != "acme" {
+	if m := decode(t, body); m["iss"] != "https://hanzo.ai/acme" || m["owner"] != "acme" {
 		t.Fatalf("userinfo = %v", m)
 	}
 
 	resp, body = do(t, tn.app, formReq("POST", PathIntrospect, url.Values{
 		"token": {access}, "client_id": {tenantClient}, "client_secret": {"s3cret"},
 	}))
-	if m := decode(t, body); resp.StatusCode != 200 || m["active"] != true || m["iss"] != "https://hanzo.id/acme" {
+	if m := decode(t, body); resp.StatusCode != 200 || m["active"] != true || m["iss"] != "https://hanzo.ai/acme" {
 		t.Fatalf("introspect: %d %v", resp.StatusCode, m)
 	}
 
@@ -288,7 +293,7 @@ func TestTenant_RefreshSignsUnderTheSameIssuer(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("refresh: %d %v", resp.StatusCode, out)
 	}
-	if c, h := claimsOf(t, out["access_token"].(string)); c["iss"] != "https://hanzo.id/acme" || h["kid"] != "acme-signing" {
+	if c, h := claimsOf(t, out["access_token"].(string)); c["iss"] != "https://hanzo.ai/acme" || h["kid"] != "acme-signing" {
 		t.Fatalf("refreshed token: iss=%v kid=%v", c["iss"], h["kid"])
 	}
 }
@@ -297,19 +302,19 @@ func TestTenant_RefreshSignsUnderTheSameIssuer(t *testing.T) {
 // organization holding a published tenant cert: never a platform document.
 func TestTenant_DiscoveryAndKeySetUnderTheIssuer(t *testing.T) {
 	tn := newTenant(t)
-	st, body := tn.get(t, "hanzo.id", "/acme/.well-known/openid-configuration")
+	st, body := tn.get(t, "hanzo.ai", "/acme/.well-known/openid-configuration")
 	if st != 200 {
 		t.Fatalf("discovery: %d %s", st, body)
 	}
 	d := decode(t, body)
-	if d["issuer"] != "https://hanzo.id/acme" || d["jwks_uri"] != "https://hanzo.id/acme/.well-known/jwks" ||
+	if d["issuer"] != "https://hanzo.ai/acme" || d["jwks_uri"] != "https://hanzo.ai/acme/.well-known/jwks" ||
 		d["token_endpoint"] != "https://hanzo.id/v1/iam/oauth/token" || d["authorization_endpoint"] != "https://hanzo.id/v1/iam/oauth/authorize" {
 		t.Fatalf("discovery = %v", d)
 	}
 	if _, ok := d["registration_endpoint"]; ok {
 		t.Fatal("an organization's discovery advertises the platform's registration endpoint")
 	}
-	st, body = tn.get(t, "hanzo.id", "/acme/.well-known/jwks")
+	st, body = tn.get(t, "hanzo.ai", "/acme/.well-known/jwks")
 	if st != 200 || strings.Contains(string(body), "cert-") || !strings.Contains(string(body), `"kid":"acme-signing"`) {
 		t.Fatalf("key set: %d %s", st, body)
 	}
@@ -328,7 +333,7 @@ func TestTenant_DiscoveryAndKeySetUnderTheIssuer(t *testing.T) {
 	}
 	for _, org := range []string{"beta", "nobody", "hanzo", "admin", "built-in", "lux", "zoo", "app", "platform", "v1", "Acme", "a"} {
 		for _, p := range []string{"/.well-known/openid-configuration", "/.well-known/jwks"} {
-			if st, body := tn.get(t, "hanzo.id", "/"+org+p); st != 404 || strings.Contains(string(body), "issuer") || strings.Contains(string(body), "keys") {
+			if st, body := tn.get(t, "hanzo.ai", "/"+org+p); st != 404 || strings.Contains(string(body), "issuer") || strings.Contains(string(body), "keys") {
 				t.Fatalf("/%s%s = %d %s, want a bare 404", org, p, st, body)
 			}
 		}
@@ -384,10 +389,10 @@ func TestTenant_PlatformKeySetNeverListsATenantCert(t *testing.T) {
 		}
 	}
 	// A tenant cert named like a platform kid is no key of the org's either.
-	if _, body := tn.get(t, "hanzo.id", "/acme/.well-known/jwks"); strings.Contains(string(body), `"cert-hanzo"`) {
+	if _, body := tn.get(t, "hanzo.ai", "/acme/.well-known/jwks"); strings.Contains(string(body), `"cert-hanzo"`) {
 		t.Fatalf("the org key set lists a cert named like a platform kid: %s", body)
 	}
-	if _, body := tn.get(t, "hanzo.id", "/acme/.well-known/jwks"); !strings.Contains(string(body), `"acme-signing"`) {
+	if _, body := tn.get(t, "hanzo.ai", "/acme/.well-known/jwks"); !strings.Contains(string(body), `"acme-signing"`) {
 		t.Fatal("the org's own cert left its key set")
 	}
 }
@@ -426,7 +431,7 @@ func TestTenant_KidCollisionRefusesAndCrossVerifies(t *testing.T) {
 		t.Fatal("a tenant token verified at the platform path under a colliding kid")
 	}
 	// A token the PLATFORM key signs under that kid, claiming the org's issuer, is refused.
-	sg, err := NewRSASignerFromCert(&schema.Cert{Name: "acme-signing", PrivateKey: rsaKeyToPEM(t, sharedKey(t))}, "https://hanzo.id/acme")
+	sg, err := NewRSASignerFromCert(&schema.Cert{Name: "acme-signing", PrivateKey: rsaKeyToPEM(t, sharedKey(t))}, "https://hanzo.ai/acme")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -509,34 +514,108 @@ func TestTenant_NoFallbackAndIneligibleApplications(t *testing.T) {
 
 // THE ISSUER IS THE ORG'S AND NEVER READS AS A PLATFORM ONE.
 func TestTenantIssuer_ShapeAndConfusion(t *testing.T) {
-	for _, org := range []string{"hanzo", "lux", "zoo", "pars", "admin", "built-in", "app", "platform", "hanzo-id", "lux-id", "hanzoai", "adnexus", "v1", "login", "healthz", "Acme", "a", "", "a/b", "a.b", "-ab", "x y"} {
-		if iss, err := tenantIssuer("https://hanzo.id", org); err == nil {
+	for _, org := range []string{"hanzo", "lux", "zoo", "pars", "admin", "built-in", "app", "platform", "hanzo-id", "lux-id", "hanzoai", "adnexus", "v1", "login", "healthz", "pricing", "download", "signup", "about", "api", "images", "Acme", "a", "", "a/b", "a.b", "-ab", "x y"} {
+		if iss, err := tenantIssuer(org); err == nil {
 			t.Errorf("tenantIssuer(%q) = %q, want a refusal", org, iss)
 		}
 	}
-	if iss, err := tenantIssuer("https://hanzo.id/", "acme"); err != nil || iss != "https://hanzo.id/acme" {
+	if iss, err := tenantIssuer("acme"); err != nil || iss != "https://hanzo.ai/acme" {
 		t.Fatalf("tenantIssuer = %q %v", iss, err)
 	}
 	for iss, want := range map[string]string{
-		"https://hanzo.id/acme":  "acme",
-		"https://hanzo.id/acme/": "acme",
+		"https://hanzo.ai/acme":  "acme",
+		"https://hanzo.ai/acme/": "acme",
 	} {
 		if org, ok := tenantOrgOf(iss); !ok || org != want {
 			t.Errorf("tenantOrgOf(%q) = %q %v", iss, org, ok)
 		}
 	}
 	for _, iss := range []string{
-		"https://hanzo.id", "https://hanzo.id/", "https://hanzo.id/hanzo", "https://hanzo.id/admin", "https://hanzo.id/built-in",
-		"https://hanzo.id/acme/x", "https://hanzo.id/acme?x=1", "https://evil.example/acme", "http://hanzo.id/acme",
-		"https://hanzo.id.evil.example/acme", "https://xhanzo.id/acme", "https://hanzo.id//acme", "https://hanzo.id/v1", "",
+		"https://hanzo.id/acme", "https://hanzo.id", "https://hanzo.ai", "https://hanzo.ai/", "https://hanzo.ai/hanzo", "https://hanzo.ai/admin",
+		"https://hanzo.ai/built-in", "https://hanzo.ai/pricing", "https://hanzo.ai/acme/x", "https://hanzo.ai/acme?x=1", "https://evil.example/acme",
+		"http://hanzo.ai/acme", "https://hanzo.ai.evil.example/acme", "https://xhanzo.ai/acme", "https://hanzo.ai//acme", "https://hanzo.ai/v1", "",
 	} {
 		if org, ok := tenantOrgOf(iss); ok {
 			t.Errorf("tenantOrgOf(%q) = %q, want none", iss, org)
 		}
 	}
 	// A tenant issuer is no platform issuer, and no platform issuer is a tenant's.
-	if issues("https://hanzo.id/acme") || !issues("https://hanzo.id") {
+	if issues("https://hanzo.ai/acme") || issues("https://hanzo.ai") || !issues("https://hanzo.id") {
 		t.Fatal("issues() confuses a tenant issuer with the platform's")
+	}
+}
+
+// With no tenant origin configured nothing derives an issuer: tenant certs do not sign and
+// the org paths answer 404, naming the knob to the operator. The origin itself is pinned.
+func TestTenantIssuer_UnsetFailsClosedAndIsValidated(t *testing.T) {
+	tn := newTenant(t)
+	withTenantBase(t, "")
+	if _, err := tenantIssuer("acme"); !errors.Is(err, errNoTenantIssuer) {
+		t.Fatalf("tenantIssuer with no origin: %v", err)
+	}
+	_, err := signerFor(context.Background(), tn.db, tn.appRow, "https://hanzo.id")
+	if err == nil || !strings.Contains(err.Error(), EnvTenantIssuer) {
+		t.Fatalf("an unset origin must say so: %v", err)
+	}
+	if _, ok := tenantOrgOf("https://hanzo.ai/acme"); ok {
+		t.Fatal("a tenant issuer was recognised with none configured")
+	}
+	for _, host := range []string{"hanzo.ai", "hanzo.id"} {
+		if st, _ := tn.get(t, host, "/acme/.well-known/jwks"); st != 404 {
+			t.Fatalf("%s answered an org key set with no tenant origin: %d", host, st)
+		}
+	}
+	for _, bad := range []string{"http://hanzo.ai", "hanzo.ai", "https://hanzo.ai/path", "https://user@hanzo.ai", "https://hanzo.ai?x=1", "https://127.0.0.1"} {
+		if _, err := newTenantBase(bad); err == nil {
+			t.Errorf("newTenantBase(%q) accepted", bad)
+		}
+	}
+	if o, err := newTenantBase(" https://Hanzo.AI/ "); err != nil || o != "https://hanzo.ai" {
+		t.Fatalf("newTenantBase = %q %v", o, err)
+	}
+}
+
+// Only the host the issuer lives on answers for it.
+func TestTenant_OnlyTheTenantHostAnswers(t *testing.T) {
+	tn := newTenant(t)
+	for _, p := range []string{"/acme/.well-known/openid-configuration", "/acme/.well-known/jwks"} {
+		if st, _ := tn.get(t, "hanzo.id", p); st != 404 {
+			t.Fatalf("hanzo.id answered %s: %d", p, st)
+		}
+		if st, _ := tn.get(t, "hanzo.ai", p); st != 200 {
+			t.Fatalf("hanzo.ai did not answer %s: %d", p, st)
+		}
+	}
+}
+
+// withTenantBase installs a tenant origin for one test.
+func withTenantBase(t *testing.T, origin string) {
+	t.Helper()
+	prev := tenantBase()
+	activeTenantBase.Store(&origin)
+	t.Cleanup(func() { activeTenantBase.Store(&prev) })
+}
+
+// A reserved slug is never founded by self-service: signup's derivation walks past it, onboard
+// and provision refuse it.
+func TestReservedSlugsAreNeverFoundedBySelfService(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	shaped := 0
+	for _, n := range schema.ReservedSlugs() {
+		if schema.OrgName(n) != nil {
+			continue
+		}
+		shaped++
+		if free, err := orgSlugFree(ctx, db, n); err != nil || free {
+			t.Errorf("orgSlugFree(%q) = %v %v", n, free, err)
+		}
+		if _, err := provision(ctx, db, claim{owner: "admin", name: "someone", slug: n, display: n}); err == nil {
+			t.Errorf("provision founded the reserved slug %q", n)
+		}
+	}
+	if shaped < 150 {
+		t.Fatalf("only %d shaped slugs", shaped)
 	}
 }
 
@@ -557,7 +636,7 @@ func TestTenant_TokenExchangeRefusesATenantSubject(t *testing.T) {
 // An org that deletes its last cert stops publishing at once, and its next cert is served at once.
 func TestTenant_KeySetFollowsTheOrgsCerts(t *testing.T) {
 	tn := newTenant(t)
-	if st, _ := tn.get(t, "hanzo.id", "/acme/.well-known/jwks"); st != 200 {
+	if st, _ := tn.get(t, "hanzo.ai", "/acme/.well-known/jwks"); st != 200 {
 		t.Fatalf("key set: %d", st)
 	}
 	row, err := orm.Get[schema.Cert](tn.db, "acme/acme-signing")
@@ -575,11 +654,11 @@ func TestTenant_KeySetFollowsTheOrgsCerts(t *testing.T) {
 	held.mu.Lock()
 	held.at = time.Now().Add(-2 * jwksTTL)
 	held.mu.Unlock()
-	if st, _ := tn.get(t, "hanzo.id", "/acme/.well-known/jwks"); st != 404 {
+	if st, _ := tn.get(t, "hanzo.ai", "/acme/.well-known/jwks"); st != 404 {
 		t.Fatalf("an org with no cert still publishes: %d", st)
 	}
 	tn.createCert(t, "acme", "acme-next", http.StatusOK)
-	if st, body := tn.get(t, "hanzo.id", "/acme/.well-known/jwks"); st != 200 || !strings.Contains(string(body), "acme-next") {
+	if st, body := tn.get(t, "hanzo.ai", "/acme/.well-known/jwks"); st != 200 || !strings.Contains(string(body), "acme-next") {
 		t.Fatalf("the next cert is not served: %d %s", st, body)
 	}
 }

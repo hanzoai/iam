@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"strings"
 
-	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
@@ -159,7 +158,7 @@ func provisionAndRespond(c *zip.Ctx, db orm.DB, owner, name, slug, display strin
 	if len(slug) < minOrgSlug {
 		return onboardErr(c, 400, "use at least 2 letters or numbers")
 	}
-	if policy.IsHeldOrg(slug) {
+	if schema.ReservedSlug(slug) {
 		return onboardErr(c, 400, "\""+slug+"\" is reserved. choose a different name")
 	}
 	display, err := schema.OrgDisplayName(display)

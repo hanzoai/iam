@@ -148,7 +148,7 @@ func (h *OrganizationAPI) Create(ctx context.Context, in *CreateOrganizationInpu
 	if schema.OrgName(org.Name) != nil {
 		return nil, zip.ErrBadRequest("an organization name is lowercase letters, digits and inner hyphens")
 	}
-	if policy.IsHeldOrg(org.Name) {
+	if schema.ReservedSlug(org.Name) {
 		return nil, zip.ErrBadRequest("\"" + org.Name + "\" is reserved")
 	}
 	display, err := schema.OrgDisplayName(org.DisplayName)
