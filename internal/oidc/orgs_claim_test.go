@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -16,8 +15,8 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // orgsOf indexes a decoded token's `orgs` claim by org slug → role, and reports the

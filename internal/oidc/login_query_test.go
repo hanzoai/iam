@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -8,7 +7,6 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/hanzoai/iam/pkg/pkce"
 	"github.com/zap-proto/zip"
 )
 
@@ -125,7 +123,7 @@ func TestLogin_AuthorizePassthroughFromQuery_RFCSpelling(t *testing.T) {
 		"scope":                 {"openid email"},
 		"state":                 {"st-1"},
 		"nonce":                 {"nonce-rfc"},
-		"code_challenge":        {pkce.Challenge(verifier)},
+		"code_challenge":        {ComputeS256Challenge(verifier)},
 		"code_challenge_method": {"S256"},
 	})
 

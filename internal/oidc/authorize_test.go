@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -8,8 +7,6 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-
-	"github.com/hanzoai/iam/pkg/pkce"
 )
 
 const testRedirect = "https://app.example/callback"
@@ -88,7 +85,7 @@ func TestAuthorize_DelegatesValidRequest(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "pub", redirectURIs: []string{testRedirect}})
 
-	challenge := pkce.Challenge("verifier-abcdefghijklmnopqrstuvwxyz-012345")
+	challenge := ComputeS256Challenge("verifier-abcdefghijklmnopqrstuvwxyz-012345")
 	q := url.Values{
 		"response_type":  {"code"},
 		"client_id":      {"pub"},
@@ -118,82 +115,6 @@ func TestAuthorize_DelegatesValidRequest(t *testing.T) {
 	}
 }
 
-// A sign-in must run AT its brand's pinned issuer: the hanzo_fed browser
-// binding and the session are host-only cookies, while the IdP callback and
-// `iss` live at the issuer. An authorize served on an alias host (iam.hanzo.ai
-// folding into hanzo.id) is therefore answered with the SAME request relocated
-// to the issuer — 307, query intact, before anything is minted or set. Measured
-// live before this hop: a begin on iam.hanzo.ai set the cookie there and
-// registered the Google callback at hanzo.id, so every social sign-in on the
-// alias failed closed at the callback with "the federation session could not
-// be verified".
-func TestAuthorize_AliasHostRelocatesToIssuer(t *testing.T) {
-	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "pub", redirectURIs: []string{testRedirect}})
-	installIssuerResolver(t, "https://hanzo.id", testIssuerMap)
-
-	q := url.Values{
-		"response_type":  {"code"},
-		"client_id":      {"pub"},
-		"redirect_uri":   {testRedirect},
-		"state":          {"s-alias"},
-		"code_challenge": {pkce.Challenge("verifier-abcdefghijklmnopqrstuvwxyz-012345")},
-		"provider":       {"provider-google"},
-	}
-	target := authorizeURL(q)
-
-	t.Run("alias relocates, method kept, nothing set", func(t *testing.T) {
-		for _, method := range []string{"GET", "POST"} {
-			req := formReqNoBody(method, target)
-			req.Host = "iam.hanzo.ai"
-			resp, _ := do(t, app, req)
-			if resp.StatusCode != 307 {
-				t.Fatalf("%s status = %d, want 307", method, resp.StatusCode)
-			}
-			if loc := resp.Header.Get("Location"); loc != "https://hanzo.id"+target {
-				t.Fatalf("%s Location = %q, want %q", method, loc, "https://hanzo.id"+target)
-			}
-			// Relocation precedes every mint: a cookie set here would be the
-			// stranded-cookie bug this hop exists to close.
-			if sc := resp.Header.Get("Set-Cookie"); sc != "" {
-				t.Fatalf("%s relocation must set nothing; Set-Cookie = %q", method, sc)
-			}
-		}
-	})
-
-	t.Run("issuer host is terminal", func(t *testing.T) {
-		req := formReqNoBody("GET", target)
-		req.Host = "hanzo.id"
-		resp, _ := do(t, app, req)
-		if resp.StatusCode == 307 {
-			t.Fatalf("issuer host must not relocate; got 307 to %q", resp.Header.Get("Location"))
-		}
-	})
-
-	t.Run("unknown host folds to the default issuer", func(t *testing.T) {
-		req := formReqNoBody("GET", target)
-		req.Host = "www.zoolabs.id" // deliberately absent from testIssuerMap
-		resp, _ := do(t, app, req)
-		if resp.StatusCode != 307 {
-			t.Fatalf("status = %d, want 307", resp.StatusCode)
-		}
-		if loc := resp.Header.Get("Location"); loc != "https://hanzo.id"+target {
-			t.Fatalf("Location = %q, want fold to the default issuer", loc)
-		}
-	})
-
-	t.Run("a non-idempotent map must not steer", func(t *testing.T) {
-		installIssuerResolver(t, "https://a.example",
-			`{"x.example":"https://a.example","a.example":"https://b.example"}`)
-		req := formReqNoBody("GET", target)
-		req.Host = "x.example"
-		resp, _ := do(t, app, req)
-		if resp.StatusCode == 307 {
-			t.Fatalf("ping-pong map must serve in place; got 307 to %q", resp.Header.Get("Location"))
-		}
-	})
-}
-
 // A confidential client may authorize without PKCE (it authenticates with its
 // secret at the token endpoint).
 func TestAuthorize_ConfidentialWithoutPKCEDelegates(t *testing.T) {
@@ -218,52 +139,4 @@ func requireRedirect(t *testing.T, resp *http.Response, wantPrefix string) strin
 		t.Fatalf("Location = %q, want prefix %q", loc, wantPrefix)
 	}
 	return loc
-}
-
-// "Get started" and "Sign in" are the same OAuth request, differing only in
-// which screen the person should land on. The hosted login is what draws that
-// screen, and this endpoint rebuilds the query from named parameters, so the
-// flag reaches the page only if it is one of them — otherwise an application
-// sending someone to create an account gets the credential form instead, and
-// the request that carried the intent looks identical to one that never had it.
-func TestAuthorize_CarriesSignupToTheHostedLogin(t *testing.T) {
-	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "pub", redirectURIs: []string{testRedirect}})
-
-	base := url.Values{
-		"response_type":  {"code"},
-		"client_id":      {"pub"},
-		"redirect_uri":   {testRedirect},
-		"code_challenge": {pkce.Challenge("verifier-abcdefghijklmnopqrstuvwxyz-012345")},
-	}
-	forwarded := func(signup string) url.Values {
-		q := url.Values{}
-		for k, v := range base {
-			q[k] = v
-		}
-		if signup != "" {
-			q.Set("signup", signup)
-		}
-		resp, _ := do(t, app, formReqNoBody("GET", authorizeURL(q)))
-		if resp.StatusCode != 302 {
-			t.Fatalf("signup=%q: status = %d, want 302", signup, resp.StatusCode)
-		}
-		loc, err := url.Parse(resp.Header.Get("Location"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		return loc.Query()
-	}
-
-	if got := forwarded("true").Get("signup"); got != "true" {
-		t.Fatalf("signup=true forwarded as %q, want \"true\"", got)
-	}
-	// Sign-in is the default, and only the literal reaches the page: the flag is
-	// re-encoded from the parsed value, never echoed.
-	if got := forwarded("").Get("signup"); got != "" {
-		t.Fatalf("no signup forwarded as %q, want empty", got)
-	}
-	if got := forwarded("yes"); got.Get("signup") != "" {
-		t.Fatalf("signup=yes forwarded as %q, want empty", got.Get("signup"))
-	}
 }

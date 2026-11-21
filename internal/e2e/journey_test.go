@@ -1,12 +1,11 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
-// Package e2e_test drives the WHOLE iam surface through the real registered router
+// Package e2e_test drives the WHOLE iam2 surface through the real registered router
 // (routes.Route) as one integrated journey — the behavioral parity proof that the
-// old the legacy surface IAM's clients work against iam. Unlike the per-package unit tests,
+// old Casdoor IAM's clients work against iam2. Unlike the per-package unit tests,
 // this chains the real flows a live client runs in sequence: OIDC discovery →
 // PKCE login → code→token → userinfo → introspect → revoke; the admin console's
-// get-account → the org registry → the user collection; SCIM
+// get-account → get-organizations → get-users (the Casdoor compat surface); SCIM
 // 2.0 provisioning; and RFC 8693 token exchange. Every step asserts the response
 // CONTRACT the client depends on.
 package e2e_test
@@ -19,7 +18,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
-	"fmt"
 	"io"
 	"net/http/httptest"
 	"net/url"
@@ -35,12 +33,9 @@ import (
 	ormdb "github.com/hanzoai/orm/db"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/keyring"
+	"github.com/hanzoai/iam/internal/oidc"
 	"github.com/hanzoai/iam/internal/routes"
-	"github.com/hanzoai/iam/pkg/pkce"
-	"github.com/hanzoai/iam/pkg/schema"
-
-	"github.com/hanzoai/iam/internal/testhttp"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
 const (
@@ -79,11 +74,9 @@ func boot(t *testing.T) *env {
 	seedUser(t, db, "hanzo", "alice", "alice@hanzo.ai", "pw", false)
 	seedUser(t, db, "admin", "root", "root@hanzo.ai", "pw", true) // SuperAdmin
 
-	app := zip.New(zip.Config{AppName: "iam-e2e", DisableStartupMessage: true})
+	app := zip.New(zip.Config{AppName: "iam2-e2e", DisableStartupMessage: true})
 	routes.Route(app, db)
-	if err := app.Build(); err != nil {
-		t.Fatalf("build: %v", err)
-	}
+	app.Prepare()
 	return &env{app: app, key: key, db: db}
 }
 
@@ -149,7 +142,7 @@ func TestJourney_OIDCFlow(t *testing.T) {
 // TestJourney_PasswordGrant_and_TokenExchange proves the two non-interactive grants
 // the console/BFF rely on.
 func TestJourney_PasswordGrant_and_TokenExchange(t *testing.T) {
-	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
+	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
 	e := boot(t)
 
 	// Password grant → a first-party session token for alice.
@@ -165,8 +158,8 @@ func TestJourney_PasswordGrant_and_TokenExchange(t *testing.T) {
 	// RFC 8693 token exchange: the BFF exchanges alice's token for one scoped to a
 	// downstream resource, still bound to alice.
 	xe := e.token(t, url.Values{
-		"grant_type": {"urn:ietf:params:oauth:grant-type:token-exchange"},
-		"client_id":  {"hanzo-console"}, "client_secret": {"top-secret"},
+		"grant_type":    {"urn:ietf:params:oauth:grant-type:token-exchange"},
+		"client_id":     {"hanzo-console"}, "client_secret": {"top-secret"},
 		"subject_token": {subjectToken}, "resource": {"hanzo-cloud"},
 	})
 	if xe["issued_token_type"] != "urn:ietf:params:oauth:token-type:access_token" || xe["access_token"] == "" {
@@ -174,50 +167,31 @@ func TestJourney_PasswordGrant_and_TokenExchange(t *testing.T) {
 	}
 }
 
-// TestJourney_AdminConsole proves the console's own calls work: get-account (the
-// security contract), the org registry (its switcher), and the user collection.
-func TestJourney_AdminConsole(t *testing.T) {
+// TestJourney_AdminConsole_CasdoorSurface proves the old admin console's calls work:
+// get-account (the security contract), get-organizations (OrgSwitcher), get-users.
+func TestJourney_AdminConsole_CasdoorSurface(t *testing.T) {
 	e := boot(t)
 	root := e.mint(t, "admin/root") // a SuperAdmin bearer
 
-	// The account read — {status:ok, data:<masked user>} with owner + isAdmin.
-	acct := e.getJSON(t, "/v1/iam/account", root)
+	// get-account — {status:ok, data:<masked user>} with owner + isAdmin.
+	acct := e.getJSON(t, "/v1/iam/get-account", root)
 	if acct["status"] != "ok" {
-		t.Fatalf("account status: %v", acct)
+		t.Fatalf("get-account status: %v", acct)
 	}
 
-	// The org registry — the switcher's workhorse. A SuperAdmin sees every
-	// TENANT. The reserved org is not one and cannot be stepped into, so the
-	// switcher must not offer it as a destination.
-	orgs := e.getJSON(t, "/v1/iam/organizations", root)
-	data, _ := orgs["organizations"].([]any)
-	if len(data) == 0 {
-		t.Fatalf("the org registry returned nothing: %v", orgs)
+	// get-organizations — the OrgSwitcher workhorse; SuperAdmin sees all.
+	orgs := e.getJSON(t, "/v1/iam/get-organizations", root)
+	if orgs["status"] != "ok" {
+		t.Fatalf("get-organizations status: %v", orgs)
 	}
-	var named []string
-	for _, row := range data {
-		m, ok := row.(map[string]any)
-		if !ok {
-			t.Fatalf("the org registry returned a row that is not an object: %v", row)
-		}
-		named = append(named, fmt.Sprint(m["name"]))
-	}
-	var sawTenant, sawReserved bool
-	for _, n := range named {
-		sawTenant = sawTenant || n == "hanzo"
-		sawReserved = sawReserved || n == "admin"
-	}
-	if !sawTenant {
-		t.Fatalf("the org registry did not name the tenant: %v", named)
-	}
-	if sawReserved {
-		t.Fatalf("the org registry offered the reserved org as a destination: %v", named)
+	if data, _ := orgs["data"].([]any); len(data) < 2 {
+		t.Fatalf("get-organizations returned %d orgs, want >=2 (admin+hanzo)", len(data))
 	}
 
-	// The user collection scoped to an org — no secret leaks.
-	usersBody := e.getRaw(t, "/v1/iam/users?owner=hanzo", root)
+	// get-users scoped to an org — no secret leaks.
+	usersBody := e.getRaw(t, "/v1/iam/get-users?owner=hanzo", root)
 	if strings.Contains(usersBody, "passwordHash") || strings.Contains(usersBody, "\"password\"") {
-		t.Fatalf("the user collection leaked a secret: %s", usersBody)
+		t.Fatalf("get-users leaked a secret: %s", usersBody)
 	}
 }
 
@@ -247,7 +221,7 @@ func (e *env) login(t *testing.T, verifier string) string {
 	body, _ := json.Marshal(map[string]string{
 		"type": "code", "organization": "hanzo", "username": "alice@hanzo.ai", "password": "pw",
 		"clientId": "hanzo-console", "redirectUri": redirectURI, "scope": "openid profile email offline_access",
-		"codeChallenge": pkce.Challenge(verifier), "codeChallengeMethod": "S256",
+		"codeChallenge": oidc.ComputeS256Challenge(verifier), "codeChallengeMethod": "S256",
 	})
 	st, resp := e.req(t, "POST", "/v1/iam/login", "", string(body), "application/json")
 	if st != 200 {
@@ -277,7 +251,7 @@ func (e *env) form(t *testing.T, path, clientID, secret string, form url.Values)
 	req.Host = "hanzo.id"
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(clientID+":"+secret)))
-	resp, err := testhttp.Do(e.app, req)
+	resp, err := e.app.Fiber().Test(req)
 	if err != nil {
 		t.Fatalf("form %s: %v", path, err)
 	}
@@ -301,7 +275,7 @@ func (e *env) req(t *testing.T, method, path, bearer, body, contentType string) 
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
 	}
-	resp, err := testhttp.Do(e.app, req)
+	resp, err := e.app.Fiber().Test(req)
 	if err != nil {
 		t.Fatalf("%s %s: %v", method, path, err)
 	}
@@ -324,7 +298,7 @@ func (e *env) getRaw(t *testing.T, path, bearer string) string {
 }
 
 // mint signs an RS256 bearer for sub under the seeded cert — a valid principal the
-// Guard admits (used for the SCIM admin calls, which need a verified bearer
+// Guard admits (used for the compat/SCIM admin calls, which need a verified bearer
 // but not a persisted grant row).
 func (e *env) mint(t *testing.T, sub string) string {
 	t.Helper()
@@ -345,7 +319,7 @@ func seedCert(t *testing.T, db orm.DB, key *rsa.PrivateKey) {
 	t.Helper()
 	c := orm.New[schema.Cert](db)
 	c.Owner, c.Name, c.CryptoAlgorithm = "admin", kid, "RS256"
-	keyring.Set(c.Name, string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})))
+	c.PrivateKey = string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}))
 	c.SetId("admin/" + kid)
 	if err := c.CreateCtx(context.Background()); err != nil {
 		t.Fatalf("seed cert: %v", err)

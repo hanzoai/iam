@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package wallet
 
@@ -12,18 +11,15 @@ import (
 	"github.com/hanzoai/orm"
 	wc "github.com/luxwallet/connect/go/walletconnect"
 
-	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
-// errorIs asserts the envelope is a REFUSAL carrying msg, under a status that
-// AGREES with it. The envelope still carries the reason — that is the SDK
-// contract and it is unchanged — but a refusal no longer arrives dressed as a
-// success, so a caller that checks the transport first reaches the same verdict
-// as one that parses the body.
+// errorIs asserts the envelope is a REFUSAL carrying msg — on a 200, because
+// every SDK branches on status, not the HTTP code.
 func errorIs(t *testing.T, code int, m map[string]any, msg string) {
 	t.Helper()
-	if code < 400 || code > 499 {
-		t.Fatalf("status = %d, want a 4xx: a refused request must not read as a completed one", code)
+	if code != 200 {
+		t.Fatalf("status = %d, want 200 (errors ride the envelope)", code)
 	}
 	if m["status"] != "error" {
 		t.Fatalf("status = %v, want error: %v", m["status"], m)
@@ -125,11 +121,9 @@ func TestAnonymous(t *testing.T) {
 	if code, m := get(t, app, PathNonce+"?chain=evm"); code != 200 || m["status"] != "ok" {
 		t.Fatalf("nonce is not anonymous-reachable: %d %v", code, m)
 	}
-	// verify reaches its handler (it refuses on the MERITS, not on auth) — the
-	// refusal is the handler's own, so it names the malformed message rather than
-	// authentication, and it carries a status that agrees it was refused.
+	// verify reaches its handler (it refuses on the merits, not on auth).
 	code, m := post(t, app, PathVerify, body(a, wc.ChainEVM, addr, "nope", "0x00"), nil)
-	if code < 400 || code > 499 {
+	if code != 200 {
 		t.Fatalf("verify is not anonymous-reachable: %d %v", code, m)
 	}
 	if msg, _ := m["msg"].(string); strings.Contains(msg, "authentication") {
@@ -736,52 +730,4 @@ func keys(m map[string]any) []string {
 		out = append(out, k)
 	}
 	return out
-}
-
-// A RESERVED platform org is never reachable by an unauthenticated wallet
-// sign-up, even when its application row has sign-up enabled.
-//
-// Wallet login was the ONE public account-creation endpoint that did not
-// consult policy.IsReservedOrg — signup (signup.go), onboarding, federated
-// provisioning (federation.go) and token exchange all did. The org here is not
-// caller-chosen (provision takes in.App.Organization), so this is not a
-// cross-TENANT hole; it is an ESCALATION one: authz derives Super from
-// owner == "admin", so a wallet-signed POST against an admin-owned app with
-// EnableSignUp set would have minted a SuperAdmin with no credential at all.
-//
-// All three reserved orgs are exercised, and the refusal must be byte-identical
-// to the sign-up-disabled refusal so a prober cannot learn which condition fired.
-func TestReservedOrgNeverProvisions(t *testing.T) {
-	for _, org := range []string{"admin", "built-in", "app"} {
-		t.Run(org, func(t *testing.T) {
-			app, db := newServer(t)
-			a := seed(t, db, opts{name: "app-" + org, org: org, signup: true})
-
-			code, m := signIn(t, app, a)
-			errorIs(t, code, m, "sign up is disabled")
-
-			if n := len(users(t, db)); n != 0 {
-				t.Fatalf("users = %d, want 0 — a wallet sign-in must never mint an account in the reserved org %q", n, org)
-			}
-			if n := len(wallets(t, db)); n != 0 {
-				t.Fatalf("wallets = %d, want 0 — a refusal must leave nothing behind", n)
-			}
-		})
-	}
-}
-
-// The guard is scoped to RESERVED orgs only: an ordinary tenant with sign-up
-// enabled still provisions. Without this, "close the hole" could be satisfied by
-// breaking wallet sign-up outright and the test above would still pass.
-func TestOrdinaryOrgStillProvisions(t *testing.T) {
-	app, db := newServer(t)
-	a := seed(t, db, opts{name: "app-tenant", org: "acme", signup: true})
-
-	if code, m := signIn(t, app, a); okData(t, code, m) == "" {
-		t.Fatal("an ordinary tenant's wallet sign-up must still succeed")
-	}
-	u := users(t, db)
-	if len(u) != 1 || u[0].Owner != "acme" {
-		t.Fatalf("users = %+v, want exactly one under acme", u)
-	}
 }

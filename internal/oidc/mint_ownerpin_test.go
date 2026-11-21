@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -7,7 +6,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
 // The mint owner-pin, unit-level: mintAllowed / adminMintAllowed require the resolved
@@ -16,8 +15,8 @@ import (
 // allow-listed one is refused on the owner, so the clientId allow-list can never be
 // satisfied by a body-supplied collision.
 func TestMintAllowed_OwnerPinned(t *testing.T) {
-	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
-	t.Setenv("IAM_ADMIN_TOKEN_EXCHANGE_APPS", "hanzo-console")
+	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
+	t.Setenv("IAM_ADMIN_MINT_ALLOWED_APPS", "hanzo-console")
 
 	admin := &schema.Application{Owner: "admin", ClientId: "hanzo-console"}
 	builtin := &schema.Application{Owner: "built-in", ClientId: "hanzo-console"}
@@ -52,7 +51,7 @@ func TestMintAllowed_OwnerPinned(t *testing.T) {
 // and the owner-pin (mintAllowed) refuses a non-signing owner even if a backend
 // returned the attacker row. Either way, NO token is minted.
 func TestTokenExchange_clientIdCollisionAttacker_denied(t *testing.T) {
-	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
+	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"}) // admin-owned console
 	// Attacker: SAME clientId as the console, attacker's OWN secret, tenant-owned.

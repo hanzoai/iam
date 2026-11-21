@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -7,14 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
-	"net/url"
 	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
-
-	"github.com/zap-proto/zip"
 )
 
 // devFallbackIssuer is the ONE fixed, non-host-derived issuer this package ever
@@ -34,7 +29,7 @@ var errNoIssuer = errors.New(
 
 // The per-host OIDC issuer resolver.
 //
-// iam runs as ONE multi-tenant instance behind the ingress for every brand host
+// iam2 runs as ONE multi-tenant instance behind the ingress for every brand host
 // — hanzo.id, lux.id, id.zoo.network, pars.id, and their iam.* aliases. Each
 // brand must emit its OWN issuer so a relying party that discovered via lux.id
 // validates lux.id-issued tokens (`iss` is the boundary an RP pins). A single
@@ -50,7 +45,7 @@ var errNoIssuer = errors.New(
 // That is the "header-immune issuer" property, preserved and generalized to N
 // brands.
 
-// issuerResolver maps a brand host to the OIDC issuer iam emits for it. It is
+// issuerResolver maps a brand host to the OIDC issuer iam2 emits for it. It is
 // built ONCE from config (IAM_ISSUER + IAM_ISSUER_MAP) and is immutable
 // thereafter — a value, not a place, so every request goroutine reads it without
 // a lock and no request can mutate it.
@@ -156,63 +151,15 @@ func (r *issuerResolver) issuerFor(host string) string {
 	return devFallbackIssuer
 }
 
-// devIssuer is the host-relative dev issuer, and it keeps the WHOLE address the
-// request arrived on — PORT INCLUDED, SCHEME DERIVED. Reached ONLY under the
-// explicit IAM_DEV_HOST_RELATIVE=1 opt-in (issuerFor branch 4); any real
-// deployment pins at least IAM_ISSUER and never reaches it.
-//
-// It used to answer normalizeHost + "https://", which is wrong twice over for the
-// one case this branch exists to serve. normalizeHost strips the port — correctly,
-// because it is the MAP-KEY normalizer and "lux.id" must match "lux.id:443" — so a
-// dev cloud on 127.0.0.1:38080 published `https://127.0.0.1` as its issuer, and a
-// browser that discovered there followed the authorization_endpoint to a port
-// nothing serves over a scheme nothing speaks. An issuer is an identifier a client
-// compares LITERALLY and an origin it then fetches, so dropping either half makes
-// the discovery document describe a deployment that does not exist. Measured: the
-// hanzo.ai SPA against a local cloud walked from 127.0.0.1 straight to the public
-// issuer's login page.
-//
-// The scheme is DERIVED rather than configured because the only thing that could
-// configure it is the request, and this branch already trusts the request host.
-// Loopback and *.localhost are http — a dev box is not terminating TLS on a
-// loopback address — and everything else stays https, so a developer serving
-// example.test:8443 keeps the scheme they are actually using.
-//
-// This does not widen what the opt-in already grants. c.Host() is client-supplied,
-// so under IAM_DEV_HOST_RELATIVE a caller can already choose the issuer's host;
-// carrying the port it also sent changes the value, not who controls it. That is
-// exactly why the flag is a hard opt-in and a no-issuer boot is otherwise refused.
+// devIssuer is the host-relative dev issuer: "https://<trusted host>", or the
+// fixed fallback when even the host is absent. Reached ONLY under the explicit
+// IAM_DEV_HOST_RELATIVE=1 opt-in (issuerFor branch 4); any real deployment pins at
+// least IAM_ISSUER and never reaches it.
 func devIssuer(host string) string {
-	h := strings.ToLower(strings.TrimSpace(host))
-	if h == "" {
-		return devFallbackIssuer
+	if h := normalizeHost(host); h != "" {
+		return "https://" + h
 	}
-	name, port := h, ""
-	if n, p, err := net.SplitHostPort(h); err == nil {
-		name, port = n, p
-	}
-	name = strings.TrimSuffix(name, ".")
-	if name == "" {
-		return devFallbackIssuer
-	}
-	addr := name
-	if port != "" {
-		addr = net.JoinHostPort(name, port)
-	}
-	return devScheme(name) + "://" + addr
-}
-
-// devScheme is what a dev box is actually speaking on that address. A loopback
-// host is http because nothing terminates TLS there; every other host keeps
-// https, so a developer on a real name with a certificate is not downgraded.
-func devScheme(name string) string {
-	if name == "localhost" || strings.HasSuffix(name, ".localhost") {
-		return "http"
-	}
-	if ip := net.ParseIP(strings.Trim(name, "[]")); ip != nil && ip.IsLoopback() {
-		return "http"
-	}
-	return "https"
+	return devFallbackIssuer
 }
 
 // normalizeHost lowercases, trims whitespace, strips a :port, and strips a single
@@ -290,200 +237,4 @@ func resolveIssuer(host string) string {
 		return r.issuerFor(host)
 	}
 	return envIssuerResolver().issuerFor(host)
-}
-
-// The federation-origin resolver — the origin an EXTERNAL IdP calls back to.
-//
-// This is a DIFFERENT VALUE from the issuer, and braiding the two is what broke
-// social sign-in on every brand. They pull in opposite directions:
-//
-//   - The issuer must be PER-BRAND. An RP that discovered via lux.id pins `iss`
-//     to lux.id and rejects a hanzo.id-issued token. That is why the map exists.
-//   - The IdP callback must be PER-ORG-CONSTANT. Google and GitHub each hold ONE
-//     OAuth client per org with a FIXED list of authorized redirect URIs. A
-//     per-brand callback means every brand sends a redirect_uri the provider has
-//     never seen, and the provider answers `redirect_uri_mismatch`.
-//
-// This is why the callback is per-org-constant: a provider holds one OAuth client
-// per org with a FIXED redirect-URI list, so a per-brand callback sends a
-// redirect_uri the provider never registered and the provider answers
-// `redirect_uri_mismatch`. Every social login then fails AT THE PROVIDER, where it
-// reads as a credentials or KMS fault rather than a callback-shape one, even
-// though the client_id reaches the provider intact. The fixed callback is the one
-// the provider has on file.
-//
-// Registering every brand host with every provider is the other way out, and it
-// is the wrong one — it makes each social provider carry a list of our apps and
-// grows with every brand we add. One origin per org means the provider knows
-// about the org and nothing else.
-//
-// Same type, same validation, same header-immunity as the issuer resolver — one
-// mechanism, two instances, so there is no second notion of "a pinned origin".
-// UNSET IS A NO-OP: with no IAM_FEDERATION_ORIGIN configured this falls through
-// to resolveIssuer, which is exactly today's behaviour.
-var activeFederationResolver atomic.Pointer[issuerResolver]
-
-// envFederationResolver builds the federation-origin resolver from
-// IAM_FEDERATION_ORIGIN + IAM_FEDERATION_ORIGIN_MAP once, lazily. Unlike the
-// issuer it is OPTIONAL: nothing pinned yields nil, and resolveFederationOrigin
-// falls back to the issuer. A malformed map degrades to the bare default rather
-// than booting a config an attacker could steer.
-var envFederationResolver = sync.OnceValue(func() *issuerResolver {
-	def := os.Getenv("IAM_FEDERATION_ORIGIN")
-	m := os.Getenv("IAM_FEDERATION_ORIGIN_MAP")
-	if strings.TrimSpace(def) == "" && strings.TrimSpace(m) == "" {
-		return nil
-	}
-	r, err := newIssuerResolver(def, m, false)
-	if err != nil {
-		if r, err = newIssuerResolver(def, "", false); err != nil {
-			return nil
-		}
-	}
-	return r
-})
-
-// InitFederationResolver parses the federation origin config once at startup. A
-// malformed or non-https pin is a HARD error, on the same footing as the issuer:
-// a bad value here does not mint wrong tokens, but it does hand an external IdP a
-// callback origin, so it must fail the boot LOUD rather than degrade silently.
-// Called from serve() alongside InitIssuerResolver.
-func InitFederationResolver() error {
-	def := os.Getenv("IAM_FEDERATION_ORIGIN")
-	m := os.Getenv("IAM_FEDERATION_ORIGIN_MAP")
-	if strings.TrimSpace(def) == "" && strings.TrimSpace(m) == "" {
-		return nil // unconfigured → federation follows the issuer, as before
-	}
-	r, err := newIssuerResolver(def, m, false)
-	if err != nil {
-		return err
-	}
-	if err := federationOriginIsReachable(r, m); err != nil {
-		return err
-	}
-	activeFederationResolver.Store(r)
-	return nil
-}
-
-// federationOriginIsReachable refuses, AT BOOT, a federation origin the browser
-// could not complete a sign-in against.
-//
-// The begin leg sets the `hanzo_fed` anti-forgery cookie on whatever host served
-// it, with NO Domain attribute — deliberately host-only, because it is the
-// login-CSRF defence. The callback then REQUIRES it: an empty cookie is refused
-// ("the federation session could not be verified"), with no exemption.
-//
-// So pointing a host's callback at a DIFFERENT host cannot work. The cookie is
-// written on the host the person started at and is never presented to the origin
-// the IdP returns to, so every social sign-in on that brand fails closed — not at
-// deploy time, but the first time a human tries to log in, with an error that
-// describes the symptom rather than the config.
-//
-// That is the whole intended use of these two variables ("one callback per org",
-// so a provider console holds one redirect_uri instead of one per brand host), and
-// it is unreachable until the begin leg also sets the cookie on the federation
-// origin — a redirect hop that does not exist yet. Refusing to boot is the honest
-// answer: this file already fails loud on a misconfigured ISSUER rather than
-// silently minting tokens under the wrong `iss`, and the same reasoning applies to
-// silently breaking every social login.
-//
-// Same-host folding is still permitted, because it changes no origin: a map that
-// sends a host to its own issuer origin is a no-op and passes.
-func federationOriginIsReachable(fed *issuerResolver, mapJSON string) error {
-	if strings.TrimSpace(mapJSON) == "" {
-		return nil // only a default is pinned; per-host folding is what breaks
-	}
-	var hosts map[string]string
-	if err := json.Unmarshal([]byte(mapJSON), &hosts); err != nil {
-		return nil // newIssuerResolver already judged the map; do not double-report
-	}
-	for host := range hosts {
-		fedOrigin := fed.issuerFor(host)
-		issOrigin := resolveIssuer(host)
-		if fedOrigin == "" || issOrigin == "" || fedOrigin == issOrigin {
-			continue
-		}
-		return fmt.Errorf(
-			"IAM_FEDERATION_ORIGIN_MAP points %s at %s while its issuer is %s: the "+
-				"hanzo_fed browser-binding cookie is host-only, so it is set on %s and "+
-				"never presented to %s, and every social sign-in on that host would fail "+
-				"closed. Folding callbacks onto one origin needs the begin leg to set the "+
-				"cookie there first",
-			host, fedOrigin, issOrigin, issOrigin, fedOrigin)
-	}
-	return nil
-}
-
-// resolveFederationOrigin is THE seam the IdP callback origin routes through.
-// host is the same TRUSTED request host the issuer resolver takes, so a
-// client-supplied header can at most SELECT a configured org's origin — it can
-// never inject one, and the federation leg keeps the header-immunity the issuer
-// leg has. Unconfigured → the issuer, i.e. the pre-split behaviour.
-func resolveFederationOrigin(host string) string {
-	if r := activeFederationResolver.Load(); r != nil {
-		return r.issuerFor(host)
-	}
-	if r := envFederationResolver(); r != nil {
-		return r.issuerFor(host)
-	}
-	return resolveIssuer(host)
-}
-
-// issuerRelocation reports whether a request to a native endpoint arrived on a host
-// other than its brand's pinned issuer, and if so, the absolute URL of the SAME
-// request at that issuer.
-//
-// This is the redirect hop the boot check (federationOriginIsReachable) names as
-// missing. A browser flow leaves host-only cookies behind at every step — the
-// hanzo_fed browser binding on the federation begin, the session on a password
-// login — while the IdP callback and the tokens' `iss` live at the PINNED
-// issuer. Serving the native endpoints on an alias host therefore strands those
-// cookies where nothing returns: measured live, an authorize on iam.hanzo.ai
-// set hanzo_fed on iam.hanzo.ai and registered the Google callback at hanzo.id,
-// so every social sign-in begun there failed closed with "the federation
-// session could not be verified". One relocation before anything is minted or
-// set, and every downstream leg — hosted login, session, federation begin and
-// callback — shares one origin by construction.
-//
-// The target is trusted config (never the request), so this can relocate but
-// not open-redirect. Fail-closed: a blank issuer, an unparsable issuer, or an
-// issuer the resolver does not map to ITSELF (a miswritten fold that would
-// ping-pong browsers) all answer "no relocation" — the pre-hop behaviour.
-func issuerRelocation(c *zip.Ctx) (string, bool) {
-	r := activeResolver.Load()
-	if r == nil {
-		r = envIssuerResolver()
-	}
-	if r == nil {
-		// Nothing pinned (a hand-built server; a real boot hard-errors first).
-		// The fixed fallback is a fail-closed placeholder, not an address to
-		// steer browsers to.
-		return "", false
-	}
-	// The FULL host, port included. issuerFor normalizes for its own map lookup,
-	// so a brand still resolves from "lux.id:443"; passing the stripped host
-	// instead meant the dev branch could never see a port and relocated a request
-	// on 127.0.0.1:38080 to 127.0.0.1 — a port nothing serves, reached by a 307
-	// the browser follows before anything says why.
-	host := strings.TrimSpace(c.Host())
-	iss := r.issuerFor(host)
-	if host == "" || iss == "" {
-		return "", false
-	}
-	// Already answering ON the issuer's own address: nothing to relocate. Compare
-	// the address the request ARRIVED on against the issuer's, rather than
-	// rebuilding one with a hardcoded scheme — "https://"+host is false for every
-	// http dev issuer, so the short-circuit never fired and every request
-	// relocated to itself minus its port.
-	if u, err := url.Parse(iss); err == nil && strings.EqualFold(u.Host, host) {
-		return "", false
-	}
-	u, err := url.Parse(iss)
-	if err != nil || u.Host == "" {
-		return "", false
-	}
-	if r.issuerFor(u.Host) != iss {
-		return "", false
-	}
-	return iss + c.Fiber().OriginalURL(), true
 }

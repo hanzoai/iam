@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package users
 
@@ -10,8 +9,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // A user minted natively in v2 gets a stable opaque UUID `sub` on create, ALWAYS
@@ -22,7 +21,7 @@ import (
 
 func openUsersTestDB(t *testing.T) (*API, func()) {
 	t.Helper()
-	db, err := store.Open("sqlite", filepath.Join(t.TempDir(), "iam.db"), "")
+	db, err := store.Open("sqlite", filepath.Join(t.TempDir(), "iam2.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -135,9 +134,9 @@ func TestUpdate_IdIsImmutable(t *testing.T) {
 	}
 }
 
-// A user's credential is not a profile field. A body that carries credential material
-// plants a value the sender already knows onto the row, so these fields are cleared on
-// create and carried from the stored row on update. It is also what would
+// A user's credential is not a profile field. hk- resolves a user by exact match on
+// AccessKey (store.UserByAccessKey), so a body that carries one plants a credential
+// the sender already knows and can then present AS that user. It is also what would
 // let a retired prefix be re-introduced at will, which makes any census of the legacy
 // population meaningless. Minting is the only writer.
 func TestUsers_CredentialIsNotAProfileField(t *testing.T) {
@@ -147,7 +146,7 @@ func TestUsers_CredentialIsNotAProfileField(t *testing.T) {
 
 	made, err := api.Create(ctx, &CreateInput{
 		User: schema.User{Owner: "hanzo", Name: "ada", Email: "ada@hanzo.ai",
-			AccessKey: "sk-live-planted-at-create"},
+			AccessKey: "hk-live-planted-at-create"},
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -165,7 +164,7 @@ func TestUsers_CredentialIsNotAProfileField(t *testing.T) {
 
 	got, err := api.Update(ctx, &UpdateInput{
 		User: schema.User{Owner: "hanzo", Name: "ada", Email: "ada@hanzo.ai",
-			DisplayName: "Ada L", AccessKey: "sk-live-planted-by-admin"},
+			DisplayName: "Ada L", AccessKey: "hk-live-planted-by-admin"},
 	})
 	if err != nil {
 		t.Fatalf("update: %v", err)

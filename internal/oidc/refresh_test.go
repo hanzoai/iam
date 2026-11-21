@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -7,7 +6,6 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/hanzoai/iam/pkg/pkce"
 	"github.com/zap-proto/zip"
 )
 
@@ -17,7 +15,7 @@ func grantViaPKCE(t *testing.T, app *zip.App, clientID, scope string) map[string
 	t.Helper()
 	verifier := "verifier-abcdefghijklmnopqrstuvwxyz-0123456789"
 	params := loginParams(clientID, scope)
-	params["codeChallenge"] = pkce.Challenge(verifier)
+	params["codeChallenge"] = ComputeS256Challenge(verifier)
 	params["codeChallengeMethod"] = "S256"
 	code, _, _ := loginForCode(t, app, params)
 	resp, tok := exchangeCode(t, app, url.Values{
@@ -121,75 +119,5 @@ func TestRefresh_UnknownToken(t *testing.T) {
 	status, out := refresh(t, app, "pub", "not-a-real-refresh-token", nil)
 	if status != 400 || out["error"] != "invalid_grant" {
 		t.Fatalf("unknown refresh: status=%d err=%v", status, out["error"])
-	}
-}
-
-// grantWithSecret runs the SAME PKCE flow but presents the client secret at the
-// exchange, so the grant is established under client authentication.
-func grantWithSecret(t *testing.T, app *zip.App, clientID, secret, scope string) map[string]any {
-	t.Helper()
-	verifier := "verifier-abcdefghijklmnopqrstuvwxyz-0123456789"
-	params := loginParams(clientID, scope)
-	params["codeChallenge"] = pkce.Challenge(verifier)
-	params["codeChallengeMethod"] = "S256"
-	code, _, _ := loginForCode(t, app, params)
-	resp, tok := exchangeCode(t, app, url.Values{
-		"code": {code}, "client_id": {clientID}, "client_secret": {secret},
-		"redirect_uri": {testRedirect}, "code_verifier": {verifier},
-	})
-	if resp.StatusCode != 200 {
-		t.Fatalf("grant with secret failed: %d %v", resp.StatusCode, tok)
-	}
-	return tok
-}
-
-// A registration that HOLDS a client secret still serves a PUBLIC surface: a CLI,
-// or an SPA whose secret exists only for a backend path. Such a client exchanges
-// a PKCE code without presenting the secret, which authorizationCodeGrant
-// deliberately allows — so refresh must accept the same client on the same terms,
-// or the session it just established dies at the access token's expiry and the
-// human signs in again every hour.
-func TestRefresh_PKCEGrantNeedsNoSecretOnASecretHoldingClient(t *testing.T) {
-	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "cli", secret: "s3cret", redirectURIs: []string{testRedirect}, refreshHours: 720})
-	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
-
-	tok := grantViaPKCE(t, app, "cli", "openid offline_access") // no client_secret, exactly as the CLI
-	status, out := refresh(t, app, "cli", tok["refresh_token"].(string), nil)
-	if status != 200 {
-		t.Fatalf("first refresh: status=%d body=%v, want 200 (a PKCE grant refreshes without a secret)", status, out)
-	}
-
-	// And the SECOND refresh: the successor row must carry the same
-	// establishment fact, or refresh works exactly once and then 401s.
-	rt2, _ := out["refresh_token"].(string)
-	if rt2 == "" {
-		t.Fatal("refresh did not rotate")
-	}
-	status2, out2 := refresh(t, app, "cli", rt2, nil)
-	if status2 != 200 {
-		t.Fatalf("second refresh: status=%d body=%v, want 200 (PublicGrant must survive rotation)", status2, out2)
-	}
-}
-
-// The relaxation never widens: a grant that WAS established with the client
-// secret still has to present it (RFC 6749 §6), so a stolen refresh token alone
-// does not renew a confidential client's session.
-func TestRefresh_ClientAuthenticatedGrantStillRequiresTheSecret(t *testing.T) {
-	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "web", secret: "s3cret", redirectURIs: []string{testRedirect}, refreshHours: 720})
-	seedUser(t, db, "alice", "alice@hanzo.ai", "pw")
-
-	rt := grantWithSecret(t, app, "web", "s3cret", "openid offline_access")["refresh_token"].(string)
-
-	if status, out := refresh(t, app, "web", rt, nil); status != 401 || out["error"] != "invalid_client" {
-		t.Fatalf("secret-established grant refreshed without a secret: status=%d err=%v", status, out["error"])
-	}
-	// A wrong secret is refused too — the check is not merely "present".
-	if status, _ := refresh(t, app, "web", rt, url.Values{"client_secret": {"wrong"}}); status != 401 {
-		t.Fatalf("wrong secret accepted: status=%d", status)
-	}
-	if status, out := refresh(t, app, "web", rt, url.Values{"client_secret": {"s3cret"}}); status != 200 {
-		t.Fatalf("correct secret refused: status=%d body=%v", status, out)
 	}
 }

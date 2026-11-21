@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -18,11 +17,9 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/luxfi/crypto/pq/mldsa/mldsa65"
 
-	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 
-	"github.com/hanzoai/iam/internal/keyring"
-	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
 // NewSignerFromCert picks the algorithm from the key type — RSA→RS256,
@@ -60,7 +57,7 @@ func TestSigner_ES256RoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Unix(1_800_000_000, 0)
-	tok, err := s.Sign(testApp(), Identity{Id: "hanzo/alice", Email: "alice@hanzo.ai", Name: "alice", Display: "Alice"}, "openid", "", time.Hour, now)
+	tok, err := s.Sign(testApp(), "hanzo/alice", "alice@hanzo.ai", "Alice", "alice", "openid", nil, time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +94,7 @@ func TestSigner_MLDSA65RoundTripThroughVerify(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	nowFuncSet(t, now.Add(time.Minute))
 
-	tok, err := s.SignID(testApp(), Identity{Id: "hanzo/alice", Email: "alice@hanzo.ai", Name: "alice", Display: "Alice"}, "openid", "nonce-xyz", time.Hour, now)
+	tok, err := s.SignID(testApp(), "hanzo/alice", "alice@hanzo.ai", "Alice", "alice", "openid", "nonce-xyz", nil, time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +112,7 @@ func TestSignID_EchoesNonce(t *testing.T) {
 	key := sharedKey(t)
 	s := NewRSASigner(key, "cert-hanzo", "https://hanzo.id")
 	now := time.Unix(1_800_000_000, 0)
-	tok, err := s.SignID(testApp(), Identity{Id: "hanzo/alice", Email: "a@h.ai", Name: "alice", Display: "Alice"}, "openid", "n-123", time.Hour, now)
+	tok, err := s.SignID(testApp(), "hanzo/alice", "a@h.ai", "Alice", "alice", "openid", "n-123", nil, time.Hour, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +151,7 @@ func TestVerifyToken_RejectsUnknownKid(t *testing.T) {
 	s, _ := NewSignerFromCert(other, testApp(), "https://hanzo.id")
 	now := time.Unix(1_800_000_000, 0)
 	nowFuncSet(t, now.Add(time.Minute))
-	tok, _ := s.Sign(testApp(), Identity{Id: "hanzo/alice"}, "openid", "", time.Hour, now)
+	tok, _ := s.Sign(testApp(), "hanzo/alice", "", "", "", "openid", nil, time.Hour, now)
 	if _, err := verifyToken(context.Background(), db, tok); err == nil {
 		t.Fatal("token with an unknown kid was accepted")
 	}
@@ -182,7 +179,7 @@ func TestVerify_TenantCannotShadowSigningKey(t *testing.T) {
 
 	// Attacker forges a token signed with THEIR key, kid=cert-hanzo, claiming admin.
 	forger := NewRSASigner(attackerKey, "cert-hanzo", "https://hanzo.id")
-	forged, err := forger.Sign(&schema.Application{ClientId: "victim"}, Identity{Id: "admin/superadmin"}, "openid", "", time.Hour, base)
+	forged, err := forger.Sign(&schema.Application{ClientId: "victim"}, "admin/superadmin", "", "", "", "openid", nil, time.Hour, base)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +204,7 @@ func TestVerify_NonPlatformCertNeverTrusted(t *testing.T) {
 	persistCert(t, db, ac)
 
 	forger := NewRSASigner(attackerKey, "cert-evil", "https://hanzo.id")
-	forged, _ := forger.Sign(&schema.Application{ClientId: "victim"}, Identity{Id: "admin/superadmin"}, "openid", "", time.Hour, base)
+	forged, _ := forger.Sign(&schema.Application{ClientId: "victim"}, "admin/superadmin", "", "", "", "openid", nil, time.Hour, base)
 	if _, err := verifyToken(context.Background(), db, forged); err == nil {
 		t.Fatal("a non-platform cert must never verify a token")
 	}
@@ -249,20 +246,8 @@ func mldsaCert(t *testing.T, name string) *schema.Cert {
 	return c
 }
 
-// persistCert stores a cert's identity and stages its key the way a deployment
-// supplies one: the row keeps no key material, so a read-back gets the same key
-// only because the ring holds it.
-//
-// The key is staged only for a cert a deployment would actually mount one for —
-// a reserved signing owner. That is not test bookkeeping, it is the case under
-// test: material is addressed by name because the name is the `kid`, so staging
-// a tenant cert's key would hand the attacker's key to the platform cert of the
-// same name, which is precisely the shadowing these tests refuse.
 func persistCert(t *testing.T, db orm.DB, cert *schema.Cert) {
 	t.Helper()
-	if policy.IsSigningOwner(cert.Owner) {
-		keyring.Set(cert.Name, cert.PrivateKey)
-	}
 	c := orm.New[schema.Cert](db)
 	model := c.Model
 	*c = *cert

@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc_test
 
@@ -17,9 +16,7 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/routes"
-	"github.com/hanzoai/iam/pkg/schema"
-
-	"github.com/hanzoai/iam/internal/testhttp"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
 // bootApp brings up the full IAM app over an embedded SQLite store, with the unified
@@ -39,9 +36,7 @@ func bootApp(t *testing.T) (*zip.App, orm.DB) {
 	t.Cleanup(func() { _ = db.Close() })
 	app := zip.New(zip.Config{AppName: "provision-endpoint-test", DisableStartupMessage: true})
 	routes.Route(app, db)
-	if err := app.Build(); err != nil {
-		t.Fatalf("build: %v", err)
-	}
+	app.Prepare()
 	return app, db
 }
 
@@ -53,7 +48,7 @@ func postProvision(t *testing.T, app *zip.App, token, body string) (int, map[str
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	resp, err := testhttp.Do(app, req)
+	resp, err := app.Fiber().Test(req)
 	if err != nil {
 		t.Fatalf("POST /v1/iam/admin/provision: %v", err)
 	}

@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -9,10 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
-
-	"github.com/hanzoai/iam/internal/mfa/factor"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // ITEM 4: TakeChallenge burns a login challenge exactly once. A captured MFA passcode
@@ -25,7 +22,7 @@ func TestTakeChallenge_concurrentBurn_exactlyOneWinner(t *testing.T) {
 	ctx := tctx()
 	now := time.Now()
 
-	id, err := MintChallenge(ctx, db, KindMfa, "hanzo/alice", "", []string{factor.App}, now)
+	id, err := MintChallenge(ctx, db, KindMfa, "hanzo/alice", "", now)
 	if err != nil {
 		t.Fatalf("mint challenge: %v", err)
 	}

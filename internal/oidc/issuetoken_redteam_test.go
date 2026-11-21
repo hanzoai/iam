@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -9,7 +8,7 @@ import (
 
 	"github.com/hanzoai/orm"
 
-	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
 // Red-team helpers + the field-preservation guard for the on-behalf-of primitives.
@@ -45,7 +44,7 @@ func seedAttackerApp(t *testing.T, db orm.DB, owner, name, clientID, secret, pla
 // bits. updateUser reads the FULL row fresh under a row lock and mutates only
 // AccessKey/UpdatedTime, so every field the handler didn't touch is preserved.
 func TestRedTeam_mintKeys_preservesPasswordHashAndIsAdmin(t *testing.T) {
-	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
+	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 
@@ -59,7 +58,7 @@ func TestRedTeam_mintKeys_preservesPasswordHashAndIsAdmin(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	if resp, body := do(t, app, keyReq("POST", userKeys("hanzo/carol"), "hanzo-console", "top-secret", "")); resp.StatusCode != 200 {
+	if resp, body := do(t, app, keyReq(PathMintUserKeys, "hanzo-console", "top-secret", "?id=hanzo/carol")); resp.StatusCode != 200 {
 		t.Fatalf("mint status=%d body=%s", resp.StatusCode, body)
 	}
 

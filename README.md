@@ -2,7 +2,7 @@
 
 **Identity & access for the Hanzo cloud — OpenID Connect / OAuth2 with PKCE, standards only.**
 
-![Go 1.26](https://img.shields.io/badge/Go-1.26-00ADD8) ![Standards](https://img.shields.io/badge/standards-OIDC%20%C2%B7%20OAuth2%20%C2%B7%20SCIM%202.0-informational) ![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)
+![Go 1.26](https://img.shields.io/badge/Go-1.26-00ADD8) ![Standards](https://img.shields.io/badge/standards-OIDC%20%C2%B7%20OAuth2%20%C2%B7%20SCIM%202.0-informational) ![License](https://img.shields.io/badge/license-proprietary-lightgrey)
 
 Hanzo IAM is the identity service behind every Hanzo sign-in: OpenID Connect
 discovery, the authorize + token endpoints (authorization code + PKCE, refresh,
@@ -11,9 +11,9 @@ provisioning, MFA / WebAuthn, service accounts, and social federation
 (Google, GitHub).
 
 It is a **clean-room, native rewrite** on the Hanzo stack — `zip` over
-`hanzoai/orm`, **no the legacy surface, no Beego, no xorm**. The identity binary owns its
+`hanzoai/orm`, **no Casdoor, no Beego, no xorm**. The identity binary owns its
 source outright and collapses to one way of doing each thing. The retired
-the legacy surface/Beego fork lives at
+Casdoor/Beego fork lives at
 [`hanzoai/iam-v1`](https://github.com/hanzoai/iam-v1) and is out of every graph.
 
 Clients never hand-roll OAuth. They authenticate through the **`@hanzo/iam`
@@ -32,7 +32,7 @@ SDK** against the endpoints below — one way, no legacy paths (HIP-0111).
 
 ## Endpoints — RFC / OIDC standard (no `/api/`, no vendor verbs)
 
-The HTTP contract is RFC/OpenID-standard only. There are no legacy verb aliases
+The HTTP contract is RFC/OpenID-standard only. There are no Casdoor verb aliases
 (`get-users`, `add-user`, `issue-user-token`, …) and no `/api/` prefix — `/v1/`
 throughout. Paths are relative to the brand `serverUrl`.
 
@@ -86,15 +86,12 @@ go run . version
 
 `serve` flags: `--store` (`sqlite|sql|datastore`), `--db` (SQLite path),
 `--zap` (ZAP listen), `--http` (HTTP edge), `--init-data` (new-only seed;
-`${VAR}` expands from env). Deploy env: `IAM_ISSUER=https://<brand-id>`;
-the on-behalf-of (token-exchange) allow-lists `IAM_TOKEN_EXCHANGE_APPS` and
-`IAM_ADMIN_TOKEN_EXCHANGE_APPS`, matched by the globally-unique `client_id`;
-and the credential-administration capability `IAM_KEY_MINT_ALLOWED_APPS`,
-matched by application name (distinct from token exchange, so exchanging tokens
-does not grant the capability).
+`${VAR}` expands from env). Deploy env: `IAM_ISSUER=https://<brand-id>`,
+`IAM_KEY_MINT_ALLOWED_APPS`, `IAM_ADMIN_MINT_ALLOWED_APPS` (matched by the
+globally-unique `client_id`).
 
 The service is embeddable via `server.Route` and builds on Hanzo CI
-(`ghcr.io/hanzoai/iam`).
+(`ghcr.io/hanzoai/iam2`).
 
 ## Client auth (HIP-0111)
 
@@ -117,7 +114,7 @@ table.
 
 ## License
 
-Dual-licensed under [MIT](./LICENSE-MIT) or [Apache-2.0](./LICENSE-APACHE) at your option, as the OSS core tier of HIP-0130.
+Proprietary — see [LICENSE](./LICENSE). Confidential to Hanzo AI, Inc.
 
 ## Hanzo — the Open AI Cloud
 

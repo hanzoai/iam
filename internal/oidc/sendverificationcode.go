@@ -1,42 +1,55 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
 import (
-	"errors"
+	"context"
+	"crypto/rand"
+	"fmt"
+	"math/big"
 	"strings"
+	"time"
 
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/cred"
 	"github.com/hanzoai/iam/internal/httpx"
-	"github.com/hanzoai/iam/internal/otp"
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
-// The native OTP send: POST /v1/iam/verification-codes. It mirrors
-// the v1 the legacy surface SendVerificationCode contract (controllers/verification.go): the
+// The native front-door OTP send: POST /v1/iam/send-verification-code. It mirrors
+// the v1 Casdoor SendVerificationCode contract (controllers/verification.go): the
 // request is multipart/form-data (NOT JSON — a HIP-0111 §4 invariant), and the
 // response is the casibase {status,msg,data} envelope with an empty data on
 // success.
 //
-// This is an ENDPOINT, not the code itself: validating who may ask, and for which
-// application, is all it does. Minting, wording, filing, delivering and spending a
-// code live in internal/otp, which the second-factor challenge calls too — so a code
-// sent from here and a code sent by a challenge are the same artifact, filed under
-// the same key, and either one verifies wherever the other would.
+// This endpoint owns the code-generation + persistence + validation surface. The
+// actual email/SMS DELIVERY is a separate concern owned by hanzoai/notify (v1
+// calls object.SendVerificationCodeToEmail/…Phone, which forwards to notify over
+// ZAP). notify is not bound into iam2 yet, so this endpoint persists a verifiable
+// code and returns {status:"ok"} honestly — it does NOT fabricate a "sent" claim.
+// Delivery plugs in at the marked seam below with no shape change.
 
-// PathVerificationCodes (canonical.go) is the native OTP-send endpoint.
+// PathSendVerificationCode is the canonical front-door OTP-send endpoint.
+const PathSendVerificationCode = "/v1/iam/send-verification-code"
 
-// sendVerificationCode validates the request and asks otp to get a code to the
-// person. The request fields are read via fiber's FormValue — the escape hatch zip
-// exposes for form bodies (multipart or urlencoded) — since the typed JSON Bind does
-// not apply here. v1 also accepts countryCode/method/checkUser/captchaType; iam
-// ignores them (the captcha/forget/MFA flows those drive are not ported), and
-// CAPTCHA verification is likewise not enforced — iam models no captcha provider —
-// so the code is issued once the destination and application validate.
+// verificationCodeLength is the OTP digit count (v1 getRandomCode(6)).
+const verificationCodeLength = 6
+
+// verificationCodeTTL bounds how long a sent code stays redeemable (v1's
+// verificationCodeTimeout default, 10 minutes).
+const verificationCodeTTL = 10 * time.Minute
+
+// sendVerificationCode validates the request, mints + persists an OTP, and
+// reports success. The request fields are read via fiber's FormValue — the
+// escape hatch zip exposes for form bodies (multipart or urlencoded) — since the
+// typed JSON Bind does not apply here. v1 also accepts countryCode/method/
+// checkUser/captchaType; iam2 ignores them (the captcha/forget/MFA flows those
+// drive are not ported), and CAPTCHA verification is likewise not enforced —
+// iam2 models no captcha provider — so the code is issued once the destination
+// and application validate.
 func sendVerificationCode(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
@@ -74,61 +87,93 @@ func sendVerificationCode(db orm.DB) zip.Handler {
 			return httpx.Err(c, "the organization does not exist")
 		}
 
-		// Validate the destination by type and resolve the account it belongs to. The
-		// resolved account is what BINDS the code — otp.Consume refuses a record minted
-		// for anybody else — so this is credential material, not metadata. A number is
-		// accepted as typed: otp.Receiver files it under its digits, so the punctuation
-		// somebody used here cannot decide whether the code verifies later.
+		// Validate the destination by type and, for email, resolve the target user
+		// (metadata on the record). Phone user-resolution + E.164 normalization need
+		// a phone library iam2 does not carry yet — the record still persists.
 		var user *schema.User
 		switch typ {
-		case otp.Email:
+		case "email":
 			if !isEmailValid(dest) {
 				return httpx.Err(c, "email is invalid")
 			}
-			// An ambiguous address is treated as NO USER, not reported. This endpoint
-			// is unauthenticated too, so echoing the resolver would tell a stranger
-			// which addresses exist — and the endpoint below already handles a nil
-			// user without saying whether one was found.
 			if user, err = store.GetUserByEmail(ctx, db, org.Name, dest); err != nil {
-				if !errors.Is(err, store.ErrEmailAmbiguous) {
-					return httpx.Err(c, "verification code cannot be sent")
-				}
-				user = nil
-			}
-			// An account this application founded an org for is not in the
-			// application's own org. Its own application still knows it, and this
-			// endpoint and the sign-in that authenticates the same address must not
-			// disagree about who it names — otherwise a code is minted for nobody
-			// and the person is told nothing.
-			if user == nil {
-				if user, err = store.GetSignupByEmail(ctx, db, app.Name, dest); err != nil {
-					if !errors.Is(err, store.ErrEmailAmbiguous) {
-						return httpx.Err(c, "verification code cannot be sent")
-					}
-					user = nil
-				}
-			}
-		case otp.Phone:
-			// GetUserByPhone normalizes its argument and refuses to pick between two rows
-			// carrying one number (ErrPhoneAmbiguous). Returned, not swallowed: a code we
-			// cannot attribute to one account must not be minted, because the binding is
-			// what makes it a credential. Without resolving here the SMS arm filed records
-			// that named nobody and could therefore be spent by nobody.
-			if user, err = store.GetUserByPhone(ctx, db, org.Name, dest); err != nil {
 				return httpx.Err(c, err.Error())
 			}
+		case "phone":
+			// dest is required (checked above); accepted as-is.
 		default:
 			return httpx.Err(c, "unsupported verification type: "+typ)
 		}
 
-		if err := otp.Issue(ctx, db, org.Name, dest, fc.IP(), user, nowFunc()); err != nil {
-			// Report the real outcome. Answering ok because the code was minted would be
-			// the same lie one layer down: the send is what the caller asked for.
-			if errors.Is(err, otp.ErrNoDelivery) || errors.Is(err, otp.ErrTooSoon) {
-				return httpx.Err(c, err.Error())
-			}
-			return httpx.Err(c, "verification code could not be delivered: "+err.Error())
+		code, err := generateCode(verificationCodeLength)
+		if err != nil {
+			return httpx.Err(c, "failed to generate verification code")
 		}
+		id, err := newOpaqueToken()
+		if err != nil {
+			return httpx.Err(c, "failed to generate verification record id")
+		}
+		rec := &schema.VerificationRecord{
+			Owner:       org.Name,
+			Name:        id,
+			CreatedTime: nowFunc().UTC().Format(time.RFC3339),
+			RemoteAddr:  fc.IP(),
+			Type:        typ,
+			Receiver:    dest,
+			Code:        code,
+			Provider:    "demo",
+			Time:        nowFunc().Unix(),
+			IsUsed:      false,
+		}
+		if user != nil {
+			rec.User = user.Owner + "/" + user.Name
+		}
+		if err := store.AddVerificationRecord(ctx, db, rec); err != nil {
+			return httpx.Err(c, err.Error())
+		}
+
+		// --- DELIVERY SEAM ---------------------------------------------------
+		// v1 hands (org, user, dest, code) to hanzoai/notify here
+		// (object.SendVerificationCodeToEmail / …ToPhone). notify owns the
+		// per-tenant SendGrid/SMTP/Resend/Twilio provider + template. It is not
+		// bound into iam2 yet; when it is, the send call slots in exactly here and
+		// the persisted record above stays the source of truth for verification.
+		// ---------------------------------------------------------------------
+
 		return httpx.Ok(c, nil)
 	}
+}
+
+// generateCode returns an n-digit numeric OTP drawn from crypto/rand, uniformly
+// (no modulo bias) and zero-padded to a fixed width.
+func generateCode(n int) (string, error) {
+	max := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(n)), nil)
+	k, err := rand.Int(rand.Reader, max)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%0*d", n, k), nil
+}
+
+// CheckVerificationCode reports whether code matches the latest unused,
+// unexpired verification record sent to receiver — the check side of the OTP
+// surface, which the signup email/phone gate calls ahead of account creation at
+// cutover. The compare is constant-time; an expired or absent record fails
+// closed. It does NOT consume the record (the caller marks it used on the flow
+// it gates).
+func CheckVerificationCode(ctx context.Context, db orm.DB, receiver, code string) (bool, error) {
+	if receiver == "" || code == "" {
+		return false, nil
+	}
+	rec, err := store.GetLatestVerificationRecord(ctx, db, receiver)
+	if err != nil {
+		return false, err
+	}
+	if rec == nil {
+		return false, nil
+	}
+	if nowFunc().Unix()-rec.Time > int64(verificationCodeTTL/time.Second) {
+		return false, nil
+	}
+	return cred.ConstantTimeEqual(rec.Code, code), nil
 }

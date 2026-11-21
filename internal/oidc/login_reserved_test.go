@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -8,7 +7,7 @@ import (
 )
 
 // F-D2 login tail (F-D1): the reserved-org gate at the login mint tail. signup.go and
-// the ROPC grant already refuse a reserved-org principal; login.go was the one endpoint
+// the ROPC grant already refuse a reserved-org principal; login.go was the one door
 // that omitted it. A SuperAdmin (org "admin") may sign in ONLY through an application
 // that itself SERVES the admin org — never a shared / org-choice app reaching across
 // tenants, which would otherwise mint a real SuperAdmin authorization code on the

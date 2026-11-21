@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 // Package serviceaccounts serves the agent/bot identity surface at
 // /v1/iam/service-accounts — create an identity and mint its first key, list an
@@ -28,19 +27,16 @@ package serviceaccounts
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 
-	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/authz"
+	"github.com/hanzoai/iam/internal/cred"
 	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/keys"
-	"github.com/hanzoai/iam/internal/principal"
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
 // Paths — the verb face the live consumers call (team's bot member sync reads
@@ -58,45 +54,12 @@ const serviceAccount = "service-account"
 // unauthorized is v1's refusal message, verbatim.
 const unauthorized = "auth:Unauthorized operation"
 
-//go:generate go run github.com/zap-proto/zip/cmd/zipdoc
-
 // Route registers the service-account surface on app, backed by db.
-//
-// The LIST is a typed op — so it is in the OpenAPI document, the SDKs, the CLI
-// and the MCP tool list, which a raw handler is in none of. The three credential
-// writes stay raw, deliberately: a typed op also passes through the op-invoke
-// authorizer (authz.Authorize), and routing a write through it would authorize
-// the decoded (Owner, Name) — which these bodies do not carry — instead of the
-// admin() gate each already applies. That is a change to WHO may mint, so it is
-// a decision, not a projection.
-//
-// The read reaches that authorizer and is admitted, by construction: it admits a
-// GET whose decoded input names no owner, and `query` declares no Owner field and
-// no AuthzTarget() for it to read. The tenant gate is unmoved — read() on the
-// ?organization= the handler itself binds, exactly as before.
-//
-// A refusal is a VALUE here (httpx.Bad), never a returned error: an error renders
-// zip's {"status":<int>,"error":…} instead of this surface's envelope.
 func Route(app *zip.App, db orm.DB) {
-	zip.Get[query, httpx.Answer](app, Path, list(db),
-		zip.WithStatus(200, 400),
-		zip.WithTags("service-accounts"))
+	app.Get(Path, list(db))
 	app.Post(Path, create(db))
 	app.Post(PathKeys, rotate(db))
 	app.Delete(PathOne, revoke(db))
-}
-
-// query is the list request: the organization to enumerate, and optionally which
-// page of it.
-type query struct {
-	// Organization is the organization whose service accounts to list. Required.
-	Organization string `json:"organization"`
-	// P is the 1-indexed page to return. Paging takes both p and pageSize —
-	// leave either out, or send something that is not a number, and the whole
-	// list comes back.
-	P int `json:"p"`
-	// Size is how many accounts a page holds.
-	Size int `json:"pageSize"`
 }
 
 // request is the create body: the owning org, the agent handle (bare or already
@@ -119,12 +82,8 @@ type minted struct {
 	AccessSecret string `json:"accessSecret"`
 }
 
-// create makes a service account — an identity for a program rather than a
-// person, for a script, a bot or a deployment that has to authenticate on its
-// own.
-//
-// It comes back with its first key, and the secret half is shown ONCE, here.
-// There is no way to read it again; if you lose it, rotate.
+// create serves POST /v1/iam/service-accounts: provision the identity and mint
+// its first key, returning the raw secret exactly once.
 func create(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		var in request
@@ -134,7 +93,7 @@ func create(db orm.DB) zip.Handler {
 		if in.Organization == "" {
 			return httpx.Err(c, "organization is required")
 		}
-		p, ok := principal.From(c.Context())
+		p, ok := authz.From(c.Context())
 		if !ok || !admin(p, in.Organization) {
 			return httpx.Err(c, unauthorized)
 		}
@@ -164,7 +123,7 @@ func create(db orm.DB) zip.Handler {
 		// would change the M2M subject shape, so it is deferred to a deliberate migration
 		// rather than folded into this security rework.
 		sa.SetId(in.Organization + "/" + name)
-		key, secret, err := mint(ctx, db, sa)
+		key, secret, err := mint(sa)
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
@@ -178,37 +137,30 @@ func create(db orm.DB) zip.Handler {
 	}
 }
 
-// list returns your organization's service accounts — what each is called and
-// when it was created. Never their secrets: a key's secret half exists in a
-// response exactly once, when it is minted. Paginated in memory over the already org-scoped
+// list serves GET /v1/iam/service-accounts?organization=<org>: names and
+// metadata, never secrets. Paginated in memory over the already org-scoped
 // slice — the set per org is small, so a dedicated count query is overkill
 // (v1 service_account.go:296-307).
-func list(db orm.DB) zip.TypedHandler[query, httpx.Answer] {
-	return func(ctx context.Context, in *query) (*httpx.Answer, error) {
-		if in.Organization == "" {
-			return httpx.Bad(400, "organization is required", ""), nil
+func list(db orm.DB) zip.Handler {
+	return func(c *zip.Ctx) error {
+		org := c.Query("organization")
+		if org == "" {
+			return httpx.Err(c, "organization is required")
 		}
-		p, ok := principal.From(ctx)
-		if !ok || !read(p, in.Organization) {
-			return httpx.Bad(400, unauthorized, ""), nil
+		p, ok := authz.From(c.Context())
+		if !ok || !read(p, org) {
+			return httpx.Err(c, unauthorized)
 		}
 		all, err := orm.TypedQuery[schema.User](db).
-			Filter("Owner=", in.Organization).Filter("Type=", serviceAccount).Order("Name").GetAll(ctx)
+			Filter("Owner=", org).Filter("Type=", serviceAccount).Order("Name").GetAll(c.Context())
 		if err != nil {
-			return httpx.Bad(400, err.Error(), ""), nil
+			return httpx.Err(c, err.Error())
 		}
-		// schema.Mask, not a list of columns kept here: an entity says which of its
-		// own fields are secret, and this listing reaches ACROSS tenants — a
-		// mint-capable app lists the accounts of the org it administers — so every
-		// field it emits is one tenant's row handed to another. A second copy of that
-		// list drifts in the direction that leaks, because a secret added to Mask is
-		// one the copy has never heard of.
-		for i, sa := range all {
-			all[i] = sa.Mask()
+		for _, sa := range all {
+			redact(sa)
 		}
-		// data2 is the TOTAL, not the page length — v1's contract, so a caller
-		// paging through knows how far it has to go.
-		return httpx.Good(paginate(all, in.P, in.Size), len(all)), nil
+		page := paginate(all, atoi(c.Query("p")), atoi(c.Query("pageSize")))
+		return c.JSON(200, httpx.Response{Status: "ok", Data: page, Data2: len(all)})
 	}
 }
 
@@ -220,7 +172,7 @@ func rotate(db orm.DB) zip.Handler {
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
-		key, secret, err := mint(c.Context(), db, sa)
+		key, secret, err := mint(sa)
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
@@ -238,14 +190,6 @@ func revoke(db orm.DB) zip.Handler {
 		if err != nil {
 			return httpx.Err(c, err.Error())
 		}
-		// Off every roster first, then gone — the same order and the same reason
-		// as a person's delete (internal/users): a revoked service account that
-		// keeps its membership rows stays in the org's member list as a principal
-		// that may act, and once the row is deleted no caller can be told the
-		// cleanup failed.
-		if _, err := store.ForgetUser(c.Context(), db, sa.Owner+"/"+sa.Name); err != nil {
-			return httpx.Err(c, err.Error())
-		}
 		if err := sa.DeleteCtx(c.Context()); err != nil {
 			return httpx.Err(c, err.Error())
 		}
@@ -253,31 +197,15 @@ func revoke(db orm.DB) zip.Handler {
 	}
 }
 
-// load resolves the :name service account within its organization and authorizes
-// the caller for MUTATION — the shared preamble of rotate and delete, so neither
-// can reach a row the admin gate did not clear.
-//
-// The organization arrives as ?organization=, or in the body under the same
-// name. Both spellings carry the same value, and the body is read only when the
-// query is absent, so nothing that works today changes.
-//
-// The body form is what makes these two callable at all from a generated
-// client. Every one of them is built from this service's own OpenAPI, and a
-// query parameter reaches that document only from a TYPED handler's input
-// struct — `list` declares one and gets `--organization`; rotate and revoke read
-// the query straight off the context, so the document says their only parameter
-// is the path, the generated flag never exists, and the call comes back
-// "organization and name are required" with no way to supply it. `create`
-// already takes the org in its body and has always worked for that reason.
+// load resolves the :name service account within the ?organization= org and
+// authorizes the caller for MUTATION — the shared preamble of rotate and delete,
+// so neither can reach a row the admin gate did not clear.
 func load(c *zip.Ctx, db orm.DB) (*schema.User, error) {
 	org, name := c.Query("organization"), c.Param("name")
-	if org == "" {
-		org = orgFromBody(c.Body())
-	}
 	if org == "" || name == "" {
 		return nil, zip.ErrBadRequest("organization and name are required")
 	}
-	p, ok := principal.From(c.Context())
+	p, ok := authz.From(c.Context())
 	if !ok || !admin(p, org) {
 		return nil, zip.ErrForbidden(unauthorized)
 	}
@@ -291,57 +219,19 @@ func load(c *zip.Ctx, db orm.DB) (*schema.User, error) {
 	return sa, nil
 }
 
-// orgFromBody reads the organization out of a JSON request body, and answers ""
-// for anything it cannot — no body, not an object, no such field. A malformed
-// body is not an error here: the caller is then simply one that supplied no
-// organization, which load already has an answer for.
-func orgFromBody(body []byte) string {
-	if len(body) == 0 {
-		return ""
-	}
-	var in struct {
-		Organization string `json:"organization"`
-	}
-	if err := json.Unmarshal(body, &in); err != nil {
-		return ""
-	}
-	return in.Organization
-}
-
 // admin is the gate for every credential MUTATION — create, rotate, revoke
 // (v1 authorizeServiceAccountAdmin + serviceAccountHumanAdminAllowed). A
 // confidential client must hold the mint capability; a human must be a
 // SuperAdmin or an admin of the target org itself, so a tenant admin can never
 // provision an identity in another tenant.
-//
-// A RESERVED SYSTEM ORG IS NOT A TENANT, and the mint capability does not reach
-// one. policy.IsReservedOrg is the same predicate signup, onboarding, federated
-// provisioning and membership grants already consult, composed the same way
-// memberships.mayGrant composes it — reserved unless the caller is a SuperAdmin —
-// so the set of orgs a customer-driven flow may never land a principal in is
-// stated once, and this surface states it with them.
-//
-// The clause is load-bearing here specifically: create takes the target org from
-// the request BODY, and a principal's home org is part of its platform authority
-// (authz resolves Principal.Sudo from memberOf(policy.AdminOrg), which answers
-// home-or-membership). A minted row is therefore an identity with whatever the
-// named org confers, so the org a mint may name has to be a tenant.
-//
-// The capability is unbound by org for a reason (an orchestrator provisions for
-// every tenant), so the binding that matters is not which tenant but whether the
-// target is a tenant at all. A human SuperAdmin keeps the ability, because that
-// is already the authority the reserved org denotes.
-func admin(p *principal.Principal, org string) bool {
+func admin(p *authz.Principal, org string) bool {
 	if p == nil || org == "" {
 		return false
 	}
-	if policy.IsReservedOrg(org) && !p.Sudo {
-		return false
+	if p.App != "" {
+		return authz.Allowed(p, authz.CapKeyMint)
 	}
-	if p.App != nil {
-		return p.Holds(policy.CapKeyMint, authz.Env)
-	}
-	return p.Sudo || (p.Admin && p.Org == org)
+	return p.Super || (p.Admin && p.Org == org)
 }
 
 // read is the gate for the LIST surface, which returns names and metadata only
@@ -354,15 +244,15 @@ func admin(p *principal.Principal, org string) bool {
 //     app's own <org>-<app> name binds it to. Both conditions are required, so a
 //     leaked reader credential can enumerate one tenant's bot names and nothing
 //     else — and can never mint, rotate, or delete, which stay on admin.
-func read(p *principal.Principal, org string) bool {
+func read(p *authz.Principal, org string) bool {
 	if p == nil || org == "" {
 		return false
 	}
-	if p.App != nil {
-		return p.Holds(policy.CapKeyMint, authz.Env) ||
-			(p.Holds(policy.CapServiceAccountRead, authz.Env) && p.BoundTo(org))
+	if p.App != "" {
+		return authz.Allowed(p, authz.CapKeyMint) ||
+			(authz.Allowed(p, authz.CapServiceAccountRead) && authz.BoundToOrg(p, org))
 	}
-	return p.Sudo || (p.Admin && p.Org == org)
+	return p.Super || (p.Admin && p.Org == org)
 }
 
 // mint (re)generates the identity's credential: a fresh pk- access key (the
@@ -371,33 +261,18 @@ func read(p *principal.Principal, org string) bool {
 // persists. The raw secret is returned to the caller and never written.
 //
 // pk- for the handle, sk- for the secret: the prefix is what tells a reader which
-// half they are holding. Minting both under one prefix erases that distinction.
-// mint issues this service account's credential and writes it where credentials
-// are RESOLVED — a schema.Key row keyed to the account, the same row every other
-// key in the estate lives in.
-//
-// The credential lives ONLY in the schema.Key row, never on the User row.
-// store.UserByAccessKey resolves an sk- through schema.Key, and nothing calls
-// cred.Verify against a User's AccessSecretHash — so a credential written there
-// could never authenticate, answering "API key is not recognized" on every call.
-// Any such field on the User row is cleared here rather than set: a second
-// credential home no resolver reads is a dead end that looks like a safety
-// measure.
-//
-// The secret is stored as its digest (schema.DigestSecret) and returned once, so
-// the row holds nothing replayable.
-func mint(ctx context.Context, db orm.DB, sa *schema.User) (key, secret string, err error) {
-	// A rotate REPLACES: keys.MintAccountKey names the row deterministically, so
-	// the new credential lands where the last one was and the previous secret stops
-	// resolving the moment this one is written. Two live secrets for one identity
-	// is how a revoked key keeps working. Signup credentials its tenant's first
-	// account through the same call, so the two cannot name different rows.
-	key, secret, err = keys.MintAccountKey(ctx, db, sa.Owner, sa.Name)
+// half they are holding. Minting both as `hk-` erased that distinction.
+func mint(sa *schema.User) (key, secret string, err error) {
+	key, secret = keys.Mint("pk", ""), keys.Mint("sk", "")
+	hash, err := cred.Hash(secret)
 	if err != nil {
-		return "", "", zip.ErrInternal("store service account key: " + err.Error())
+		return "", "", zip.ErrInternal("hash service account secret: " + err.Error())
 	}
-	// The User row holds no credential material at all. See the note above.
-	sa.AccessKey, sa.AccessSecret, sa.AccessSecretHash = "", "", ""
+	// The access key is a public lookup handle, not a secret, so it is stored
+	// verbatim; only its secret sibling is digested.
+	sa.AccessKey = key
+	sa.AccessSecretHash = hash
+	sa.AccessSecret = "" // never persist the plaintext, and clear any legacy one
 	return key, secret, nil
 }
 
@@ -406,25 +281,16 @@ func mint(ctx context.Context, db orm.DB, sa *schema.User) (key, secret string, 
 // the result is not a well-formed handle, so a malformed name is refused at the
 // boundary rather than persisted.
 func canonical(org, name string) string {
-	// A service account is a user row, so its name is a USERNAME first — charset,
-	// case and length come from schema.Username, the one place they are decided.
-	// This file used to re-enumerate the charset itself, which is how a service
-	// account could hold a name no human account could.
-	full, err := schema.Username(name)
-	if err != nil {
+	if name == "" {
 		return ""
 	}
-	if !boundTo(org, full) {
-		// Re-checked after prefixing: binding can push a legal agent name past the
-		// length bound, and the BOUND name is what gets stored.
-		if full, err = schema.Username(org + "-" + full); err != nil {
-			return ""
-		}
+	if !boundTo(org, name) {
+		name = org + "-" + name
 	}
-	if !segmented(full) {
+	if !valid(name) {
 		return ""
 	}
-	return full
+	return name
 }
 
 // boundTo reports whether name already carries the "<org>-" prefix with a
@@ -434,18 +300,21 @@ func boundTo(org, name string) bool {
 	return len(name) > len(prefix) && strings.HasPrefix(name, prefix)
 }
 
-// segmented reports whether name's separators are single and interior — the one
-// thing a service-account handle asks for BEYOND being a valid username, which
-// schema.Username has already established (so a leading separator is impossible
-// here and is not re-checked). `<org>-<agent>` is a two-segment structure that
-// gets read back apart, so a trailing or doubled separator would name an empty
-// segment.
-func segmented(name string) bool {
-	if name == "" || sep(rune(name[len(name)-1])) {
+// valid reports whether name is a well-formed handle: alphanumerics with single
+// -/_/. separators between segments, never leading, trailing, or doubled. A
+// handle is an identity, so anything else is refused rather than normalized.
+func valid(name string) bool {
+	if name == "" || sep(rune(name[0])) || sep(rune(name[len(name)-1])) {
 		return false
 	}
-	for i := 1; i < len(name); i++ {
-		if sep(rune(name[i])) && sep(rune(name[i-1])) {
+	for i, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case sep(r):
+			if i > 0 && sep(rune(name[i-1])) {
+				return false // doubled separator
+			}
+		default:
 			return false
 		}
 	}
@@ -469,6 +338,17 @@ func find(ctx context.Context, db orm.DB, owner, name string) (*schema.User, err
 	return u, nil
 }
 
+// redact strips every credential field before an identity is listed. The secret
+// exists only as a digest, and even that never leaves: a list is names and
+// metadata (v1 masks the same three columns).
+func redact(sa *schema.User) {
+	sa.AccessKey = ""
+	sa.AccessSecret = ""
+	sa.AccessSecretHash = ""
+	sa.PasswordHash = ""
+	sa.PasswordSalt = ""
+}
+
 // paginate returns the 1-indexed page of size n, clamped to the slice. Absent
 // paging (either value unset) returns everything, matching v1.
 func paginate(all []*schema.User, page, size int) []*schema.User {
@@ -484,4 +364,16 @@ func paginate(all []*schema.User, page, size int) []*schema.User {
 		end = len(all)
 	}
 	return all[start:end]
+}
+
+// atoi parses a non-negative paging parameter; anything else is 0 ("unset").
+func atoi(s string) int {
+	n := 0
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return 0
+		}
+		n = n*10 + int(r-'0')
+	}
+	return n
 }

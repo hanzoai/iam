@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -10,7 +9,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/hanzoai/orm"
 
-	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // Token verification is a pure reduction of a signed value: read the `kid`,
@@ -38,33 +37,6 @@ func VerifyToken(ctx context.Context, db orm.DB, tokenStr string) (*Claims, erro
 // the token's kid, and returns the validated claims. It fails closed on an
 // unknown kid, a disallowed algorithm, a bad signature, or an expired token.
 func verifyToken(ctx context.Context, db orm.DB, tokenStr string) (*Claims, error) {
-	return parseToken(ctx, db, tokenStr)
-}
-
-// verifyHint verifies an id_token_hint: the SAME signature check, the SAME
-// closed algorithm allowlist and the SAME trusted-kid resolution as any bearer,
-// with the expiry deliberately not enforced.
-//
-// A hint is not a credential and grants nothing — it only NARROWS what the
-// caller may receive, by naming the person the client believes is signed in. And
-// it is expired by construction: a relying party sends its LAST id_token to ask
-// "is this same person still signed in?", which is a question one asks precisely
-// when the token has run out (OIDC Core §3.1.2.1 asks authorization servers to
-// accept it anyway). Refusing the expired hint would not be strict, it would be
-// backwards: the hint would be dropped, the check it exists to perform would not
-// run, and the client would silently receive a grant for whoever else happened
-// to be signed in on that browser.
-//
-// The signature is still mandatory, so nobody can invent a hint.
-func verifyHint(ctx context.Context, db orm.DB, tokenStr string) (*Claims, error) {
-	return parseToken(ctx, db, tokenStr, jwt.WithoutClaimsValidation())
-}
-
-// parseToken is the one verification path: trusted-kid key resolution, a closed
-// algorithm allowlist, and the caller's choice of claim validation. The only
-// thing any caller may vary is `extra` — never the key lookup, never the
-// allowlist.
-func parseToken(ctx context.Context, db orm.DB, tokenStr string, extra ...jwt.ParserOption) (*Claims, error) {
 	claims := &Claims{}
 	keyFunc := func(t *jwt.Token) (any, error) {
 		kid, _ := t.Header["kid"].(string)
@@ -86,11 +58,10 @@ func parseToken(ctx context.Context, db orm.DB, tokenStr string, extra ...jwt.Pa
 		}
 		return pub, nil
 	}
-	opts := append([]jwt.ParserOption{
+	if _, err := jwt.ParseWithClaims(tokenStr, claims, keyFunc,
 		jwt.WithValidMethods(acceptedAlgs),
 		jwt.WithTimeFunc(nowFunc),
-	}, extra...)
-	if _, err := jwt.ParseWithClaims(tokenStr, claims, keyFunc, opts...); err != nil {
+	); err != nil {
 		return nil, err
 	}
 	return claims, nil

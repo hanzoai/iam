@@ -1,12 +1,10 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 // Package registry serves the Docker Registry v2 token endpoint the self-hosted
-// OCI registry (registry:2 at oci.hanzo.ai) authenticates docker push/pull
+// OCI registry (registry:2 at registry.hanzo.ai) authenticates docker push/pull
 // against. registry:2 is configured with
 //
-//	REGISTRY_AUTH_TOKEN_REALM = https://hanzo.id/v1/iam/registry/token
-//	REGISTRY_AUTH_TOKEN_SERVICE = oci.hanzo.ai  (the `aud` a token must carry)
+//	REGISTRY_AUTH_TOKEN_REALM = https://iam.hanzo.ai/v1/iam/registry/token
 //	REGISTRY_AUTH_TOKEN_ROOTCERTBUNDLE = <the registry signing key's public half>
 //
 // and verifies every token against the JWKS this package publishes at
@@ -25,7 +23,7 @@
 //   - a user password (resolved within the NON-RESERVED candidateOrgs — a reserved-
 //     org/SuperAdmin password is not a registry credential; see userByPassword —
 //     verified through the SAME lockout choke point login uses),
-//   - a Hanzo SECRET API key (sk-, resolved via store.UserByAccessKey — which
+//   - a Hanzo SECRET API key (hk-/sk-, resolved via store.UserByAccessKey — which
 //     resolves the key's OWNER, any org — then gated; a public pk- is write-only and
 //     authenticates nothing here),
 //   - a confidential application's clientId:clientSecret (store.GetApplicationBy
@@ -41,7 +39,7 @@
 // a silent grant.
 //
 // POLICY (owner decision, deliberately preserved — do NOT silently change):
-// "any authenticated identity may `pull` any repository" is the EXISTING the legacy surface
+// "any authenticated identity may `pull` any repository" is the EXISTING Casdoor
 // (iam-v1) behavior this port reproduces so the identity cutover is pure parity,
 // not a policy shift — BUT "authenticated" is now bounded to candidateOrgs, so a
 // foreign tenant can neither push nor pull. Pulls remain NOT per-repo-org-scoped
@@ -56,19 +54,17 @@ import (
 	"context"
 	"crypto/subtle"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
-	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	"github.com/valyala/fasthttp"
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/httpx"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 	"github.com/hanzoai/iam/internal/users"
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
 )
 
 // Canonical routes. There is one shape per endpoint; anything else is 404.
@@ -76,35 +72,6 @@ const (
 	PathToken = "/v1/iam/registry/token"
 	PathJWKS  = "/v1/iam/registry/jwks"
 )
-
-// envService names the registry these tokens are for. It is the `aud` every
-// minted token carries, and the realm every challenge quotes.
-const envService = "REGISTRY_AUTH_TOKEN_SERVICE"
-
-// defaultService is the one registry this realm serves. There is exactly one;
-// the env exists so a second deployment can name its own rather than so this
-// one can be reconfigured.
-const defaultService = "oci.hanzo.ai"
-
-// audience answers which registry a token may be minted for, and it is the ONLY
-// source of that string — never the request.
-//
-// A caller asking for a different service is asking us to sign a token an
-// unrelated verifier would accept, and every verifier trusting our JWKS reads
-// `aud` to decide whether a token is addressed to it. So a mismatch is refused
-// rather than honoured: the requested value is compared, never copied. An absent
-// `service` is not a mismatch — some clients omit it, and there is only one
-// answer it could have meant.
-func audience(requested string) (string, bool) {
-	ours := strings.TrimSpace(os.Getenv(envService))
-	if ours == "" {
-		ours = defaultService
-	}
-	requested = strings.TrimSpace(requested)
-	return ours, requested == "" || requested == ours
-}
-
-//go:generate go run github.com/zap-proto/zip/cmd/zipdoc
 
 // Route registers the registry token + JWKS endpoints on r (the PUBLIC group),
 // backed by db and the process signing keyring. Called once from routes.Route.
@@ -162,13 +129,10 @@ type principal struct {
 	privileged bool
 }
 
-// token signs a container client in to your registry. `docker login`, and every
-// build tool that pushes or pulls images, lands here: it exchanges the
-// credential for a short-lived token scoped to exactly the repositories that
-// credential may touch.
-//
-// Both of the shapes container tooling uses are accepted, so the same login works
-// whichever client your pipeline runs.
+// token handles GET and POST /v1/iam/registry/token. Two client flows reach it:
+// the docker GET flow (Basic header + query scopes) and the containerd/BuildKit
+// OAuth2 POST flow (form username/password + form scopes). Either way it
+// authenticates the credential and returns a short-lived scoped JWT.
 func (h *handler) token(c *zip.Ctx) error {
 	kr, err := h.key()
 	if err != nil {
@@ -177,10 +141,7 @@ func (h *handler) token(c *zip.Ctx) error {
 		return c.JSON(503, map[string]string{"error": "registry signing key unavailable"})
 	}
 	req := c.Fiber().Request()
-	service, addressed := audience(formOrQuery(req, "service"))
-	if !addressed {
-		return challenge(c, service, "unknown service")
-	}
+	service := formOrQuery(req, "service")
 
 	id, secret := credentials(c, req)
 	if id == "" {
@@ -207,13 +168,10 @@ func (h *handler) token(c *zip.Ctx) error {
 	})
 }
 
-// jwks publishes the public key your registry uses to verify the tokens issued
-// above — the one URL to configure so the registry trusts logins without holding
-// any secret of its own.
-//
-// If no signing key is available it refuses rather than publishing an empty set,
-// because a registry that trusts nothing looks identical to one that trusts
-// everything until somebody tries to push.
+// jwks serves the verifying key so registry:2's ROOTCERTBUNDLE (and any relying
+// party) verifies the tokens this endpoint issues. Fails closed (503) when no
+// trusted key resolves — the same key backs signing and this JWKS, so publishing
+// one without the other would be incoherent.
 func (h *handler) jwks(c *zip.Ctx) error {
 	kr, err := h.key()
 	if err != nil {
@@ -224,10 +182,6 @@ func (h *handler) jwks(c *zip.Ctx) error {
 
 // challenge writes the 401 a docker client expects: a WWW-Authenticate Basic
 // challenge naming the service realm, and NO token.
-//
-// The realm is always OUR service name, resolved by audience — a challenge is
-// the one place a rejected request could otherwise see its own input quoted back
-// inside a header.
 func challenge(c *zip.Ctx, service, msg string) error {
 	c.SetHeader("WWW-Authenticate", fmt.Sprintf(`Basic realm="%s"`, service))
 	return c.JSON(401, map[string]string{"error": msg})
@@ -265,7 +219,7 @@ func (h *handler) authenticate(ctx context.Context, id, secret string) *principa
 // bound (authenticate applies that once). Ordered, each fail-closed; first match
 // wins:
 //
-//  1. API key — a SECRET sk- value (in the secret, or the username for the
+//  1. API key — a SECRET hk-/sk- value (in the secret, or the username for the
 //     token-as-username clients) resolved through store.UserByAccessKey. Keyed by
 //     an unambiguous prefix, so it never captures a password or clientId. A public
 //     pk- is write-only: it authenticates nothing (store.UserByAccessKey refuses it).
@@ -319,7 +273,7 @@ func (h *handler) userByKey(ctx context.Context, key string) *schema.User {
 // two holes the earlier multi-org walk opened on a PUBLIC unauthenticated endpoint:
 //   - unauth account-lock DoS: verifying the reserved row drove its shared lockout
 //     counter, so five wrong `docker login`s locked the platform SuperAdmin out of
-//     every password endpoint (login/ROPC/registry share the one row counter). A public
+//     every password door (login/ROPC/registry share the one row counter). A public
 //     endpoint must never let an anonymous caller trip a hard lock on the super.
 //   - a low-throttle brute-force oracle for the SuperAdmin's password on a public
 //     realm.
@@ -331,9 +285,9 @@ func (h *handler) userByKey(ctx context.Context, key string) *schema.User {
 // collided across admin and hanzo). A reserved-org principal pushes to the registry
 // with its HIGH-ENTROPY machine credential — an API key (userByKey) or a service
 // account (serviceAccount) — which are unaffected here and are the documented CI/
-// SuperAdmin push identity; neither is a guessable web password on a public endpoint.
+// SuperAdmin push identity; neither is a guessable web password on a public door.
 //
-// PARITY NOTE: legacy's registry token path resolved {admin, hanzo} passwords with
+// PARITY NOTE: casdoor's registry token path resolved {admin, hanzo} passwords with
 // NO lockout at all, so this per-account lock on the registry endpoint is NEW surface
 // (added by F-D1). Narrowing the PASSWORD path to non-reserved orgs is a deliberate,
 // tested hardening of that new surface — not an incidental edit — and it aligns the
@@ -342,7 +296,7 @@ func (h *handler) userByKey(ctx context.Context, key string) *schema.User {
 // SuperAdmin's real machine push identity is unchanged.
 func (h *handler) userByPassword(ctx context.Context, id, secret string) *schema.User {
 	for _, org := range candidateOrgs() {
-		if policy.IsReservedOrg(org) {
+		if store.IsReservedOrg(org) {
 			continue
 		}
 		u := resolveUser(ctx, h.db, org, id)
@@ -392,10 +346,10 @@ func userPrincipal(u *schema.User) *principal {
 }
 
 // userPrivileged decides whether a USER may push to the shared registry. This is
-// the v1-PARITY gate: legacy (registry_token.go) authenticated users within
+// the v1-PARITY gate: casdoor (registry_token.go) authenticated users within
 // {admin, hanzo} and granted push to any IsAdmin/SuperAdmin among them. We
 // reproduce that EXACTLY so the identity cutover is a faithful drop-in with zero
-// behavior change — a hanzo-org admin keeps push, as it does on legacy today.
+// behavior change — a hanzo-org admin keeps push, as it does on casdoor today.
 //
 // Push requires the user to be in a candidateOrg AND be an admin/SuperAdmin there.
 // The candidateOrgs bound (enforced at authentication, registry.go ~:241) is what
@@ -408,16 +362,16 @@ func userPrincipal(u *schema.User) *principal {
 // DEFERRED OWNER POLICY (do NOT tighten during the migration): whether a hanzo-org
 // HUMAN admin should keep registry push — vs. restricting push to the admin org
 // (SuperAdmins) / signing-trust orgs only — is a post-cutover hardening decision,
-// not a port detail. Narrowing it here would be a behavior change vs legacy. If
+// not a port detail. Narrowing it here would be a behavior change vs casdoor. If
 // made, do it as an explicit, tested policy change (alongside the pull org-scoping
 // decision documented at the top of this file), never as an incidental edit.
 func userPrivileged(u *schema.User) bool {
-	return inCandidateOrg(u.Owner) && (u.IsAdmin || u.Owner == policy.AdminOrg)
+	return inCandidateOrg(u.Owner) && (u.IsAdmin || store.IsSuperAdmin(u.Owner))
 }
 
 // candidateOrgs are the platform organizations a docker credential is resolved
 // within: the reserved admin org (home of the SuperAdmin) and the hanzo org (home
-// of platform users). oci.hanzo.ai is Hanzo infrastructure, so these are the
+// of platform users). registry.hanzo.ai is Hanzo infrastructure, so these are the
 // two tenants its push/pull identities live in — matching the beego source's
 // {AdminOrg, "hanzo"} resolution. This is the trust boundary EVERY user credential
 // shape (password AND API key) is bound to.
@@ -435,7 +389,7 @@ func inCandidateOrg(owner string) bool {
 }
 
 // resolveUser looks a user up by email (identifier contains "@") or by name,
-// scoped to org — the same email-or-name resolution the login endpoint uses.
+// scoped to org — the same email-or-name resolution the login front door uses.
 func resolveUser(ctx context.Context, db orm.DB, org, identifier string) *schema.User {
 	if strings.Contains(identifier, "@") {
 		if u, err := store.GetUserByEmail(ctx, db, org, identifier); err == nil && u != nil {

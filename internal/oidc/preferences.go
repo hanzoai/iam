@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -11,11 +10,11 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/httpx"
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
-// POST /v1/iam/preferences — the ONE account-backed store for cross-product,
+// POST /v1/iam/update-preferences — the ONE account-backed store for cross-product,
 // cross-device user customizations (onboarding-completed flag, theme, pinned
 // favorites, …). The console's PreferencesProvider reads these from the account's
 // Properties["hanzo.preferences"] JSON blob and write-through-persists partial updates
@@ -27,21 +26,20 @@ import (
 // stored object, so concurrent products/devices setting DIFFERENT keys don't clobber
 // each other; the merged object is returned so the caller keeps every other key.
 
-// PathPreferences (canonical.go) is the self-preferences endpoint.
+// PathUpdatePreferences is the canonical self-preferences endpoint.
+const PathUpdatePreferences = "/v1/iam/update-preferences"
 
 // preferencesKey is the User.Properties entry holding the cross-product preferences
 // JSON blob — the backend half of the console contract (PREFS_PROPERTY); keep in
-// lockstep. Defined once in schema, where the consent record nested inside the same
-// blob also reads it, so the two cannot drift onto different properties.
-const preferencesKey = schema.PreferencesKey
+// lockstep.
+const preferencesKey = "hanzo.preferences"
 
 // preferencesMaxBytes caps the serialized merged blob so a runaway client can't grow
 // the properties column without bound.
 const preferencesMaxBytes = 64 * 1024
 
-// updatePreferencesHandler saves the calling person's own settings and returns
-// the full set afterwards. Send only the settings you are changing — the rest
-// are kept, so two screens can save at once without one undoing the other.
+// updatePreferencesHandler shallow-merges the posted partial onto the caller's stored
+// preferences and returns the merged object.
 func updatePreferencesHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
@@ -63,7 +61,7 @@ func updatePreferencesHandler(db orm.DB) zip.Handler {
 		// never clobbered by this full-row write.
 		body := c.Fiber().Body()
 		var merged map[string]json.RawMessage
-		if _, err := updateUser(ctx, db, owner, name, func(_ orm.DB, u *schema.User) error {
+		if _, err := updateUser(ctx, db, owner, name, func(u *schema.User) error {
 			mergedJSON, m, err := mergePreferences(u.Properties[preferencesKey], body)
 			if err != nil {
 				return err
@@ -91,27 +89,6 @@ func mergePreferences(existing string, patch []byte) (string, map[string]json.Ra
 	patchMap := map[string]json.RawMessage{}
 	if err := json.Unmarshal(patch, &patchMap); err != nil {
 		return "", nil, fmt.Errorf("preferences must be a JSON object: %w", err)
-	}
-
-	// Consent rides the same blob but is NOT a preference: it is a record of what
-	// a person answered, it is validated against a closed set of answers, and a
-	// change to it is audited. None of that is true of a shallow merge, so a patch
-	// naming the key is refused rather than served — reaching consent through the
-	// generic surface would be a second, unvalidated, unaudited writer of the one
-	// record that most needs a single one. There is exactly one way to answer.
-	if _, ok := patchMap[schema.ConsentKey]; ok {
-		return "", nil, fmt.Errorf("consent is not a preference; use PUT %s to answer", PathConsent)
-	}
-
-	// Appearance IS a preference, so it is written here — but as the record it is,
-	// not as opaque JSON. A density no product can render or a type scale that
-	// leaves the page unusable is refused where the caller can be told why, rather
-	// than stored for every reader to drop afterwards, which shows a person a saved
-	// setting that nothing obeys.
-	if raw, ok := patchMap[schema.AppearanceKey]; ok {
-		if _, err := schema.ParseAppearance(raw); err != nil {
-			return "", nil, err
-		}
 	}
 
 	merged := map[string]json.RawMessage{}

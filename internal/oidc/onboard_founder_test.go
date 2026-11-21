@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 package oidc
 
 import (
@@ -14,8 +13,8 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // SELF-SERVICE ORG CREATION — the hanzo.id /onboarding flow.
@@ -25,7 +24,7 @@ import (
 // its own session (or bearer) and may only found an org for ITSELF, so widening
 // IAM_ORG_ADMIN_APPS — which would let one app administer EVERY tenant's orgs —
 // is never the mechanism. These pin the three properties that makes the org
-// first-class and the endpoint safe:
+// first-class and the door safe:
 //
 //  1. the founder succeeds, and the org is real: Founder stamped, roster row
 //     (user × org × owner), `orgs` claim, and the session survives the re-key;
@@ -155,7 +154,7 @@ func TestOnboard_FounderGetsAFirstClassOrg(t *testing.T) {
 	if fresh == "" {
 		t.Fatalf("onboarding did not re-issue the session cookie across the re-key")
 	}
-	req := formReqNoBody("GET", PathAccount)
+	req := formReqNoBody("GET", PathGetAccount)
 	req.Header.Set("Cookie", fresh)
 	_, body := do(t, app, req)
 	acct := decode(t, body)
@@ -168,7 +167,7 @@ func TestOnboard_FounderGetsAFirstClassOrg(t *testing.T) {
 	}
 
 	// The superseded cookie is revoked, not left as a second live credential.
-	old := formReqNoBody("GET", PathAccount)
+	old := formReqNoBody("GET", PathGetAccount)
 	old.Header.Set("Cookie", cookie)
 	_, oldBody := do(t, app, old)
 	if decode(t, oldBody)["status"] == "ok" {
@@ -216,7 +215,7 @@ func TestOnboard_ForeignIdentityCannotTakeOrJoinTheOrg(t *testing.T) {
 	}
 }
 
-// An anonymous caller is still refused — the endpoint authorizes a FOUNDER, and an
+// An anonymous caller is still refused — the door authorizes a FOUNDER, and an
 // unauthenticated request has no founder to be.
 func TestOnboard_AnonymousIsRefused(t *testing.T) {
 	app, db := newServer(t)

@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -7,7 +6,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // GET /v1/iam/whoami — the current caller's identity, lighter than get-account:
@@ -19,11 +18,7 @@ import (
 // PathWhoami is the canonical lightweight-identity endpoint.
 const PathWhoami = "/v1/iam/whoami"
 
-// whoamiHandler tells you who the current caller is — the lightweight check a
-// page makes on load to decide whether to render signed-in or signed-out.
-//
-// It answers for a session cookie or a bearer token alike, and says plainly when
-// nobody is signed in rather than failing.
+// whoamiHandler reports the resolved caller's identity in the casibase envelope.
 func whoamiHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()

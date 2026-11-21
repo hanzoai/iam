@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -11,8 +10,8 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // Refresh-token rotation with reuse detection. A refresh token is an opaque,
@@ -50,23 +49,11 @@ func refreshTokenGrant(c *zip.Ctx, db orm.DB) error {
 	}
 
 	// Client authentication: the presented client must be the grant's client, and
-	// a confidential client must present its secret (RFC 6749 §6).
-	//
-	// Confidential is a property of the GRANT, not only of the registration —
-	// tok.PublicGrant, set at establishment by the SAME bounded relaxation
-	// authorizationCodeGrant documents. One registration can serve both shapes: a
-	// backend path that holds the secret, and a CLI or SPA surface that signs in
-	// as a public PKCE client and holds none. Demanding the secret here would
-	// contradict the exchange that just succeeded without it — the client cannot
-	// acquire one an hour later — and the session would die at the access token's
-	// expiry, for exactly the clients refresh_token exists for.
-	//
-	// It never widens: a grant that WAS client-authenticated still must
-	// authenticate, and a presented secret is always verified.
+	// a confidential client must present its secret.
 	if clientID != "" && subtle.ConstantTimeCompare([]byte(clientID), []byte(app.ClientId)) != 1 {
 		return tokenError(c, 400, "invalid_grant", "client mismatch")
 	}
-	if app.ClientSecret != "" && (clientSecret != "" || !tok.PublicGrant) {
+	if app.ClientSecret != "" {
 		if subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
 			return tokenErrorClient(c, "client authentication failed")
 		}
@@ -111,26 +98,11 @@ func refreshTokenGrant(c *zip.Ctx, db orm.DB) error {
 		Nonce:        tok.Nonce,
 		Resource:     tok.Resource,
 		RedirectUri:  tok.RedirectUri,
-		// The successor is the SAME grant, so it carries the same establishment
-		// fact. Dropping it would make only the FIRST refresh work and the second
-		// 401 — a session that dies an hour late instead of on time.
-		PublicGrant: tok.PublicGrant,
 	}
 	nu.Name = "rt-" + nameSeed[:24]
-	// issueTokens re-resolves nu.User against the user table, so THIS is where a
-	// rotation revalidates the subject it inherited. It matters here more than at
-	// any other grant: the User key above is copied from the predecessor, frozen at
-	// the establishment that minted the family, and a user can be deleted, banned,
-	// or re-keyed underneath it afterwards. Without the re-read, a family outlives
-	// the identity it was granted to and every rotation renews that.
-	//
-	// A dead subject needs no revocation of its own: the presented token was
-	// already consumed above and the successor is only persisted below, so the
-	// family ends here — and a replay of the consumed one still trips the reuse
-	// detector.
 	resp, err := issueTokens(ctx, db, c, app, nu, tok.RefreshFamily, now)
 	if err != nil {
-		return mintError(c, err)
+		return tokenError(c, 500, "server_error", "")
 	}
 	if err := store.PersistToken(ctx, db, nu); err != nil {
 		return tokenError(c, 500, "server_error", "")

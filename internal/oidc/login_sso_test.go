@@ -1,12 +1,11 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 package oidc
 
 import (
 	"context"
 	"testing"
 
-	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // SINGLE SIGN-ON off a live IAM session. A signed-in person asking for a grant to

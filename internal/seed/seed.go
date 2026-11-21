@@ -1,13 +1,12 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
-// Package seed bootstraps the iam store from an init_data.json file — the same
-// file the the legacy surface iam uses. This is the ported InitFromFile behavior: on boot,
-// upsert organizations, applications, providers, and certs so a fresh iam
+// Package seed bootstraps the iam2 store from an init_data.json file — the same
+// file the Casdoor iam uses. This is the ported InitFromFile behavior: on boot,
+// upsert organizations, applications, providers, and certs so a fresh iam2
 // (embedded in cloud or standalone) comes up with the real app/provider/cert
 // config instead of an empty store.
 //
-// New-only by default (like the legacy surface's initDataNewOnly): an entity that already
+// New-only by default (like Casdoor's initDataNewOnly): an entity that already
 // exists is left untouched; only missing ones are created. ${VAR} references in
 // the JSON (client ids/secrets, cert keys) are substituted from the environment
 // before parsing — the same mechanism that injects KMS-synced secrets.
@@ -22,10 +21,10 @@ import (
 
 	"github.com/hanzoai/orm"
 
-	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
-// initData is the subset of the init_data.json shape iam seeds. Users and the
+// initData is the subset of the init_data.json shape iam2 seeds. Users and the
 // Casbin/LDAP/syncer artifacts are deliberately excluded — identity config only.
 type initData struct {
 	Organizations []*schema.Organization `json:"organizations"`
@@ -52,7 +51,7 @@ type Summary struct {
 var envRef = regexp.MustCompile(`\$\{([A-Z0-9_]+)\}`)
 
 // substituteEnv replaces ${VAR} with os.Getenv(VAR). An unset var becomes empty
-// (the legacy surface-compatible) — a provider/cert with an empty credential simply reads
+// (Casdoor-compatible) — a provider/cert with an empty credential simply reads
 // as unconfigured downstream, never a dead-end.
 func substituteEnv(b []byte) []byte {
 	return envRef.ReplaceAllFunc(b, func(m []byte) []byte {
@@ -113,10 +112,12 @@ func Apply(ctx context.Context, db orm.DB, data *initData) (*Summary, error) {
 		}
 	}
 	for _, c := range data.Certs {
-		// Certs are seeded as METADATA — owner, name, algorithm, expiry. A signing
-		// cert arrives from init_data without key material because secrets cannot
-		// ride a ConfigMap, and it stays that way: the key is mounted by the
-		// deployment and filled in on load (internal/keyring).
+		// A reserved-org signing cert arrives from init_data without key material
+		// (secrets can't ride a ConfigMap); mint the keypair so the JWKS publishes a
+		// key and iam2 can sign — persisted once by the new-only upsert below.
+		if err := ensureSigningKey(c); err != nil {
+			return s, fmt.Errorf("seed: generate signing key for cert %s/%s: %w", c.Owner, c.Name, err)
+		}
 		if err := upsert[schema.Cert](ctx, db, c.Owner, c.Name, c, s, "certs"); err != nil {
 			return s, err
 		}
@@ -147,9 +148,9 @@ func Apply(ctx context.Context, db orm.DB, data *initData) (*Summary, error) {
 // be stomped by a bootstrap file) but wrong for application POLICY: init_data.json is
 // how the platform declares whether an app allows sign-up, which org it belongs to,
 // and how it lets users choose one. Because upsert skipped existing rows, flipping
-// `enableSignUp` in init_data.json changed nothing on a seeded deployment, so the
-// declared state and the live flag could disagree with no way to reconcile them
-// short of an admin call. Declared policy now converges on boot.
+// `enableSignUp` in init_data.json changed nothing on a seeded deployment — the flag
+// read false in production while the declared state said otherwise, and the only way
+// to move it was an out-of-band admin call. Declared policy now converges on boot.
 //
 // It merges the RAW declared object onto the loaded row, which is the whole point:
 // json.Unmarshal sets only the keys PRESENT in the JSON, so a field init_data.json
@@ -165,9 +166,10 @@ func reconcileApp(db orm.DB, id string, declared map[string]json.RawMessage, s *
 	}
 	// Narrow the declared object to the POLICY keys before applying it. Merging the
 	// WHOLE object would make init_data.json authoritative over the entire
-	// registration, and it is not: live applications legitimately carry redirect
-	// URIs and grants this file does not list, so a full merge would silently
-	// DELETE them and break the very logins it was meant to fix.
+	// registration, and it is not: measured against production, live applications
+	// legitimately carry redirect URIs and grants this file does not list
+	// (hanzo-console alone had 4 extra redirects and 2 extra grants). A full merge
+	// would silently DELETE those and break the very logins it was meant to fix.
 	//
 	// Registration — redirects, grants, hosts — is owned by the provision document.
 	// This file owns identity POLICY. Keeping the two apart is why a bootstrap file
@@ -211,28 +213,10 @@ var appPolicyKeys = []string{
 	"enableSignUp",
 	"enablePassword",
 	"enableCodeSignin",
-	// Passkeys. Omitting this is the exact class this function exists to fix, one
-	// field over: a new-only upsert never carries a declared policy flag to a
-	// seeded row, so init_data.json can declare enableWebAuthn TRUE while the live
-	// auth-methods endpoint answers `webauthn:false`, with nothing logged and no
-	// way to reconcile short of diffing the ConfigMap against the endpoint.
-	//
-	// It belongs here by this list's own test — the declared value should always
-	// win. Whether an app offers passkeys is identity POLICY, not registration
-	// drift: it names no external party, no redirect and no secret, so unlike
-	// redirectUris there is no legitimate live value for it to clobber.
-	"enableWebAuthn",
 	"enableSigninSession",
 	"orgChoiceMode",
 	"isShared",
 	"organization",
-	// Which identity providers an app offers is the same kind of fact as
-	// enableWebAuthn: it decides who may sign in, names only provider RECORDS
-	// (no redirect, no secret), and has no legitimate live drift. Without it,
-	// an app registered by the provision document (which cannot say providers)
-	// could never gain a social button from declared state, even where
-	// init_data.json declares one.
-	"providers",
 }
 
 // upsert creates entity if (owner,name) is absent; otherwise counts it skipped

@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -8,12 +7,12 @@ import (
 
 	"github.com/hanzoai/orm"
 
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // updateUser is the ONE way the pre-authentication OIDC surface writes back a user
-// row: onboarding's org move, self-service preferences, the confidential-client
+// row: onboarding's org move, self-service preferences, the confidential-client hk-
 // key mint/revoke, and federated link/unlink all go through it, so every user-row
 // write shares a single correct read-modify-write. mutate edits the FRESH row in place
 // (setting only the fields the caller owns); updateUser persists it and returns it.
@@ -22,11 +21,11 @@ import (
 // wrong key:
 //
 //   - RIGHT KEY, BOTH SHAPES. The storage key is resolved via the (owner,name) query
-//     path, which stamps the row's REAL orm key: "owner/name" for a migrated legacy
-//     row (SetId in the migrator), or a store-assigned surrogate id (a decimal
-//     string) for a v2-native users.Create'd row (Create allocates, it never
+//     path, which stamps the row's REAL orm key: "owner/name" for a migrated casdoor
+//     row (SetId in the migrator), or a store-assigned surrogate id (a GenerateID
+//     decimal string) for a v2-native users.Create'd row (Create allocates, it never
 //     pins the key). A plain orm.Get(owner+"/"+name) resolves ONLY migrated rows, so a
-//     post-cutover signup was missed and its key mint/revoke silently 500'd. The
+//     post-cutover signup was missed and its hk- key mint/revoke silently 500'd. The
 //     lock is taken by that exact resolved key, so both shapes are written.
 //
 //   - NO STALE FULL-ROW CLOBBER. The read-modify-write runs inside a GetForUpdate
@@ -45,13 +44,7 @@ import (
 // value captured before the lock — the point is to act on the fresh row. The returned
 // row reflects the committed state (a read-only view; it is bound to the closed
 // transaction, like the wallet burn's returned challenge).
-//
-// mutate also receives the TRANSACTION. A caller whose change is only accountable
-// alongside a second row — a consent answer and the audit row that evidences it —
-// writes both through this handle, so they commit together or not at all. Most
-// callers ignore it; the parameter is there so the one that must not write a
-// half-record has no second mechanism to reach for.
-func updateUser(ctx context.Context, db orm.DB, owner, name string, mutate func(orm.DB, *schema.User) error) (*schema.User, error) {
+func updateUser(ctx context.Context, db orm.DB, owner, name string, mutate func(*schema.User) error) (*schema.User, error) {
 	keyed, err := store.GetUserByName(ctx, db, owner, name)
 	if err != nil {
 		return nil, err
@@ -67,7 +60,7 @@ func updateUser(ctx context.Context, db orm.DB, owner, name string, mutate func(
 		if err != nil {
 			return err
 		}
-		if err := mutate(tx, fresh); err != nil {
+		if err := mutate(fresh); err != nil {
 			return err
 		}
 		if err := fresh.UpdateCtx(ctx); err != nil {

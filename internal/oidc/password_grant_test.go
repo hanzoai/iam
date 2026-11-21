@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -10,7 +9,7 @@ import (
 
 	"github.com/hanzoai/orm"
 
-	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
 // forbidUser flips an already-seeded user to revoked (IsForbidden), keeping its
@@ -101,60 +100,61 @@ func TestPasswordGrant_unknownUser_invalidGrant_sameAsBadPassword(t *testing.T) 
 	requireError(t, resp, tok, 400, "invalid_grant")
 }
 
-// A PUBLIC client (no stored secret) is REFUSED outright, with the correct
-// password, because nothing authenticates the caller on this grant. This is what
-// stops a registration going public for an unrelated reason — `hanzo-cli` needs no
-// secret to run the device grant — from silently opening unauthenticated ROPC.
-func TestPasswordGrant_publicClient_refused(t *testing.T) {
+// CASDOOR PARITY: a PUBLIC client (no secret, no PKCE) may complete the password
+// grant — the console/chat apps casdoor allowed. See passwordGrant's doc comment.
+func TestPasswordGrant_publicClient_casdoorParity_succeeds(t *testing.T) {
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "hanzo-cli"}) // no secret → public client
+	seedApp(t, db, appOpts{clientID: "hanzo-console"}) // no secret → public client
 	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
 
 	resp, tok := postToken(t, app, url.Values{
 		"grant_type": {"password"},
-		"client_id":  {"hanzo-cli"},
+		"client_id":  {"hanzo-console"},
 		"username":   {"alice@hanzo.ai"},
-		"password":   {"correct horse"}, // CORRECT — the refusal is the client rule
+		"password":   {"correct horse"},
 		"scope":      {"openid"},
 	})
-	if resp.StatusCode != 401 {
-		t.Fatalf("public-client password grant status = %d, want 401; body=%v", resp.StatusCode, tok)
+	if resp.StatusCode != 200 {
+		t.Fatalf("public-client password grant status = %d, want 200 (casdoor parity); body=%v", resp.StatusCode, tok)
 	}
-	if tok["access_token"] != nil {
-		t.Fatal("a public client minted a token through the password grant")
+	access, _ := tok["access_token"].(string)
+	claims, err := verifyToken(context.Background(), db, access)
+	if err != nil {
+		t.Fatalf("minted token does not verify: %v", err)
+	}
+	if claims.Subject != "hanzo/alice" || claims.Owner != "hanzo" {
+		t.Errorf("subject/owner = %q/%q, want hanzo/alice / hanzo", claims.Subject, claims.Owner)
 	}
 }
 
-// The credential check is untouched for the clients that ARE allowed here: a
-// confidential client with the right secret still cannot pass a WRONG password.
-func TestPasswordGrant_wrongPassword_denied(t *testing.T) {
+// The relaxation is BOUNDED: a public client still cannot pass a WRONG password —
+// the credential check is untouched.
+func TestPasswordGrant_publicClient_wrongPassword_denied(t *testing.T) {
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedApp(t, db, appOpts{clientID: "hanzo-console"}) // public
 	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
 
 	resp, tok := postToken(t, app, url.Values{
-		"grant_type":    {"password"},
-		"client_id":     {"hanzo-console"},
-		"client_secret": {"top-secret"},
-		"username":      {"alice@hanzo.ai"},
-		"password":      {"WRONG"},
+		"grant_type": {"password"},
+		"client_id":  {"hanzo-console"},
+		"username":   {"alice@hanzo.ai"},
+		"password":   {"WRONG"},
 	})
 	requireError(t, resp, tok, 400, "invalid_grant")
 }
 
-// A forbidden (revoked) user is denied even to a fully authenticated client.
-func TestPasswordGrant_forbiddenUser_denied(t *testing.T) {
+// A forbidden (revoked) user is denied even to a public client.
+func TestPasswordGrant_publicClient_forbiddenUser_denied(t *testing.T) {
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedApp(t, db, appOpts{clientID: "hanzo-console"}) // public
 	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
 	forbidUser(t, db, "hanzo", "alice")
 
 	resp, tok := postToken(t, app, url.Values{
-		"grant_type":    {"password"},
-		"client_id":     {"hanzo-console"},
-		"client_secret": {"top-secret"},
-		"username":      {"alice@hanzo.ai"},
-		"password":      {"correct horse"},
+		"grant_type": {"password"},
+		"client_id":  {"hanzo-console"},
+		"username":   {"alice@hanzo.ai"},
+		"password":   {"correct horse"},
 	})
 	requireError(t, resp, tok, 400, "invalid_grant")
 }
@@ -164,20 +164,17 @@ func TestPasswordGrant_forbiddenUser_denied(t *testing.T) {
 // admin/<super> and minted a real SuperAdmin token on the correct password.
 func TestPasswordGrant_reservedTargetOrg_refused(t *testing.T) {
 	app, db := newServer(t)
-	// Fully authenticated (secret presented) so the refusal is provably the org
-	// gate and not the confidential-client rule above it.
-	seedApp(t, db, appOpts{clientID: "zoo-console", secret: "top-secret"}) // Organization=hanzo per seedApp
+	seedApp(t, db, appOpts{clientID: "zoo-console"}) // public, Organization=hanzo per seedApp
 	// A SuperAdmin lives in the admin org with a known, CORRECT password — so the
 	// refusal is provably the org gate, not a bad credential.
 	seedUserInOrg(t, db, "admin", "z", "z@hanzo.ai", "correct horse")
 
 	resp, tok := postToken(t, app, url.Values{
-		"grant_type":    {"password"},
-		"client_id":     {"zoo-console"},
-		"client_secret": {"top-secret"},
-		"organization":  {"admin"},
-		"username":      {"z"},
-		"password":      {"correct horse"},
+		"grant_type":   {"password"},
+		"client_id":    {"zoo-console"},
+		"organization": {"admin"},
+		"username":     {"z"},
+		"password":     {"correct horse"},
 	})
 	requireError(t, resp, tok, 400, "invalid_grant")
 	// And no token leaked.
@@ -189,16 +186,15 @@ func TestPasswordGrant_reservedTargetOrg_refused(t *testing.T) {
 // A foreign tenant org (not the client's own, non-shared) is refused too.
 func TestPasswordGrant_foreignTenantOrg_refused(t *testing.T) {
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"}) // Organization=hanzo, not shared
+	seedApp(t, db, appOpts{clientID: "hanzo-console"}) // Organization=hanzo, not shared
 	seedUserInOrg(t, db, "lux", "eve", "eve@lux.ai", "correct horse")
 
 	resp, tok := postToken(t, app, url.Values{
-		"grant_type":    {"password"},
-		"client_id":     {"hanzo-console"},
-		"client_secret": {"top-secret"},
-		"organization":  {"lux"},
-		"username":      {"eve"},
-		"password":      {"correct horse"},
+		"grant_type":   {"password"},
+		"client_id":    {"hanzo-console"},
+		"organization": {"lux"},
+		"username":     {"eve"},
+		"password":     {"correct horse"},
 	})
 	requireError(t, resp, tok, 400, "invalid_grant")
 }
@@ -219,58 +215,5 @@ func TestPasswordGrant_confidentialClient_wrongSecret_stillRejected(t *testing.T
 	})
 	if resp.StatusCode != 401 {
 		t.Fatalf("confidential wrong-secret status = %d, want 401; body=%v", resp.StatusCode, tok)
-	}
-}
-
-// The password grant reads the credential from the BODY alone (RFC 6749 §4.3.2). A
-// username and password placed on the QUERY STRING — where a URL is written to the
-// access log, every proxy, and the browser's history — do NOT authenticate: they
-// are read as absent and the grant answers "required". The org stays an addressing
-// parameter, so it keeps its query fallback.
-func TestPasswordGrant_credentialsInQuery_refused(t *testing.T) {
-	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
-	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
-
-	// Only the credential is (mis)placed on the query; everything the endpoint
-	// legitimately reads stays in the body.
-	q := url.Values{"username": {"alice@hanzo.ai"}, "password": {"correct horse"}}
-	body := url.Values{
-		"grant_type":    {"password"},
-		"client_id":     {"hanzo-console"},
-		"client_secret": {"top-secret"},
-		"scope":         {"openid"},
-	}
-	resp, raw := do(t, app, formReq("POST", PathToken+"?"+q.Encode(), body))
-	tok := decode(t, raw)
-	if resp.StatusCode != 400 {
-		t.Fatalf("query-string credentials status = %d, want 400; body=%v", resp.StatusCode, tok)
-	}
-	if tok["access_token"] != nil {
-		t.Fatal("a query-string credential minted a token")
-	}
-}
-
-// The same credential in the BODY authenticates and mints a real token — the fix
-// closes the URL, not the grant.
-func TestPasswordGrant_credentialsInBody_authenticates(t *testing.T) {
-	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
-	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
-
-	resp, raw := do(t, app, formReq("POST", PathToken, url.Values{
-		"grant_type":    {"password"},
-		"client_id":     {"hanzo-console"},
-		"client_secret": {"top-secret"},
-		"username":      {"alice@hanzo.ai"},
-		"password":      {"correct horse"},
-		"scope":         {"openid"},
-	}))
-	tok := decode(t, raw)
-	if resp.StatusCode != 200 {
-		t.Fatalf("body credentials status = %d, want 200; body=%v", resp.StatusCode, tok)
-	}
-	if s, _ := tok["access_token"].(string); s == "" {
-		t.Fatalf("body credentials minted no token; body=%v", tok)
 	}
 }

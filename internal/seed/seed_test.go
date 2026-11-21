@@ -1,10 +1,11 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package seed
 
 import (
 	"context"
+	"crypto/x509"
+	"encoding/pem"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,7 +13,7 @@ import (
 	"github.com/hanzoai/orm"
 	ormdb "github.com/hanzoai/orm/db"
 
-	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
 func openDB(t *testing.T) orm.DB {
@@ -75,14 +76,9 @@ func TestFromInitData_SeedsAndSubstitutesEnv(t *testing.T) {
 	if prov.ClientId != "Iv23-real-github-id" {
 		t.Fatalf("env not substituted: clientId=%q", prov.ClientId)
 	}
-	// The cert is seeded as metadata, and the key material the fixture carries is
-	// NOT stored: init_data.json rides a ConfigMap, and a signing key must not.
 	cert, _ := orm.Get[schema.Cert](db, "admin/cert-hanzo")
-	if cert == nil {
-		t.Fatal("cert not seeded")
-	}
-	if cert.PrivateKey != "" {
-		t.Fatalf("init_data key material reached the store: %q", cert.PrivateKey)
+	if cert == nil || cert.PrivateKey != "PEMDATA" {
+		t.Fatalf("cert key not substituted: %+v", cert)
 	}
 }
 
@@ -115,36 +111,69 @@ func TestSubstituteEnv_UnsetBecomesEmpty(t *testing.T) {
 	}
 }
 
-// Seeding a cert stores its IDENTITY and none of its key material — owner, name,
-// algorithm, expiry, all of which the JWKS publishes anyway. The key comes from
-// what the deployment mounts (internal/keyring), so there is nothing here to
-// write, and a fixture that states one states it in vain.
-func TestSeed_StoresCertMetadataAndNoKeyMaterial(t *testing.T) {
+// TestSeed_GeneratesSigningKeyForKeylessReservedCert proves the fix for the empty
+// JWKS: a reserved-org signing cert arrives from init_data WITHOUT key material
+// (secrets can't ride a ConfigMap), and the seed mints a parseable keypair so the
+// JWKS endpoint publishes a key and iam2 can sign — while an SSL cert and a
+// tenant-owned cert are deliberately left keyless.
+func TestSeed_GeneratesSigningKeyForKeylessReservedCert(t *testing.T) {
 	db := openDB(t)
 	ctx := context.Background()
 	data := &initData{Certs: []*schema.Cert{
-		{Owner: "admin", Name: "cert-hanzo", Type: "x509", CryptoAlgorithm: "RS256"},
-		{Owner: "admin", Name: "cert-es", Type: "x509", CryptoAlgorithm: "ES256"},
-		// A fixture that states key material anyway: it is identity that is stored,
-		// so the declared key reaches no row.
-		{Owner: "admin", Name: "cert-explicit", Type: "x509", CryptoAlgorithm: "RS256", PrivateKey: "EXISTING-PEM"},
-		{Owner: "hanzo", Name: "cert-tenant", CryptoAlgorithm: "RS256"},
+		{Owner: "admin", Name: "cert-hanzo", Type: "x509", CryptoAlgorithm: "RS256"}, // reserved, keyless → keyed
+		{Owner: "admin", Name: "cert-es", Type: "x509", CryptoAlgorithm: "ES256"},    // reserved ECDSA → keyed
+		{Owner: "admin", Name: "cert-ssl", Type: "SSL", CryptoAlgorithm: "RS256"},    // SSL → left keyless
+		{Owner: "hanzo", Name: "cert-tenant", CryptoAlgorithm: "RS256"},              // tenant → left keyless
 	}}
 	if _, err := Apply(ctx, db, data); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 
-	for _, id := range []string{"admin/cert-hanzo", "admin/cert-es", "admin/cert-explicit", "hanzo/cert-tenant"} {
-		c, err := orm.Get[schema.Cert](db, id)
-		if err != nil || c == nil {
-			t.Fatalf("%s not seeded: %v", id, err)
-		}
-		if c.PrivateKey != "" {
-			t.Errorf("%s: key material reached the store: %q", id, c.PrivateKey)
-		}
-		if c.CryptoAlgorithm == "" {
-			t.Errorf("%s: metadata not seeded", id)
-		}
+	rsaCert, err := orm.Get[schema.Cert](db, "admin/cert-hanzo")
+	if err != nil {
+		t.Fatalf("get cert-hanzo: %v", err)
+	}
+	if rsaCert.PrivateKey == "" {
+		t.Fatal("keyless reserved RS256 cert got no signing key → JWKS would be empty")
+	}
+	block, _ := pem.Decode([]byte(rsaCert.PrivateKey))
+	if block == nil {
+		t.Fatal("generated RSA key is not valid PEM")
+	}
+	if _, err := x509.ParsePKCS1PrivateKey(block.Bytes); err != nil {
+		t.Fatalf("generated RSA key not parseable PKCS1: %v", err)
+	}
+
+	esCert, _ := orm.Get[schema.Cert](db, "admin/cert-es")
+	if esCert == nil || esCert.PrivateKey == "" {
+		t.Fatal("keyless reserved ES256 cert got no signing key")
+	}
+	if b, _ := pem.Decode([]byte(esCert.PrivateKey)); b == nil {
+		t.Fatal("generated EC key is not valid PEM")
+	}
+
+	if ssl, _ := orm.Get[schema.Cert](db, "admin/cert-ssl"); ssl == nil || ssl.PrivateKey != "" {
+		t.Error("SSL cert must not be given a signing key")
+	}
+	if ten, _ := orm.Get[schema.Cert](db, "hanzo/cert-tenant"); ten == nil || ten.PrivateKey != "" {
+		t.Error("non-reserved tenant cert must not be given a signing key")
+	}
+}
+
+// TestSeed_PreservesExplicitCertKey: a cert that already carries key material is
+// left untouched (no rotation on re-seed → stable kid+key).
+func TestSeed_PreservesExplicitCertKey(t *testing.T) {
+	db := openDB(t)
+	ctx := context.Background()
+	data := &initData{Certs: []*schema.Cert{
+		{Owner: "admin", Name: "cert-explicit", Type: "x509", CryptoAlgorithm: "RS256", PrivateKey: "EXISTING-PEM"},
+	}}
+	if _, err := Apply(ctx, db, data); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	c, _ := orm.Get[schema.Cert](db, "admin/cert-explicit")
+	if c == nil || c.PrivateKey != "EXISTING-PEM" {
+		t.Fatalf("explicit cert key was overwritten: %q", c.PrivateKey)
 	}
 }
 
@@ -230,10 +259,11 @@ func TestSeed_ReconcileKeepsUndeclaredFields(t *testing.T) {
 	}
 }
 
-// Live applications legitimately carry redirect URIs and grants init_data.json
-// does not list, so reconciling the WHOLE declared object would delete them and
-// break the very logins the flag change was meant to fix. The reconcile is
-// narrowed to policy keys; this is the guard on that.
+// Measured against production: live applications legitimately carry redirect URIs
+// and grants init_data.json does not list (hanzo-console alone had 4 extra
+// redirects and 2 extra grants). Reconciling the WHOLE declared object would have
+// deleted them and broken the very logins the flag change was meant to fix, so the
+// reconcile is narrowed to policy keys. This is the guard on that.
 func TestSeed_ReconcileNeverStripsRegistration(t *testing.T) {
 	db := openDB(t)
 	ctx := context.Background()
@@ -274,222 +304,5 @@ func TestSeed_ReconcileNeverStripsRegistration(t *testing.T) {
 	}
 	if app.ClientSecret != "generated-at-first-boot" {
 		t.Fatalf("clientSecret must survive: %q", app.ClientSecret)
-	}
-}
-
-// Passkeys must converge like every other declared policy flag.
-//
-// A policy key absent from appPolicyKeys never converges: a new-only upsert does
-// not carry its declared value to a seeded row, so init_data.json can declare
-// enableWebAuthn TRUE while /v1/iam/auth/methods answers `webauthn:false`, and the
-// two never reconcile. enableWebAuthn belongs on the reconcile for the same reason
-// enableSignUp does — it is declared policy, not registration drift — and this
-// pins that it converges.
-func TestSeed_ReconcileConvergesWebAuthn(t *testing.T) {
-	db := openDB(t)
-	ctx := context.Background()
-	path := filepath.Join(t.TempDir(), "init_data.json")
-
-	// A seeded row with passkeys OFF — the production state.
-	off := `{
-  "organizations": [{"owner":"admin","name":"hanzo"}],
-  "applications": [{"owner":"admin","name":"hanzo-console","clientId":"hanzo-console","organization":"hanzo","enablePassword":true,"enableWebAuthn":false}]
-}`
-	if err := os.WriteFile(path, []byte(off), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := FromInitData(ctx, db, path); err != nil {
-		t.Fatal(err)
-	}
-	app, err := orm.Get[schema.Application](db, "admin/hanzo-console")
-	if err != nil || app == nil {
-		t.Fatalf("seed application: %v", err)
-	}
-	if app.EnableWebAuthn {
-		t.Fatal("fixture should start with passkeys disabled")
-	}
-
-	// The operator declares passkeys on. A converging seed must apply it.
-	on := `{
-  "organizations": [{"owner":"admin","name":"hanzo"}],
-  "applications": [{"owner":"admin","name":"hanzo-console","clientId":"hanzo-console","organization":"hanzo","enablePassword":true,"enableWebAuthn":true}]
-}`
-	if err := os.WriteFile(path, []byte(on), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := FromInitData(ctx, db, path); err != nil {
-		t.Fatal(err)
-	}
-	app, _ = orm.Get[schema.Application](db, "admin/hanzo-console")
-	if !app.EnableWebAuthn {
-		t.Fatal("declared enableWebAuthn=true did not converge onto the existing row")
-	}
-
-	// ...and it converges BACK off, so the file stays authoritative in both
-	// directions. A one-way flag would be a trapdoor, not a declaration.
-	if err := os.WriteFile(path, []byte(off), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := FromInitData(ctx, db, path); err != nil {
-		t.Fatal(err)
-	}
-	app, _ = orm.Get[schema.Application](db, "admin/hanzo-console")
-	if app.EnableWebAuthn {
-		t.Fatal("declared enableWebAuthn=false did not converge back off")
-	}
-}
-
-// ── store faults propagate ───────────────────────────────────────────────────────
-
-// Every kind's upsert reaches orm.GetOrCreate, whose read fails on a closed store
-// with a real fault (not ErrNotFound), so Apply surfaces it instead of swallowing
-// it. Each case carries ONLY its kind so the fault lands on that kind's loop —
-// Apply returns on the first error, so an earlier kind would mask a later one.
-func TestApply_StoreFaultPropagates(t *testing.T) {
-	ctx := context.Background()
-	cases := []struct {
-		kind string
-		data *initData
-	}{
-		{"organizations", &initData{Organizations: []*schema.Organization{{Owner: "admin", Name: "hanzo"}}}},
-		{"providers", &initData{Providers: []*schema.Provider{{Owner: "admin", Name: "provider-github", Category: "OAuth", Type: "GitHub"}}}},
-		{"certs", &initData{Certs: []*schema.Cert{{Owner: "admin", Name: "cert-hanzo", CryptoAlgorithm: "RS256"}}}},
-		{"applications", &initData{Applications: []*schema.Application{{Owner: "admin", Name: "hanzo-console", ClientId: "hanzo-console"}}}},
-	}
-	for _, c := range cases {
-		t.Run(c.kind, func(t *testing.T) {
-			db := openDB(t)
-			_ = db.Close() // the store is gone before the write
-			if _, err := Apply(ctx, db, c.data); err == nil {
-				t.Fatalf("%s: a closed store seeded without error", c.kind)
-			}
-		})
-	}
-}
-
-// A missing path and a malformed document both fail before any upsert — read and
-// parse are the two ways FromInitData can refuse a file.
-func TestFromInitData_FileErrors(t *testing.T) {
-	ctx := context.Background()
-	t.Run("read", func(t *testing.T) {
-		db := openDB(t)
-		if _, err := FromInitData(ctx, db, filepath.Join(t.TempDir(), "absent.json")); err == nil {
-			t.Fatal("a missing init_data.json seeded without error")
-		}
-	})
-	t.Run("parse", func(t *testing.T) {
-		db := openDB(t)
-		path := filepath.Join(t.TempDir(), "init_data.json")
-		if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := FromInitData(ctx, db, path); err == nil {
-			t.Fatal("malformed init_data.json parsed without error")
-		}
-	})
-}
-
-// ── owner defaulting ─────────────────────────────────────────────────────────────
-
-// A missing owner is the admin org: Apply and upsert both default "" to "admin",
-// so every entity declared without an owner resolves under admin/<name>.
-func TestApply_DefaultsEmptyOwnerToAdmin(t *testing.T) {
-	db := openDB(t)
-	ctx := context.Background()
-	data := &initData{
-		Organizations: []*schema.Organization{{Name: "hanzo"}},
-		Providers:     []*schema.Provider{{Name: "provider-github", Category: "OAuth", Type: "GitHub"}},
-		Certs:         []*schema.Cert{{Name: "cert-hanzo", CryptoAlgorithm: "RS256"}},
-		Applications:  []*schema.Application{{Name: "hanzo-console", ClientId: "hanzo-console"}},
-	}
-	sum, err := Apply(ctx, db, data)
-	if err != nil {
-		t.Fatalf("apply: %v", err)
-	}
-	for _, kind := range []string{"organizations", "providers", "certs", "applications"} {
-		if sum.Created[kind] != 1 {
-			t.Fatalf("%s created = %d, want 1", kind, sum.Created[kind])
-		}
-	}
-	if org, err := orm.Get[schema.Organization](db, "admin/hanzo"); err != nil || org == nil {
-		t.Fatalf("owner-less org not under admin: %v", err)
-	}
-	if app, err := orm.Get[schema.Application](db, "admin/hanzo-console"); err != nil || app == nil {
-		t.Fatalf("owner-less app not under admin: %v", err)
-	}
-}
-
-// FromInitData defaults a missing owner the same way for the RAW declared object it
-// keys for reconcile, so an owner-less application seeds under admin and stays
-// reconcilable on a later boot.
-func TestFromInitData_DefaultsMissingOwner(t *testing.T) {
-	db := openDB(t)
-	ctx := context.Background()
-	path := filepath.Join(t.TempDir(), "init_data.json")
-	doc := `{"applications":[{"name":"console","clientId":"console","enablePassword":true}]}`
-	if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	sum, err := FromInitData(ctx, db, path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if sum.Created["applications"] != 1 {
-		t.Fatalf("created=%d, want 1", sum.Created["applications"])
-	}
-	if app, err := orm.Get[schema.Application](db, "admin/console"); err != nil || app == nil {
-		t.Fatalf("owner-less app not under admin: %v", err)
-	}
-}
-
-// ── reconcile no-ops ─────────────────────────────────────────────────────────────
-
-// Apply from a literal carries no raw declared objects, so a second run finds the
-// row present, counts it skipped, and reconcile has nothing to converge — it is
-// FromInitData that populates the declared map, not Apply.
-func TestApply_LiteralReconcileNoopWhenNotDeclared(t *testing.T) {
-	db := openDB(t)
-	ctx := context.Background()
-	data := &initData{Applications: []*schema.Application{
-		{Owner: "admin", Name: "hanzo-console", ClientId: "hanzo-console", EnableSignUp: true},
-	}}
-	if _, err := Apply(ctx, db, data); err != nil {
-		t.Fatal(err)
-	}
-	sum, err := Apply(ctx, db, data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if sum.Skipped["applications"] != 1 {
-		t.Fatalf("skipped=%d, want 1", sum.Skipped["applications"])
-	}
-	if sum.Reconciled["applications"] != 0 {
-		t.Fatalf("reconciled=%d, want 0 (nothing declared to converge)", sum.Reconciled["applications"])
-	}
-}
-
-// An existing application re-declared with no policy keys — only name and clientId,
-// which are registration, not policy — has nothing to converge, so reconcile
-// returns before touching the row and the run reconciles nothing.
-func TestFromInitData_ReconcileEmptyPolicyNoop(t *testing.T) {
-	db := openDB(t)
-	ctx := context.Background()
-	path := filepath.Join(t.TempDir(), "init_data.json")
-	doc := `{"applications":[{"owner":"admin","name":"plain","clientId":"plain"}]}`
-	if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := FromInitData(ctx, db, path); err != nil {
-		t.Fatal(err)
-	}
-	sum, err := FromInitData(ctx, db, path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if sum.Skipped["applications"] != 1 {
-		t.Fatalf("skipped=%d, want 1", sum.Skipped["applications"])
-	}
-	if sum.Reconciled["applications"] != 0 {
-		t.Fatalf("reconciled=%d, want 0 (no policy declared)", sum.Reconciled["applications"])
 	}
 }

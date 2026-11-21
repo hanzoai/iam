@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -8,8 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hanzoai/iam/pkg/pkce"
-	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
 func testApp() *schema.Application {
@@ -22,7 +20,7 @@ func testApp() *schema.Application {
 func TestMintCode_BindsPKCEAndExpiry(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	verifier := "verifier-abc-000000000000000000000000000000000"
-	ch := pkce.Challenge(verifier)
+	ch := ComputeS256Challenge(verifier)
 	tok, err := MintCode(testApp(), "hanzo/alice", "openid profile", ch, "S256", "", now)
 	if err != nil {
 		t.Fatal(err)
@@ -51,7 +49,7 @@ func TestMintCode_RefusesPlain(t *testing.T) {
 func TestRedeemCode_HappyPath(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	verifier := "verifier-happy-0000000000000000000000000000000"
-	tok, _ := MintCode(testApp(), "hanzo/alice", "openid", pkce.Challenge(verifier), "S256", "", now)
+	tok, _ := MintCode(testApp(), "hanzo/alice", "openid", ComputeS256Challenge(verifier), "S256", "", now)
 	if err := RedeemCode(tok, "hanzo-console", verifier, now.Add(30*time.Second)); err != nil {
 		t.Fatalf("valid redemption rejected: %v", err)
 	}
@@ -60,7 +58,7 @@ func TestRedeemCode_HappyPath(t *testing.T) {
 func TestRedeemCode_ReplayRejected(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	verifier := "verifier-replay-000000000000000000000000000000"
-	tok, _ := MintCode(testApp(), "u", "openid", pkce.Challenge(verifier), "S256", "", now)
+	tok, _ := MintCode(testApp(), "u", "openid", ComputeS256Challenge(verifier), "S256", "", now)
 	// First redemption + issue marks it used.
 	if err := RedeemCode(tok, "hanzo-console", verifier, now); err != nil {
 		t.Fatal(err)
@@ -77,7 +75,7 @@ func TestRedeemCode_ReplayRejected(t *testing.T) {
 func TestRedeemCode_ExpiredRejected(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	verifier := "verifier-exp-00000000000000000000000000000000000"
-	tok, _ := MintCode(testApp(), "u", "openid", pkce.Challenge(verifier), "S256", "", now)
+	tok, _ := MintCode(testApp(), "u", "openid", ComputeS256Challenge(verifier), "S256", "", now)
 	past := now.Add(codeTTL + time.Second)
 	if err := RedeemCode(tok, "hanzo-console", verifier, past); !errors.Is(err, ErrCodeExpired) {
 		t.Fatalf("expired code: got %v, want ErrCodeExpired", err)
@@ -87,7 +85,7 @@ func TestRedeemCode_ExpiredRejected(t *testing.T) {
 func TestRedeemCode_ClientMismatchRejected(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	verifier := "verifier-cli-00000000000000000000000000000000000"
-	tok, _ := MintCode(testApp(), "u", "openid", pkce.Challenge(verifier), "S256", "", now)
+	tok, _ := MintCode(testApp(), "u", "openid", ComputeS256Challenge(verifier), "S256", "", now)
 	if err := RedeemCode(tok, "some-other-app", verifier, now); !errors.Is(err, ErrClientMismatch) {
 		t.Fatalf("client mismatch: got %v, want ErrClientMismatch", err)
 	}
@@ -95,7 +93,7 @@ func TestRedeemCode_ClientMismatchRejected(t *testing.T) {
 
 func TestRedeemCode_WrongVerifierRejected(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
-	tok, _ := MintCode(testApp(), "u", "openid", pkce.Challenge("the-right-verifier-0000000000000000000000000"), "S256", "", now)
+	tok, _ := MintCode(testApp(), "u", "openid", ComputeS256Challenge("the-right-verifier-0000000000000000000000000"), "S256", "", now)
 	if err := RedeemCode(tok, "hanzo-console", "the-WRONG-verifier-0000000000000000000000000", now); !errors.Is(err, ErrPKCEMismatch) {
 		t.Fatalf("wrong verifier: got %v, want ErrPKCEMismatch", err)
 	}
@@ -104,7 +102,7 @@ func TestRedeemCode_WrongVerifierRejected(t *testing.T) {
 func TestRedeemCode_PublicClientMustPresentVerifier(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	// Code minted WITH a challenge (public client) but token request omits the verifier.
-	tok, _ := MintCode(testApp(), "u", "openid", pkce.Challenge("v-000000000000000000000000000000000000000000000"), "S256", "", now)
+	tok, _ := MintCode(testApp(), "u", "openid", ComputeS256Challenge("v-000000000000000000000000000000000000000000000"), "S256", "", now)
 	if err := RedeemCode(tok, "hanzo-console", "", now); !errors.Is(err, ErrPKCEMissing) {
 		t.Fatalf("missing verifier: got %v, want ErrPKCEMissing", err)
 	}

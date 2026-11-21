@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -9,13 +8,13 @@ import (
 
 	"github.com/hanzoai/orm"
 
-	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
-// USERNAME RESOLUTION PARITY. the legacy surface resolves a login identifier by NAME before
+// USERNAME RESOLUTION PARITY. Casdoor resolves a login identifier by NAME before
 // email. Two live rows in org hanzo collide on the email z@hanzo.ai: `hanzo/z`
 // (name z) and `hanzo/z@hanzo.ai` (name z@hanzo.ai). The ROPC username
-// "z@hanzo.ai" must resolve to the NAME match, matching legacy — an email-first
+// "z@hanzo.ai" must resolve to the NAME match, matching casdoor — an email-first
 // lookup would authenticate the wrong identity at cutover.
 
 func seedNamed(t *testing.T, db orm.DB, name, email string) {
@@ -28,34 +27,34 @@ func seedNamed(t *testing.T, db orm.DB, name, email string) {
 	}
 }
 
-func TestResolveInOrg_NameBeatsEmailOnCollision(t *testing.T) {
+func TestResolveLoginUser_NameBeatsEmailOnCollision(t *testing.T) {
 	ctx := context.Background()
 	db := openTestDB(t)
 	// Two identities sharing one email; one is NAMED after that email.
 	seedNamed(t, db, "z", "z@hanzo.ai")
 	seedNamed(t, db, "z@hanzo.ai", "z@hanzo.ai")
 
-	u, err := resolveInOrg(ctx, db, "hanzo", "z@hanzo.ai")
+	u, err := resolveLoginUser(ctx, db, "hanzo", "z@hanzo.ai")
 	if err != nil || u == nil {
 		t.Fatalf("resolveLoginUser = %v, %v; want a user", u, err)
 	}
 	if u.Name != "z@hanzo.ai" {
-		t.Errorf("resolved name = %q, want z@hanzo.ai (the NAME match, legacy precedence), not the email match z", u.Name)
+		t.Errorf("resolved name = %q, want z@hanzo.ai (the NAME match, casdoor precedence), not the email match z", u.Name)
 	}
 
 	// A plain username still resolves by name.
-	if got, _ := resolveInOrg(ctx, db, "hanzo", "z"); got == nil || got.Name != "z" {
+	if got, _ := resolveLoginUser(ctx, db, "hanzo", "z"); got == nil || got.Name != "z" {
 		t.Errorf("username z resolved to %v, want hanzo/z", got)
 	}
 }
 
-func TestResolveInOrg_EmailFallbackWhenNoNameMatch(t *testing.T) {
+func TestResolveLoginUser_EmailFallbackWhenNoNameMatch(t *testing.T) {
 	ctx := context.Background()
 	db := openTestDB(t)
 	// Only an email match exists (the name is a plain handle).
 	seedNamed(t, db, "alice", "alice@hanzo.ai")
 
-	u, err := resolveInOrg(ctx, db, "hanzo", "alice@hanzo.ai")
+	u, err := resolveLoginUser(ctx, db, "hanzo", "alice@hanzo.ai")
 	if err != nil || u == nil || u.Name != "alice" {
 		t.Fatalf("email fallback failed: %v, %v", u, err)
 	}

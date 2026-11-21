@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package authz_test
 
@@ -22,9 +21,9 @@ func TestUnauthenticatedWriteIs401(t *testing.T) {
 	}{
 		{"create user", "POST", "/v1/iam/users", user("hanzo", "x")},
 		{"write cert", "POST", "/v1/iam/certs", cert("admin", signingKid)},
-		{"register app", "POST", "/v1/iam/applications", map[string]any{"owner": "admin", "name": "x"}},
-		{"delete user", "DELETE", "/v1/iam/users/hanzo/alice", nil},
-		{"update cert", "PUT", "/v1/iam/certs/admin/" + signingKid, cert("admin", signingKid)},
+		{"register app", "POST", "/v1/iam/application", map[string]any{"owner": "admin", "name": "x"}},
+		{"delete user", "POST", "/v1/iam/users/delete", map[string]any{"owner": "hanzo", "name": "alice"}},
+		{"update cert", "POST", "/v1/iam/certs/update", cert("admin", signingKid)},
 		{"create org", "POST", "/v1/iam/organizations", map[string]any{"owner": "admin", "name": "x"}},
 	}
 	for _, c := range cases {
@@ -46,8 +45,8 @@ func TestCrossOrgWriteIs403(t *testing.T) {
 		body               any
 	}{
 		{"create user in hanzo", "POST", "/v1/iam/users", user("hanzo", "mole")},
-		{"update user in hanzo", "PUT", "/v1/iam/users/hanzo/alice", user("hanzo", "alice")},
-		{"delete user in hanzo", "DELETE", "/v1/iam/users/hanzo/alice", nil},
+		{"update user in hanzo", "POST", "/v1/iam/users/update", user("hanzo", "alice")},
+		{"delete user in hanzo", "POST", "/v1/iam/users/delete", map[string]any{"owner": "hanzo", "name": "alice"}},
 		{"create role in hanzo", "POST", "/v1/iam/roles", map[string]any{"owner": "hanzo", "name": "r"}},
 	}
 	for _, c := range cases {
@@ -70,23 +69,20 @@ func TestSigningCertPoisoningIs403(t *testing.T) {
 		"regular user (hanzo/alice)":     h.token(t, "hanzo/alice"),
 		"built-in member (built-in/svc)": h.token(t, "built-in/svc"),
 	}
-	// The method is per-case now: a create POSTs to the collection, an overwrite
-	// PUTs the item, a delete DELETEs it. The address names the target, so a
-	// poisoning attempt cannot hide it in a body.
 	writes := []struct {
-		name, method, path string
-		body               any
+		name, path string
+		body       any
 	}{
-		{"create admin cert", "POST", "/v1/iam/certs", cert("admin", "cert-forge")},
-		{"overwrite live admin cert", "PUT", "/v1/iam/certs/admin/" + signingKid, cert("admin", signingKid)},
-		{"delete live admin cert", "DELETE", "/v1/iam/certs/admin/" + signingKid, nil},
-		{"create built-in cert", "POST", "/v1/iam/certs", cert("built-in", "cert-forge")},
-		{"overwrite built-in cert", "PUT", "/v1/iam/certs/built-in/anything", cert("built-in", "anything")},
+		{"create admin cert", "/v1/iam/certs", cert("admin", "cert-forge")},
+		{"overwrite live admin cert", "/v1/iam/certs/update", cert("admin", signingKid)},
+		{"delete live admin cert", "/v1/iam/certs/delete", map[string]any{"owner": "admin", "name": signingKid}},
+		{"create built-in cert", "/v1/iam/certs", cert("built-in", "cert-forge")},
+		{"overwrite built-in cert", "/v1/iam/certs/update", cert("built-in", "anything")},
 	}
 	for who, tok := range principals {
 		for _, w := range writes {
 			t.Run(who+" "+w.name, func(t *testing.T) {
-				if got := h.do(t, w.method, w.path, tok, w.body); got != http.StatusForbidden {
+				if got := h.do(t, "POST", w.path, tok, w.body); got != http.StatusForbidden {
 					t.Fatalf("%s writing %s = %d, want 403 (poisoning gate)", who, w.path, got)
 				}
 			})
@@ -110,10 +106,10 @@ func TestSuperAdminWritesAdminCertAndCrossOrg(t *testing.T) {
 		body               any
 	}{
 		{"create a new admin signing cert", "POST", "/v1/iam/certs", cert("admin", "cert-fresh")},
-		{"rotate the live admin signing cert", "PUT", "/v1/iam/certs/admin/" + signingKid, rotate},
+		{"rotate the live admin signing cert", "POST", "/v1/iam/certs/update", rotate},
 		{"create a user in any org", "POST", "/v1/iam/users", user("hanzo", "hire-by-root")},
 		{"create a user in another org", "POST", "/v1/iam/users", user("orgb", "hire-by-root")},
-		{"register an admin-owned app", "POST", "/v1/iam/applications", map[string]any{"owner": "admin", "name": "root-app", "clientId": "root-app"}},
+		{"register an admin-owned app", "POST", "/v1/iam/application", map[string]any{"owner": "admin", "name": "root-app", "clientId": "root-app"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -136,8 +132,8 @@ func TestOrgAdminManagesOwnOrgOnly(t *testing.T) {
 		body               any
 	}{
 		{"create user in own org", "POST", "/v1/iam/users", user("hanzo", "newhire")},
-		{"update self org's user", "PUT", "/v1/iam/users/hanzo/alice", user("hanzo", "alice")},
-		{"register app in own org", "POST", "/v1/iam/applications", map[string]any{"owner": "hanzo", "name": "hanzo-app", "clientId": "hanzo-app"}},
+		{"update self org's user", "POST", "/v1/iam/users/update", user("hanzo", "alice")},
+		{"register app in own org", "POST", "/v1/iam/application", map[string]any{"owner": "hanzo", "name": "hanzo-app", "clientId": "hanzo-app"}},
 	}
 	for _, c := range allow {
 		t.Run("allow/"+c.name, func(t *testing.T) {
@@ -153,8 +149,8 @@ func TestOrgAdminManagesOwnOrgOnly(t *testing.T) {
 		body               any
 	}{
 		{"create user in another org", "POST", "/v1/iam/users", user("orgb", "mole")},
-		{"register app in another org", "POST", "/v1/iam/applications", map[string]any{"owner": "orgb", "name": "x", "clientId": "x"}},
-		{"write a platform (admin) app", "POST", "/v1/iam/applications", map[string]any{"owner": "admin", "name": "x", "clientId": "x"}},
+		{"register app in another org", "POST", "/v1/iam/application", map[string]any{"owner": "orgb", "name": "x", "clientId": "x"}},
+		{"write a platform (admin) app", "POST", "/v1/iam/application", map[string]any{"owner": "admin", "name": "x", "clientId": "x"}},
 	}
 	for _, c := range deny {
 		t.Run("deny/"+c.name, func(t *testing.T) {
@@ -172,10 +168,10 @@ func TestRegularUserSelfServiceOnly(t *testing.T) {
 	h := newHarness(t)
 	alice := h.token(t, "hanzo/alice")
 
-	// Reading own record: the guard admits it (not 401/403). The status that comes
-	// back is the handler's, never the guard's forbid — the point here is that the
-	// guard did NOT block self-read.
-	if got := h.do(t, "GET", "/v1/iam/users/hanzo/alice", alice, nil); got == http.StatusForbidden || got == http.StatusUnauthorized {
+	// Reading own record: the guard admits it (not 401/403). The Phase-1 GET
+	// handler binds no query, so the status is the handler's, never the guard's
+	// forbid — the point here is that the guard did NOT block self-read.
+	if got := h.do(t, "GET", "/v1/iam/users/get?owner=hanzo&name=alice", alice, nil); got == http.StatusForbidden || got == http.StatusUnauthorized {
 		t.Fatalf("regular self-read = %d, want the guard to admit it (not 401/403)", got)
 	}
 
@@ -184,12 +180,12 @@ func TestRegularUserSelfServiceOnly(t *testing.T) {
 		name, method, path string
 		body               any
 	}{
-		{"read another user", "GET", "/v1/iam/users/hanzo/boss", nil},
+		{"read another user", "GET", "/v1/iam/users/get?owner=hanzo&name=boss", nil},
 		{"list the org's users", "GET", "/v1/iam/users?owner=hanzo", nil},
-		{"update own record (self-promote)", "PUT", "/v1/iam/users/hanzo/alice", map[string]any{"user": map[string]any{"owner": "hanzo", "name": "alice", "isAdmin": true}}},
+		{"update own record (self-promote)", "POST", "/v1/iam/users/update", map[string]any{"user": map[string]any{"owner": "hanzo", "name": "alice", "isAdmin": true}}},
 		{"create a user", "POST", "/v1/iam/users", user("hanzo", "puppet")},
-		{"delete another user", "DELETE", "/v1/iam/users/hanzo/boss", nil},
-		{"read another org", "GET", "/v1/iam/users/orgb/bob", nil},
+		{"delete another user", "POST", "/v1/iam/users/delete", map[string]any{"owner": "hanzo", "name": "boss"}},
+		{"read another org", "GET", "/v1/iam/users/get?owner=orgb&name=bob", nil},
 	}
 	for _, c := range deny {
 		t.Run("deny/"+c.name, func(t *testing.T) {
@@ -201,12 +197,13 @@ func TestRegularUserSelfServiceOnly(t *testing.T) {
 }
 
 // 7. Public routes are reachable with NO bearer — the pre-auth OIDC/OAuth and
-// native surface a browser must reach before it holds a token. "Reachable"
+// front-door surface a browser must reach before it holds a token. "Reachable"
 // means NOT the guard's 401: the endpoint's own handler answers (which may be a
 // 400 for a missing param — that is the handler, past the guard).
 func TestPublicRoutesNeedNoBearer(t *testing.T) {
 	h := newHarness(t)
 	public := []struct{ method, path string }{
+		{"GET", "/healthz"},
 		{"GET", "/.well-known/openid-configuration"},
 		{"GET", "/v1/iam/.well-known/openid-configuration"},
 		{"GET", "/v1/iam/.well-known/jwks"},
@@ -218,7 +215,7 @@ func TestPublicRoutesNeedNoBearer(t *testing.T) {
 		{"GET", "/v1/iam/get-app-login"},
 		{"GET", "/v1/iam/auth/methods"},
 		{"POST", "/v1/iam/oauth/logout"},
-		// The native session/identity surface — each self-resolves the caller
+		// The front-door session/identity surface — each self-resolves the caller
 		// (session cookie, else bearer) and answers anonymously (200 {status:error}
 		// or a handler 400), never the Guard's 401. These are the routes the old
 		// publicPaths list had to be patched to include; now they are public purely
@@ -292,9 +289,9 @@ func TestOwnerClaimCannotEscalate(t *testing.T) {
 		body               any
 	}{
 		{"write admin signing cert", "POST", "/v1/iam/certs", cert("admin", "cert-forge")},
-		{"overwrite live admin cert", "PUT", "/v1/iam/certs/admin/" + signingKid, cert("admin", signingKid)},
+		{"overwrite live admin cert", "POST", "/v1/iam/certs/update", cert("admin", signingKid)},
 		{"create a user cross-org", "POST", "/v1/iam/users", user("orgb", "mole")},
-		{"promote self in own org", "PUT", "/v1/iam/users/hanzo/alice", map[string]any{"user": map[string]any{"owner": "hanzo", "name": "alice", "isAdmin": true}}},
+		{"promote self in own org", "POST", "/v1/iam/users/update", map[string]any{"user": map[string]any{"owner": "hanzo", "name": "alice", "isAdmin": true}}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -331,7 +328,7 @@ func TestPhantomSubjectHasNoAuthority(t *testing.T) {
 	}
 }
 
-// The framework's generic control routes (MCP tool-call, OpenAPI doc) are gated by
+// The framework's generic side doors (MCP tool-call, OpenAPI doc) are gated by
 // the same fail-closed default — proven on a REAL, installed route and a REAL
 // tool INVOCATION, not just the envelope path. newHarness calls app.Prepare(), so
 // /mcp and /openapi are actually registered (the old test hit a route that was
@@ -344,7 +341,7 @@ func TestFrameworkSideDoorsAreGated(t *testing.T) {
 
 	// No bearer reaches /mcp at all: the guard authenticates the envelope before
 	// any dispatch, so it is 401 — never an unauthorized invocation, never a 404.
-	if got := h.do(t, "POST", "/mcp", "", mcpEnvelope("post_iam_certs", forge)); got != http.StatusUnauthorized {
+	if got := h.do(t, "POST", "/mcp", "", mcpEnvelope("post_v1_iam_certs", forge)); got != http.StatusUnauthorized {
 		t.Fatalf("POST /mcp no bearer = %d, want 401 (guard fail-closed)", got)
 	}
 	// The OpenAPI doc — now a real installed route — is gated too.
@@ -355,11 +352,11 @@ func TestFrameworkSideDoorsAreGated(t *testing.T) {
 	// A non-SuperAdmin driving the REAL cert tool is refused at the op-invoke seam
 	// (isError), and — the assertion that matters — NOTHING is written.
 	boss := h.token(t, "hanzo/boss")
-	if status, isErr := h.mcpToolCall(t, boss, "post_iam_certs", forge); status != http.StatusOK || !isErr {
-		t.Fatalf("MCP post_iam_certs (non-super) = status %d isError %v, want 200/true (refused at op seam)", status, isErr)
+	if status, isErr := h.mcpToolCall(t, boss, "post_v1_iam_certs", forge); status != http.StatusOK || !isErr {
+		t.Fatalf("MCP post_v1_iam_certs (non-super) = status %d isError %v, want 200/true (refused at op seam)", status, isErr)
 	}
 	if h.certExists(t, "admin", "cert-forge") {
-		t.Fatal("MCP cert-forge PERSISTED an admin-owned cert — the /mcp path is UNGATED")
+		t.Fatal("MCP cert-forge PERSISTED an admin-owned cert — the /mcp side door is OPEN")
 	}
 }
 
@@ -406,7 +403,7 @@ func TestUserOwnerMaskIsRefused(t *testing.T) {
 		"user":     map[string]any{"owner": "admin", "name": "root", "isAdmin": true},
 		"password": "attacker-chosen",
 	}
-	if got := h.do(t, "PUT", "/v1/iam/users/admin/root", boss, hijack); got != http.StatusForbidden {
+	if got := h.do(t, "POST", "/v1/iam/users/update", boss, hijack); got != http.StatusForbidden {
 		t.Fatalf("users update hijack of admin/root = %d, want 403", got)
 	}
 	if h.userIsAdmin(t, "admin", "root") {
@@ -430,7 +427,7 @@ func TestMCPArgumentsMaskIsRefused(t *testing.T) {
 		"owner": "admin", "name": "cert-forge",
 		"cryptoAlgorithm": "RS256", "privateKey": attackerPEM,
 	}
-	if status, isErr := h.mcpToolCall(t, boss, "post_iam_certs", forge); status != http.StatusOK || !isErr {
+	if status, isErr := h.mcpToolCall(t, boss, "post_v1_iam_certs", forge); status != http.StatusOK || !isErr {
 		t.Fatalf("MCP cert-forge (non-super) = status %d isError %v, want 200/true (refused)", status, isErr)
 	}
 	if h.certExists(t, "admin", "cert-forge") {
@@ -443,7 +440,7 @@ func TestMCPArgumentsMaskIsRefused(t *testing.T) {
 		"user":     map[string]any{"owner": "admin", "name": "red-super", "isAdmin": true},
 		"password": "x",
 	}
-	if status, isErr := h.mcpToolCall(t, boss, "post_iam_users", userMask); status != http.StatusOK || !isErr {
+	if status, isErr := h.mcpToolCall(t, boss, "post_v1_iam_users", userMask); status != http.StatusOK || !isErr {
 		t.Fatalf("MCP users owner-mask (non-super) = status %d isError %v, want 200/true (refused)", status, isErr)
 	}
 	if h.userExists(t, "admin", "red-super") {
@@ -457,7 +454,7 @@ func TestMCPArgumentsMaskIsRefused(t *testing.T) {
 		"owner": "admin", "name": "cert-legit",
 		"cryptoAlgorithm": "RS256", "privateKey": rsaKeyToPEM(t, h.key),
 	}
-	if status, isErr := h.mcpToolCall(t, root, "post_iam_certs", legit); status != http.StatusOK || isErr {
+	if status, isErr := h.mcpToolCall(t, root, "post_v1_iam_certs", legit); status != http.StatusOK || isErr {
 		t.Fatalf("MCP cert create by SuperAdmin = status %d isError %v, want 200/false (allowed)", status, isErr)
 	}
 	if !h.certExists(t, "admin", "cert-legit") {

@@ -1,11 +1,10 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 // RED-TEAM PROOF (throwaway). These tests assert the SECURE behavior a SCIM
 // provisioning surface must have — org-admin required for user writes, no
 // self-promotion, no intra-tenant account takeover, page cap honored. They FAIL
 // on v0.8.0 because SCIM writes bypass the app.Authorize op-invoke seam (they are
-// raw handlers that call users.API directly), so the ONLY authz is principal.Scope,
+// raw handlers that call users.API directly), so the ONLY authz is authz.Scope,
 // which pins the ORG but never the ADMIN flag. The failure output is the exploit.
 //
 // Reuses the harness in scim_test.go (package scim_test): newHarness, h.token,
@@ -21,7 +20,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // C1 — a REGULAR (non-admin) org member creates users, and mints a NEW ORG-ADMIN

@@ -1,14 +1,7 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 package authz
 
-import (
-	"testing"
-
-	policy "github.com/hanzoai/authz"
-
-	"github.com/hanzoai/iam/internal/principal"
-)
+import "testing"
 
 // SELF-READ. An app may read the row it authenticated as — the ordinary bootstrap
 // of an OIDC relying party — and nothing else. The owner-pin that closed the
@@ -18,11 +11,11 @@ import (
 // The grant is keyed on BOTH halves of (AppOwner, App), which is what keeps it a
 // self-read rather than "apps may read applications".
 func TestAuthorize_AppReadsOnlyItsOwnRecord(t *testing.T) {
-	cloud := &principal.Principal{App: &policy.App{Name: "hanzo-cloud", Owner: "admin"}, Org: "hanzo"}
+	cloud := &Principal{App: "hanzo-cloud", AppOwner: "admin", Org: "hanzo"}
 
 	for _, tc := range []struct {
 		name                  string
-		p                     *principal.Principal
+		p                     *Principal
 		method, owner, target string
 		want                  bool
 		why                   string
@@ -51,7 +44,7 @@ func TestAuthorize_AppReadsOnlyItsOwnRecord(t *testing.T) {
 			"the entity is users here, not applications"},
 
 		// An app with no owner pin holds nothing (the fail-closed default).
-		{"unpinned app", &principal.Principal{App: &policy.App{Name: "hanzo-cloud"}}, "GET", "admin", "hanzo-cloud", false,
+		{"unpinned app", &Principal{App: "hanzo-cloud"}, "GET", "admin", "hanzo-cloud", false,
 			"an app whose AppOwner is empty matches no row"},
 		{"empty owner target", cloud, "GET", "", "hanzo-cloud", false,
 			"an empty owner must never match"},
@@ -72,7 +65,7 @@ func TestAuthorize_AppReadsOnlyItsOwnRecord(t *testing.T) {
 // A HUMAN is unaffected by the self-read clause: their authority is still decided
 // by the org policy below it, so a tenant user cannot read a platform app row.
 func TestAuthorize_SelfReadDoesNotLeakToHumans(t *testing.T) {
-	human := &principal.Principal{Org: "hanzo", User: "alice", Admin: true}
+	human := &Principal{Org: "hanzo", User: "alice", Admin: true}
 	if authorize(human, "GET", "applications", "admin", "hanzo-cloud") {
 		t.Errorf("an org admin read a platform-owned application row")
 	}
@@ -81,7 +74,7 @@ func TestAuthorize_SelfReadDoesNotLeakToHumans(t *testing.T) {
 // ONE ENVELOPE PER SURFACE. The compat verbs are verb-shaped and their clients
 // branch on a STRING status; the native surface is noun-shaped and keeps zip's
 // numeric-status error.
-func TestLegacyVerb_SelectsTheCompatSurfaceOnly(t *testing.T) {
+func TestCasdoorVerb_SelectsTheCompatSurfaceOnly(t *testing.T) {
 	for path, want := range map[string]bool{
 		"/v1/iam/get-account":       true,
 		"/v1/iam/get-application":   true,
@@ -96,8 +89,8 @@ func TestLegacyVerb_SelectsTheCompatSurfaceOnly(t *testing.T) {
 		"/v1/iam/":                  false,
 		"/v1/other/get-thing":       false, // not the IAM surface
 	} {
-		if got := legacyVerb(path); got != want {
-			t.Errorf("legacyVerb(%q) = %v, want %v", path, got, want)
+		if got := casdoorVerb(path); got != want {
+			t.Errorf("casdoorVerb(%q) = %v, want %v", path, got, want)
 		}
 	}
 }

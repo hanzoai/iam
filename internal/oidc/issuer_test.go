@@ -1,12 +1,10 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
 import (
 	"context"
 	"net/url"
-	"strings"
 	"testing"
 
 	"github.com/hanzoai/orm"
@@ -15,7 +13,7 @@ import (
 
 // testIssuerMap is the canonical multi-brand map the cutover deploy configures as
 // IAM_ISSUER_MAP: several ingress hosts (including iam.* aliases) collapse to ONE
-// pinned issuer per brand, all served by the single iam instance.
+// pinned issuer per brand, all served by the single iam2 instance.
 const testIssuerMap = `{
 	"hanzo.id":        "https://hanzo.id",
 	"iam.hanzo.ai":    "https://hanzo.id",
@@ -350,210 +348,4 @@ func discoveryIssuer(t *testing.T, app *zip.App, host string) (issuer, jwksURI s
 	issuer, _ = d["issuer"].(string)
 	jwksURI, _ = d["jwks_uri"].(string)
 	return issuer, jwksURI
-}
-
-// The federation origin is a DIFFERENT value from the issuer, and the split is
-// the whole point: the issuer must stay per-brand (an RP pins `iss`), while the
-// IdP callback must be one org-constant string because a social provider holds
-// ONE OAuth client with a FIXED redirect_uri list. Braided, every brand sent a
-// redirect_uri the provider had never seen and social login failed everywhere.
-// A cross-host fold is REFUSED AT BOOT, because the browser could not complete a
-// sign-in against it.
-//
-// This test used to assert that iam.hanzo.ai's callback folds onto hanzo.id — the
-// stated purpose of the split, so a provider console holds one redirect_uri per org
-// instead of one per brand host. The separation of issuer from callback origin is
-// right, and the issuer half still holds and is still asserted below. The fold half
-// cannot work yet: beginFederation sets the `hanzo_fed` anti-forgery cookie on the
-// host that served it with NO Domain attribute (host-only, deliberately — it is the
-// login-CSRF defence), and the callback refuses an empty cookie with no exemption.
-// Set on iam.hanzo.ai, it is never presented to hanzo.id, so every social sign-in on
-// that brand would fail closed — at a human's first login attempt, not at deploy,
-// with an error naming the symptom rather than the config.
-//
-// Failing to boot is the honest answer, matching how this file already treats a
-// misconfigured issuer. Completing the feature means the begin leg redirecting to
-// the federation origin so the cookie is written THERE first; when that lands, this
-// test flips back to asserting the fold.
-func TestFederationOriginCrossHostFoldIsRefusedAtBoot(t *testing.T) {
-	t.Setenv("IAM_ISSUER", "https://hanzo.id")
-	t.Setenv("IAM_ISSUER_MAP", `{"hanzo.id":"https://hanzo.id","lux.id":"https://lux.id","iam.hanzo.ai":"https://iam.hanzo.ai"}`)
-	t.Setenv("IAM_FEDERATION_ORIGIN", "https://hanzo.id")
-	t.Setenv("IAM_FEDERATION_ORIGIN_MAP", `{"hanzo.id":"https://hanzo.id","iam.hanzo.ai":"https://hanzo.id","lux.id":"https://lux.id"}`)
-
-	prevIss, prevFed := activeResolver.Load(), activeFederationResolver.Load()
-	t.Cleanup(func() { activeResolver.Store(prevIss); activeFederationResolver.Store(prevFed) })
-	activeResolver.Store(nil)
-	activeFederationResolver.Store(nil)
-	if err := InitIssuerResolver(); err != nil {
-		t.Fatalf("InitIssuerResolver: %v", err)
-	}
-
-	err := InitFederationResolver()
-	if err == nil {
-		t.Fatal("InitFederationResolver accepted a cross-host fold; the hanzo_fed cookie " +
-			"is host-only, so every social sign-in on iam.hanzo.ai would fail closed")
-	}
-	for _, want := range []string{"iam.hanzo.ai", "hanzo_fed", "host-only"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("boot error must name %q so the operator can act on it; got: %v", want, err)
-		}
-	}
-	// The resolver must NOT be installed on a refusal — a half-applied config is
-	// how a boot guard turns into the outage it was meant to prevent.
-	if activeFederationResolver.Load() != nil {
-		t.Error("a refused federation config was installed anyway")
-	}
-	// The ISSUER half of the split is untouched and still per-brand: that is what an
-	// RP pins, and it is correct today.
-	if got := resolveIssuer("iam.hanzo.ai"); got != "https://iam.hanzo.ai" {
-		t.Errorf("issuer for iam.hanzo.ai = %q, want per-brand https://iam.hanzo.ai", got)
-	}
-}
-
-// A same-host map changes no origin, so it is a no-op and must still boot — the
-// guard rejects unreachable folds, not the feature's existence.
-func TestFederationOriginSameHostMapBoots(t *testing.T) {
-	t.Setenv("IAM_ISSUER", "https://hanzo.id")
-	t.Setenv("IAM_ISSUER_MAP", `{"hanzo.id":"https://hanzo.id","lux.id":"https://lux.id"}`)
-	t.Setenv("IAM_FEDERATION_ORIGIN", "https://hanzo.id")
-	t.Setenv("IAM_FEDERATION_ORIGIN_MAP", `{"hanzo.id":"https://hanzo.id","lux.id":"https://lux.id"}`)
-
-	prevIss, prevFed := activeResolver.Load(), activeFederationResolver.Load()
-	t.Cleanup(func() { activeResolver.Store(prevIss); activeFederationResolver.Store(prevFed) })
-	activeResolver.Store(nil)
-	activeFederationResolver.Store(nil)
-	if err := InitIssuerResolver(); err != nil {
-		t.Fatalf("InitIssuerResolver: %v", err)
-	}
-	if err := InitFederationResolver(); err != nil {
-		t.Fatalf("a same-host federation map must boot: %v", err)
-	}
-	if got := resolveFederationOrigin("lux.id"); got != "https://lux.id" {
-		t.Errorf("lux federation origin = %q, want https://lux.id", got)
-	}
-}
-
-func TestFederationOriginUnsetFollowsIssuer(t *testing.T) {
-	t.Setenv("IAM_ISSUER", "https://hanzo.id")
-	t.Setenv("IAM_ISSUER_MAP", `{"lux.id":"https://lux.id"}`)
-	t.Setenv("IAM_FEDERATION_ORIGIN", "")
-	t.Setenv("IAM_FEDERATION_ORIGIN_MAP", "")
-
-	activeResolver.Store(nil)
-	activeFederationResolver.Store(nil)
-	if err := InitIssuerResolver(); err != nil {
-		t.Fatalf("InitIssuerResolver: %v", err)
-	}
-	if err := InitFederationResolver(); err != nil {
-		t.Fatalf("InitFederationResolver on empty config: %v", err)
-	}
-	for _, h := range []string{"lux.id", "hanzo.id", "unknown.example"} {
-		if got, want := resolveFederationOrigin(h), resolveIssuer(h); got != want {
-			t.Errorf("unset federation origin for %q = %q, want issuer %q", h, got, want)
-		}
-	}
-}
-
-// A non-https or malformed pin must fail the BOOT, not degrade: this value is
-// handed to an external IdP.
-func TestFederationOriginBadConfigFailsBoot(t *testing.T) {
-	t.Setenv("IAM_FEDERATION_ORIGIN", "http://not-https.example")
-	t.Setenv("IAM_FEDERATION_ORIGIN_MAP", "")
-	activeFederationResolver.Store(nil)
-	if err := InitFederationResolver(); err == nil {
-		t.Error("InitFederationResolver accepted a non-https origin; want a hard boot error")
-	}
-}
-
-// A machine credential is spent AGAINST something, and RFC 8707 is how the caller
-// says what. Without it every client_credentials token could only ever name its own
-// minter, so a resource server had the choice of accepting tokens minted for someone
-// else or being handed a second credential of its own — which is how an estate ends
-// up with one identity provider and a drawer full of service tokens beside it.
-func TestClientCredentials_AudienceNamesTheRequestedResource(t *testing.T) {
-	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "svc", secret: "svc-secret", redirectURIs: []string{testRedirect}})
-
-	mint := func(form url.Values) []string {
-		t.Helper()
-		form.Set("grant_type", "client_credentials")
-		form.Set("client_id", "svc")
-		form.Set("client_secret", "svc-secret")
-		req := formReq("POST", PathToken, form)
-		req.Host = "hanzo.id"
-		resp, body := do(t, app, req)
-		if resp.StatusCode != 200 {
-			t.Fatalf("mint: status=%d body=%s", resp.StatusCode, body)
-		}
-		access, _ := decode(t, body)["access_token"].(string)
-		claims, err := verifyToken(context.Background(), db, access)
-		if err != nil {
-			t.Fatalf("verify: %v", err)
-		}
-		return claims.Audience
-	}
-
-	// The resource indicator names the audience.
-	if got := mint(url.Values{"resource": {"hanzo-git"}}); len(got) != 1 || got[0] != "hanzo-git" {
-		t.Errorf("resource=hanzo-git → aud %v, want [hanzo-git]", got)
-	}
-
-	// `audience` is the same request said the other way.
-	if got := mint(url.Values{"audience": {"hanzo-git"}}); len(got) != 1 || got[0] != "hanzo-git" {
-		t.Errorf("audience=hanzo-git → aud %v, want [hanzo-git]", got)
-	}
-
-	// resource wins when both are given, matching the token exchange grant beside it.
-	if got := mint(url.Values{"resource": {"hanzo-git"}, "audience": {"other"}}); len(got) != 1 || got[0] != "hanzo-git" {
-		t.Errorf("resource and audience → aud %v, want [hanzo-git]", got)
-	}
-
-	// Asking for nothing still mints for the client itself, which is what every
-	// existing caller receives and must keep receiving.
-	if got := mint(url.Values{}); len(got) != 1 || got[0] != "svc" {
-		t.Errorf("no resource → aud %v, want [svc]", got)
-	}
-}
-
-// TestDevIssuerKeepsTheWholeAddress pins the two halves the dev branch used to
-// drop. It is the difference between a discovery document that describes the
-// deployment answering it and one that names a port nothing serves over a scheme
-// nothing speaks — which is what sent a local SPA to the public issuer.
-//
-// The https rows are the guard on the fix: keeping the port must not downgrade a
-// developer who is on a real name with a real certificate.
-func TestDevIssuerKeepsTheWholeAddress(t *testing.T) {
-	for _, c := range []struct{ host, want string }{
-		{"127.0.0.1:38080", "http://127.0.0.1:38080"},
-		{"localhost:3000", "http://localhost:3000"},
-		{"hanzo.localhost:8080", "http://hanzo.localhost:8080"},
-		{"127.0.0.1", "http://127.0.0.1"},
-		{"[::1]:38080", "http://[::1]:38080"},
-		{"example.test:8443", "https://example.test:8443"},
-		{"lux.id", "https://lux.id"},
-		{"LUX.ID.", "https://lux.id"},
-		{" lux.id ", "https://lux.id"},
-		{"", devFallbackIssuer},
-	} {
-		if got := devIssuer(c.host); got != c.want {
-			t.Errorf("devIssuer(%q) = %q, want %q", c.host, got, c.want)
-		}
-	}
-}
-
-// TestNormalizeHostStillStripsThePort is the other side of the same change. The
-// map-key normalizer MUST keep dropping ports, or "lux.id:443" stops selecting
-// the "lux.id" brand and an unknown host falls through to the default — the
-// fail-open newIssuerResolver refuses to boot with.
-func TestNormalizeHostStillStripsThePort(t *testing.T) {
-	for _, c := range []struct{ host, want string }{
-		{"lux.id:443", "lux.id"},
-		{"LUX.ID.", "lux.id"},
-		{"127.0.0.1:38080", "127.0.0.1"},
-	} {
-		if got := normalizeHost(c.host); got != c.want {
-			t.Errorf("normalizeHost(%q) = %q, want %q", c.host, got, c.want)
-		}
-	}
 }

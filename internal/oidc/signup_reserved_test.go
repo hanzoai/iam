@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -7,16 +6,15 @@ import (
 	"context"
 	"testing"
 
-	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // fullApp gives a test full control over the signup-relevant application fields the
 // shared harness seedApp fixes (it hardcodes Organization "hanzo" and exposes only
-// IsShared/EnableSignUp). Owner is "admin" (platform-owned, the iam convention);
+// IsShared/EnableSignUp). Owner is "admin" (platform-owned, the iam2 convention);
 // clientId == Name (the <org>-<app> convention the mint allow-lists key on).
 type fullApp struct {
 	clientID  string
@@ -71,8 +69,8 @@ func TestSignup_reservedOrg_refusedThroughSharedApp(t *testing.T) {
 				"password":     "correct horse battery staple",
 				"email":        "eve@evil.example",
 			})
-			if status != 400 || env["status"] != "error" {
-				t.Fatalf("signup into reserved org %q: status=%d env=%v, want 400 error", reserved, status, env)
+			if status != 200 || env["status"] != "error" {
+				t.Fatalf("signup into reserved org %q: status=%d env=%v, want 200 error", reserved, status, env)
 			}
 			// The escalation is prevented: NO user row exists under the reserved org.
 			if u, _ := store.GetUserByName(context.Background(), db, reserved, "eve"); u != nil {
@@ -118,8 +116,8 @@ func TestSignup_adminOrgApp_cannotMintSuperAdmin(t *testing.T) {
 		"username":     "eve",
 		"password":     "correct horse battery staple",
 	})
-	if status != 400 || env["status"] != "error" {
-		t.Fatalf("admin-org-app signup into admin: status=%d env=%v, want 400 error", status, env)
+	if status != 200 || env["status"] != "error" {
+		t.Fatalf("admin-org-app signup into admin: status=%d env=%v, want 200 error", status, env)
 	}
 	if u, _ := store.GetUserByName(context.Background(), db, "admin", "eve"); u != nil {
 		t.Fatal("a SuperAdmin was minted via an admin-org signup app — invariant 1 breached")
@@ -139,8 +137,8 @@ func TestSignup_orgChoiceApp_reservedOrgRefused(t *testing.T) {
 		"username":     "eve",
 		"password":     "correct horse battery staple",
 	})
-	if status != 400 || env["status"] != "error" {
-		t.Fatalf("org-choice signup into admin: status=%d env=%v, want 400 error", status, env)
+	if status != 200 || env["status"] != "error" {
+		t.Fatalf("org-choice signup into admin: status=%d env=%v, want 200 error", status, env)
 	}
 	if u, _ := store.GetUserByName(context.Background(), db, "admin", "eve"); u != nil {
 		t.Fatal("a SuperAdmin was minted via an org-choice signup app — invariant 1 breached")
@@ -206,16 +204,14 @@ func TestSignup_luxCloud_createsPlainNonAdminUser(t *testing.T) {
 	if u.Owner != "lux" {
 		t.Errorf("owner = %q, want lux (a signup must land in the served tenant, never admin)", u.Owner)
 	}
-	if policy.IsReservedOrg(u.Owner) {
+	if store.IsReservedOrg(u.Owner) {
 		t.Errorf("lux.cloud user landed in a RESERVED org %q", u.Owner)
 	}
 	if u.IsAdmin {
 		t.Error("lux.cloud signup produced an admin user — must be a PLAIN user")
 	}
-	// Now a stronger claim than it used to be: not anchored in the reserved org,
-	// AND holding no membership there — a signup can mint neither.
-	if super, err := store.IsSuperAdmin(context.Background(), db, u.Owner, u.Name); err != nil || super {
-		t.Errorf("lux.cloud signup produced a SuperAdmin — must be a PLAIN user (super=%v err=%v)", super, err)
+	if store.IsSuperAdmin(u.Owner) {
+		t.Error("lux.cloud signup produced a SuperAdmin — must be a PLAIN user")
 	}
 	if u.Type != "normal-user" {
 		t.Errorf("type = %q, want normal-user", u.Type)

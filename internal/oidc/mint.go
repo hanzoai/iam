@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -8,16 +7,15 @@ import (
 	"errors"
 	"strings"
 
-	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // The shared tail of every interactive authentication: given a user who has
 // ALREADY proven who they are — by password, by wallet signature, by any future
-// factor — decide what the SDK reads back. One place, so a new endpoint
+// factor — decide what the SDK reads back. One place, so a new front door
 // inherits the redirect/PKCE/tenant rules instead of restating them.
 
 // Mint is the authorize passthrough an interactive login carries. Type selects
@@ -40,7 +38,7 @@ type Mint struct {
 // verified identity, never a client-supplied value.
 //
 // This is the ONE mint path. Every rule below is a security invariant, so it
-// lives here rather than in each endpoint:
+// lives here rather than in each front door:
 //   - Tenant isolation: the user's org must be permitted for this application —
 //     its own org, a shared app, or an app that lets users choose their org.
 //     Without it a user in one tenant could obtain a token naming another.
@@ -49,29 +47,7 @@ type Mint struct {
 //     minted against.
 //   - PKCE: S256 only (never "plain"), and a public client must present a
 //     challenge — no downgrade.
-//   - Reserved-org confinement: a built-in/SuperAdmin principal is grantable
-//     ONLY through an application that serves its own reserved org.
 func MintFor(ctx context.Context, db orm.DB, app *schema.Application, userID string, p Mint) (string, error) {
-	// The user's org is the owner half of its own id, set server-side at
-	// authentication — never read from the request.
-	org, _, _ := strings.Cut(userID, "/")
-
-	// Reserved-org confinement, ahead of the type split so EVERY grant shape is
-	// bound identically — a bare session, an authorization code, a wallet
-	// sign-in, and the silent SSO grant alike. A RESERVED-org principal (a
-	// SuperAdmin under "admin", a built-in service identity) may be granted only
-	// through an application that itself serves that reserved org — the dedicated
-	// console. Otherwise any SHARED application (whose tenant rule below accepts
-	// every org by design) would mint a real SuperAdmin grant, and silent SSO
-	// would mint it with no interaction at all.
-	//
-	// It lived in login.go, which meant it held for a typed password and for
-	// nothing else. Here it holds for every endpoint, including the ones not
-	// written yet.
-	if policy.IsReservedOrg(org) && (app == nil || org != app.Organization) {
-		return "", errors.New("the user is not permitted to sign in to this application")
-	}
-
 	// A bare sign-in needs no application: report the identity and stop.
 	if p.Type != "code" {
 		return userID, nil
@@ -79,7 +55,10 @@ func MintFor(ctx context.Context, db orm.DB, app *schema.Application, userID str
 	if app == nil {
 		return "", errors.New("the application does not exist")
 	}
-	if org != app.Organization && !app.ServesAnyOrg() {
+	// The user's org is the owner half of its own id, set server-side at
+	// authentication — never read from the request.
+	org, _, _ := strings.Cut(userID, "/")
+	if org != app.Organization && !app.IsShared && app.OrgChoiceMode == "" {
 		return "", errors.New("the user is not permitted to sign in to this application")
 	}
 	if p.RedirectUri != "" && !app.IsRedirectUriValid(p.RedirectUri) {
@@ -106,7 +85,7 @@ func MintFor(ctx context.Context, db orm.DB, app *schema.Application, userID str
 	return code.Code, nil
 }
 
-// ResolveApp resolves the OAuth application an endpoint names: by clientId when
+// ResolveApp resolves the OAuth application a front door names: by clientId when
 // present, else by name under the "admin" registry owner. Returns (nil, nil)
 // when the request names no application. Shared by every interactive login so
 // they all resolve the same app from the same fields.

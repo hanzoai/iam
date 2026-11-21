@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -12,7 +11,7 @@ import (
 	fiber "github.com/zap-proto/fiber/v3"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
 // The login-challenge lifecycle: the ONE primitive for a sign-in that has proven
@@ -37,12 +36,6 @@ const challengeTTL = 5 * time.Minute
 const (
 	KindMfa        = "mfa"
 	KindFederation = "federation"
-	// The two WebAuthn ceremonies (webauthn.go). They are separate kinds because
-	// they prove different things and must never substitute for one another: a
-	// challenge minted to ENROLL a passkey, answered as a SIGN-IN, would be a
-	// sign-in nobody authenticated.
-	KindRegister = "webauthn-register"
-	KindAssert   = "webauthn-assert"
 )
 
 // ErrChallenge is the ONE opaque failure for every way a challenge can be refused
@@ -58,9 +51,8 @@ const challengeOwner = "admin"
 
 // MintChallenge persists a fresh challenge for subject ("owner/name") and returns
 // its opaque id. payload is the kind's own state — the just-used verification type
-// for the MFA gate; offered is the set of second factors that may answer it. now is
-// injected for testability.
-func MintChallenge(ctx context.Context, db orm.DB, kind, subject, payload string, offered []string, now time.Time) (string, error) {
+// for the MFA gate. now is injected for testability.
+func MintChallenge(ctx context.Context, db orm.DB, kind, subject, payload string, now time.Time) (string, error) {
 	id, err := newOpaqueToken()
 	if err != nil {
 		return "", err
@@ -72,7 +64,6 @@ func MintChallenge(ctx context.Context, db orm.DB, kind, subject, payload string
 	c.Kind = kind
 	c.Subject = subject
 	c.Payload = payload
-	c.Offered = offered
 	c.ExpireIn = now.Add(challengeTTL).Unix()
 	c.SetId(challengeOwner + "/" + id)
 	if err := c.CreateCtx(ctx); err != nil {

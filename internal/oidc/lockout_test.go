@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -13,19 +12,16 @@ import (
 // F-D1: public ROPC without lockout is an online brute-force oracle. A run of wrong
 // passwords must lock the account (refused even with the correct password inside the
 // window); a correct password before the limit resets the counter. State is the
-// per-row SigninWrongTimes/LastSigninWrongTime legacy already used.
+// per-row SigninWrongTimes/LastSigninWrongTime casdoor already used.
 
 func TestPasswordGrant_lockoutAfterRepeatedWrong(t *testing.T) {
 	app, db := newServer(t)
-	// Confidential: the password grant admits no other kind of client, so the
-	// lockout under test is reached by a fully authenticated caller.
-	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedApp(t, db, appOpts{clientID: "hanzo-console"}) // public
 	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
 
 	wrong := url.Values{
 		"grant_type": {"password"}, "client_id": {"hanzo-console"},
-		"client_secret": {"top-secret"},
-		"username":      {"alice@hanzo.ai"}, "password": {"WRONG"},
+		"username": {"alice@hanzo.ai"}, "password": {"WRONG"},
 	}
 	// Exactly users.LockThreshold wrong attempts, each a plain bad-credential refusal.
 	for i := 0; i < users.LockThreshold; i++ {
@@ -35,8 +31,7 @@ func TestPasswordGrant_lockoutAfterRepeatedWrong(t *testing.T) {
 	// Now the CORRECT password is refused — the account is locked.
 	resp, tok := postToken(t, app, url.Values{
 		"grant_type": {"password"}, "client_id": {"hanzo-console"},
-		"client_secret": {"top-secret"},
-		"username":      {"alice@hanzo.ai"}, "password": {"correct horse"},
+		"username": {"alice@hanzo.ai"}, "password": {"correct horse"},
 	})
 	if resp.StatusCode != 400 || tok["error"] != "invalid_grant" {
 		t.Fatalf("locked account status=%d err=%v, want 400 invalid_grant", resp.StatusCode, tok["error"])
@@ -58,9 +53,8 @@ func TestPasswordGrant_lockoutAfterRepeatedWrong(t *testing.T) {
 // loaded row's real key.
 func TestPasswordGrant_lockout_signupCreatedUser(t *testing.T) {
 	app, db := newServer(t)
-	// One app that both allows signup AND drives ROPC — the real console shape.
-	// Confidential, because the password grant admits no other kind of client.
-	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret", signup: true})
+	// One PUBLIC app that both allows signup AND drives ROPC — the real console shape.
+	seedApp(t, db, appOpts{clientID: "hanzo-console", signup: true})
 	seedOrg(t, db, "hanzo")
 
 	// Create the account through the ONE canonical create path — NO SetId. Its storage
@@ -76,8 +70,7 @@ func TestPasswordGrant_lockout_signupCreatedUser(t *testing.T) {
 
 	wrong := url.Values{
 		"grant_type": {"password"}, "client_id": {"hanzo-console"},
-		"client_secret": {"top-secret"},
-		"username":      {"mallory@hanzo.ai"}, "password": {"WRONG"},
+		"username": {"mallory@hanzo.ai"}, "password": {"WRONG"},
 	}
 	for i := 0; i < users.LockThreshold; i++ {
 		resp, tok := postToken(t, app, wrong)
@@ -86,8 +79,7 @@ func TestPasswordGrant_lockout_signupCreatedUser(t *testing.T) {
 	// The CORRECT password on the 6th attempt must now be REFUSED — locked.
 	resp, tok := postToken(t, app, url.Values{
 		"grant_type": {"password"}, "client_id": {"hanzo-console"},
-		"client_secret": {"top-secret"},
-		"username":      {"mallory@hanzo.ai"}, "password": {pw},
+		"username": {"mallory@hanzo.ai"}, "password": {pw},
 	})
 	if resp.StatusCode != 400 || tok["error"] != "invalid_grant" {
 		t.Fatalf("a signup-created account did NOT lock after %d wrong passwords: status=%d err=%v — the counter never persisted (F-D1)",
@@ -102,18 +94,16 @@ func TestPasswordGrant_lockout_signupCreatedUser(t *testing.T) {
 // A correct password before the limit resets the counter, so the lock never trips.
 func TestPasswordGrant_correctPasswordResetsLockout(t *testing.T) {
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
+	seedApp(t, db, appOpts{clientID: "hanzo-console"}) // public
 	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
 
 	wrong := url.Values{
 		"grant_type": {"password"}, "client_id": {"hanzo-console"},
-		"client_secret": {"top-secret"},
-		"username":      {"alice@hanzo.ai"}, "password": {"WRONG"},
+		"username": {"alice@hanzo.ai"}, "password": {"WRONG"},
 	}
 	right := url.Values{
 		"grant_type": {"password"}, "client_id": {"hanzo-console"},
-		"client_secret": {"top-secret"},
-		"username":      {"alice@hanzo.ai"}, "password": {"correct horse"},
+		"username": {"alice@hanzo.ai"}, "password": {"correct horse"},
 	}
 	// Two rounds of (limit-1 wrong, then a success). If the success did not reset the
 	// counter, the accumulated wrongs (2*(limit-1)) would exceed the limit and the

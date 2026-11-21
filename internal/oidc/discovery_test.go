@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -8,7 +7,7 @@ import (
 )
 
 // Discovery is served at both well-known paths, host-relative, advertising only
-// what iam implements — matching the live hanzo.id surface so a client's
+// what iam2 implements — matching the live hanzo.id surface so a client's
 // discovery step is unchanged across the backend swap.
 func TestDiscovery_ShapeAtBothPaths(t *testing.T) {
 	app, _ := newServer(t)

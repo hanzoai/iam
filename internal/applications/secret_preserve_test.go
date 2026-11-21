@@ -1,33 +1,25 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 package applications
 
 import (
 	"context"
 	"testing"
 
-	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 
-	"github.com/hanzoai/iam/internal/principal"
-	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/internal/schema"
 )
-
-// asSuper is who actually makes these writes: the rows are owned by the reserved
-// admin org, which no other scope may write, and the handler is reached from the
-// router, which always carries a principal.
-func asSuper() context.Context {
-	return principal.Bind(context.Background(), &policy.Principal{Org: "admin", User: "root", Sudo: true})
-}
 
 // THE ADMIN ROUND-TRIP MUST NOT DE-SECRET AN APP.
 //
 // update-application is a full REPLACE and every read MASKS the client secret, so
 // "read the record, change one field, write it back" — the only shape an admin UI
-// or an operator has — posts ClientSecret:"" for an app that holds one, so the
-// write would blank it and silently turn a confidential client public. The token
-// endpoint reads a stored empty secret as "public client, demand no client auth",
-// so the blast radius is every flow that app serves.
+// or an operator has — posted ClientSecret:"" and silently turned a confidential
+// client public. Measured on live IAM: the SuperAdmin read of hanzo-console,
+// hanzo-app, hanzo-id and hanzo-cloud all return "" while a token-endpoint probe
+// proves all four hold a secret. The token endpoint reads a stored empty secret as
+// "public client, demand no client auth", so the blast radius is every flow those
+// apps serve.
 
 func seedConfidential(t *testing.T, db orm.DB, name, secret string) *schema.Application {
 	t.Helper()
@@ -45,7 +37,7 @@ func seedConfidential(t *testing.T, db orm.DB, name, secret string) *schema.Appl
 // The regression: a write echoing a MASKED read preserves the credential.
 func TestUpdate_MaskedRoundTripPreservesTheSecret(t *testing.T) {
 	db := memDB(t)
-	ctx := asSuper()
+	ctx := context.Background()
 	seedConfidential(t, db, "hanzo-console", "s3cret-do-not-lose-me")
 
 	// Exactly what an admin round-trip carries: the record as READ (secret masked
@@ -75,7 +67,7 @@ func TestUpdate_MaskedRoundTripPreservesTheSecret(t *testing.T) {
 // Rotation stays possible — it just has to be deliberate.
 func TestUpdate_ExplicitSecretStillRotates(t *testing.T) {
 	db := memDB(t)
-	ctx := asSuper()
+	ctx := context.Background()
 	seedConfidential(t, db, "rotate-me", "old-secret")
 
 	in := &schema.Application{
@@ -95,7 +87,7 @@ func TestUpdate_ExplicitSecretStillRotates(t *testing.T) {
 // same as minting one.
 func TestUpdate_PublicClientStaysPublic(t *testing.T) {
 	db := memDB(t)
-	ctx := asSuper()
+	ctx := context.Background()
 	seedConfidential(t, db, "public-spa", "")
 
 	in := &schema.Application{

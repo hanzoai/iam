@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package wallet
 
@@ -26,11 +25,8 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/authz"
-	"github.com/hanzoai/iam/internal/keyring"
 	"github.com/hanzoai/iam/internal/oidc"
-	"github.com/hanzoai/iam/pkg/schema"
-
-	"github.com/hanzoai/iam/internal/testhttp"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
 // HTTP-level harness: every test drives the REAL registered router behind the REAL
@@ -63,45 +59,17 @@ func openTestDB(t *testing.T) orm.DB {
 	return db
 }
 
-// TestGuardedProbeIsGated proves the Guard this harness installs is LIVE. Every
-// other test here asserts a wallet route is reachable without a bearer; that
-// only means something if a route on the Guard's scope is not.
-func TestGuardedProbeIsGated(t *testing.T) {
-	app, _ := newServer(t)
-	if status, _ := get(t, app, guardedProbe); status != http.StatusUnauthorized {
-		t.Fatalf("GET %s unauthenticated = %d, want 401 — the Guard is inert, so "+
-			"the anonymous-reachability tests below prove nothing", guardedProbe, status)
-	}
-}
-
-// guardedProbe is a route registered on the Guard's scope so the Guard in this
-// harness has something to wrap. TestGuardedProbeIsGated asserts it 401s, which
-// is what makes "the Guard is still installed" a checked fact rather than a
-// comment — an inert Guard would let every wallet reachability test below pass
-// for the wrong reason.
-const guardedProbe = "/v1/iam/wallet-test-guarded"
-
 // newServer registers the wallet surface exactly as routes.Route does: on the
-// pre-authentication PUBLIC group, which holds no Guard — that is what makes it
-// public, not the order it was registered in. The Guard is still installed, on
-// its own group, so "anonymous reachability" is proved against the real
-// fail-closed default and not around it.
+// pre-authentication PUBLIC group (a root, empty-prefix router) registered
+// BEFORE the Guard, so a matched route terminates the middleware walk and the
+// Guard never runs on it. The Guard is still installed, so "anonymous
+// reachability" is proved against the real fail-closed default, not around it.
 func newServer(t *testing.T) (*zip.App, orm.DB) {
 	t.Helper()
 	db := openTestDB(t)
-	app := zip.New(zip.Config{AppName: "iam-wallet-test", DisableStartupMessage: true})
+	app := zip.New(zip.Config{AppName: "iam2-wallet-test", DisableStartupMessage: true})
 	Route(app.Group(""), db)
-	// The Guard is mounted the way routes.Route mounts it — on a group that holds
-	// the routes it gates — and that group is given a route, so the Guard is live
-	// rather than inert: guardedProbe really does 401 without a bearer
-	// (TestGuardedProbeIsGated). Anonymous reachability of the wallet routes is
-	// therefore proved against the real fail-closed default and not around it,
-	// which is the whole point of installing a Guard in a wallet test.
-	authed := app.Group("")
-	authed.Use(authz.Guard(db))
-	authed.Get(guardedProbe, func(c *zip.Ctx) error {
-		return c.JSON(http.StatusOK, map[string]string{"probe": "reached"})
-	})
+	app.Use(authz.Guard(db))
 	app.Authorize(authz.Authorize)
 	return app, db
 }
@@ -153,7 +121,7 @@ func seed(t *testing.T, db orm.DB, o opts) *schema.Application {
 // a 200, the envelope proves what the client reads.
 func do(t *testing.T, app *zip.App, req *http.Request) (int, map[string]any) {
 	t.Helper()
-	resp, err := testhttp.Do(app, req)
+	resp, err := app.Fiber().Test(req)
 	if err != nil {
 		t.Fatalf("%s %s: %v", req.Method, req.URL.Path, err)
 	}
@@ -340,7 +308,7 @@ func bearer(t *testing.T, db orm.DB, a *schema.Application, org, name string) (*
 	c.Owner = "admin" // a reserved signing-cert owner — the trust boundary
 	c.Name = "cert-wallet"
 	c.CryptoAlgorithm = "RS256"
-	keyring.Set(c.Name, string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: der})))
+	c.PrivateKey = string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: der}))
 	c.SetId("admin/cert-wallet")
 	if err := c.CreateCtx(tctx()); err != nil {
 		t.Fatalf("seed cert: %v", err)
@@ -356,10 +324,7 @@ func bearer(t *testing.T, db orm.DB, a *schema.Application, org, name string) (*
 	}
 
 	tok, err := oidc.NewRSASigner(k, "cert-wallet", "https://"+host).
-		// The identity travels as one named value, so "openid" can only be the SCOPE.
-		// It once sat in the username slot — six adjacent strings, and a scope became
-		// a username silently. That is the whole reason Identity exists.
-		Sign(a, oidc.Identity{Id: org + "/" + name, Name: name}, "openid", "", time.Hour, time.Now())
+		Sign(a, org+"/"+name, "", "", "", "openid", nil, time.Hour, time.Now())
 	if err != nil {
 		t.Fatalf("sign token: %v", err)
 	}

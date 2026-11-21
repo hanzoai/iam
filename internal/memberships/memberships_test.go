@@ -1,14 +1,14 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package memberships_test
 
-// The (User x Org x Role) relation: list it, ensure one, revoke one. Every case is
-// a HTTP request driven through the REAL registered router (routes.Route installs
-// the authz Guard, then registers memberships after it), so the assertions prove
-// the three things a caller depends on: one store behind every address, the tenant
-// gate the rest of the surface uses, and a cross-tenant caller refused with v1's
-// verbatim message.
+// The Casdoor membership VERB aliases (GAP A): get-memberships / add-membership /
+// delete-membership, the spellings cloud's clients/team invite path hard-codes.
+// Every case is a HTTP request driven through the REAL registered router (routes.Route
+// installs the authz Guard, then registers memberships after it), so the assertions
+// prove the three things a backend swap depends on: the verbs reach the SAME store
+// as the REST surface, the SAME tenant authz gates the REST surface uses, and a
+// cross-tenant caller is refused with v1's verbatim message.
 
 import (
 	"bytes"
@@ -22,7 +22,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -32,12 +31,9 @@ import (
 	ormdb "github.com/hanzoai/orm/db"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/keyring"
 	"github.com/hanzoai/iam/internal/routes"
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
-
-	"github.com/hanzoai/iam/internal/testhttp"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 const signingKid = "cert-hanzo"
@@ -72,9 +68,7 @@ func newHarness(t *testing.T) *harness {
 
 	app := zip.New(zip.Config{AppName: "memberships-test", DisableStartupMessage: true})
 	routes.Route(app, db)
-	if err := app.Build(); err != nil {
-		t.Fatalf("build: %v", err)
-	}
+	app.Prepare()
 	return &harness{app: app, key: key, db: db}
 }
 
@@ -95,8 +89,12 @@ func (h *harness) token(t *testing.T, sub string) string {
 
 func (h *harness) get(t *testing.T, path, bearer string) (int, env) {
 	t.Helper()
-	status, body := h.read(t, path, bearer)
-	return status, envOf(body)
+	req := httptest.NewRequest("GET", path, nil)
+	req.Host = "hanzo.id"
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	return h.do(t, req)
 }
 
 func (h *harness) post(t *testing.T, path string, body any, bearer string) (int, env) {
@@ -128,40 +126,15 @@ func (h *harness) postBasic(t *testing.T, path string, body any, clientID, secre
 // caller asserts on the status alone.
 func (h *harness) do(t *testing.T, req *http.Request) (int, env) {
 	t.Helper()
-	status, body := h.raw(t, req)
-	return status, envOf(body)
-}
-
-// envOf decodes the v1 envelope a body carries — the ONE decode, so `get` and
-// `do` cannot drift into reading the same bytes two ways.
-func envOf(body string) env {
-	var e env
-	_ = json.Unmarshal([]byte(body), &e)
-	return e
-}
-
-// raw is do without the decode — the status and the body VERBATIM, for a case
-// whose subject IS the bytes.
-func (h *harness) raw(t *testing.T, req *http.Request) (int, string) {
-	t.Helper()
-	resp, err := testhttp.Do(h.app, req)
+	resp, err := h.app.Fiber().Test(req)
 	if err != nil {
 		t.Fatalf("%s %s: %v", req.Method, req.URL.Path, err)
 	}
 	body, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
-	return resp.StatusCode, string(body)
-}
-
-// read drives one GET and returns the status and the body verbatim.
-func (h *harness) read(t *testing.T, url, bearer string) (int, string) {
-	t.Helper()
-	req := httptest.NewRequest("GET", url, nil)
-	req.Host = "hanzo.id"
-	if bearer != "" {
-		req.Header.Set("Authorization", "Bearer "+bearer)
-	}
-	return h.raw(t, req)
+	var e env
+	_ = json.Unmarshal(body, &e)
+	return resp.StatusCode, e
 }
 
 // env is the v1 Response envelope the clients parse.
@@ -174,15 +147,15 @@ type env struct {
 
 // ---- cases -----------------------------------------------------------------
 
-// memberships?user=<owner/name> lists one identity's orgs (SuperAdmin path).
+// get-memberships?user=<owner/name> lists one identity's orgs (SuperAdmin path).
 func TestGetMemberships_byUser(t *testing.T) {
 	h := newHarness(t)
 	seedMembership(t, h.db, "hanzo/alice", "hanzo", store.RoleMember)
 	seedMembership(t, h.db, "hanzo/alice", "team-x", store.RoleAdmin)
 
-	status, e := h.get(t, "/v1/iam/memberships?user=hanzo/alice", h.token(t, "admin/root"))
+	status, e := h.get(t, "/v1/iam/get-memberships?user=hanzo/alice", h.token(t, "admin/root"))
 	if status != 200 || e.Status != "ok" {
-		t.Fatalf("memberships?user status=%d env=%+v, want 200 ok", status, e)
+		t.Fatalf("get-memberships?user status=%d env=%+v, want 200 ok", status, e)
 	}
 	rows := parseMemberships(t, e)
 	if len(rows) != 2 {
@@ -190,38 +163,38 @@ func TestGetMemberships_byUser(t *testing.T) {
 	}
 }
 
-// memberships?org=<slug> lists an org's roster.
+// get-memberships?org=<slug> lists an org's roster.
 func TestGetMemberships_byOrg(t *testing.T) {
 	h := newHarness(t)
 	seedMembership(t, h.db, "hanzo/alice", "hanzo", store.RoleMember)
 	seedMembership(t, h.db, "hanzo/boss", "hanzo", store.RoleAdmin)
 
 	// hanzo's own admin may read its own org's roster (handler-authorized scoped()).
-	status, e := h.get(t, "/v1/iam/memberships?org=hanzo", h.token(t, "hanzo/boss"))
+	status, e := h.get(t, "/v1/iam/get-memberships?org=hanzo", h.token(t, "hanzo/boss"))
 	if status != 200 || e.Status != "ok" {
-		t.Fatalf("memberships?org status=%d env=%+v, want 200 ok", status, e)
+		t.Fatalf("get-memberships?org status=%d env=%+v, want 200 ok", status, e)
 	}
 	if rows := parseMemberships(t, e); len(rows) != 2 {
 		t.Fatalf("hanzo roster = %d, want 2 (alice, boss)", len(rows))
 	}
 }
 
-// The write creates the row the same store EnsureMembership does, and the list
-// shows it — one store behind both.
+// add-membership creates the row the same store EnsureMembership does, and a
+// following get-memberships shows it — the verbs share ONE store.
 func TestAddMembership_thenGetShowsIt(t *testing.T) {
 	h := newHarness(t)
 	super := h.token(t, "admin/root")
 
-	status, e := h.post(t, "/v1/iam/memberships",
+	status, e := h.post(t, "/v1/iam/add-membership",
 		map[string]string{"user": "hanzo/alice", "org": "team-x", "role": "admin"}, super)
 	if status != 200 || e.Status != "ok" {
-		t.Fatalf("membership write status=%d env=%+v, want 200 ok", status, e)
+		t.Fatalf("add-membership status=%d env=%+v, want 200 ok", status, e)
 	}
 	if !parseBool(t, e) {
-		t.Fatal("the membership write reported no row created")
+		t.Fatal("add-membership reported no row created")
 	}
 
-	_, g := h.get(t, "/v1/iam/memberships?user=hanzo/alice", super)
+	_, g := h.get(t, "/v1/iam/get-memberships?user=hanzo/alice", super)
 	rows := parseMemberships(t, g)
 	if len(rows) != 1 || rows[0].Org != "team-x" || rows[0].Role != store.RoleAdmin {
 		t.Fatalf("after add, memberships = %+v, want one {team-x, admin}", rows)
@@ -259,10 +232,10 @@ func TestMembership_crossTenantDenied(t *testing.T) {
 	boss := h.token(t, "hanzo/boss") // admin of hanzo, NOT of orgb
 
 	// Write into orgb: refused.
-	_, add := h.post(t, "/v1/iam/memberships",
+	_, add := h.post(t, "/v1/iam/add-membership",
 		map[string]string{"user": "orgb/bob", "org": "orgb", "role": "member"}, boss)
 	if add.Status != "error" || add.Msg != "auth:Unauthorized operation" {
-		t.Fatalf("cross-tenant membership write env=%+v, want error auth:Unauthorized operation", add)
+		t.Fatalf("cross-tenant add-membership env=%+v, want error auth:Unauthorized operation", add)
 	}
 	// Delete from orgb: refused the same way.
 	_, del := h.post(t, "/v1/iam/delete-membership",
@@ -271,9 +244,9 @@ func TestMembership_crossTenantDenied(t *testing.T) {
 		t.Fatalf("cross-tenant delete-membership env=%+v, want error auth:Unauthorized operation", del)
 	}
 	// Read orgb's roster: refused the same way.
-	_, roster := h.get(t, "/v1/iam/memberships?org=orgb", boss)
+	_, roster := h.get(t, "/v1/iam/get-memberships?org=orgb", boss)
 	if roster.Status != "error" || roster.Msg != "auth:Unauthorized operation" {
-		t.Fatalf("cross-tenant memberships?org=orgb env=%+v, want error auth:Unauthorized operation", roster)
+		t.Fatalf("cross-tenant get-memberships?org=orgb env=%+v, want error auth:Unauthorized operation", roster)
 	}
 }
 
@@ -288,7 +261,7 @@ func TestEnsureMembership_reservedOrgRequiresSuper(t *testing.T) {
 
 	// Into the reserved admin/built-in orgs: refused, verbatim.
 	for _, org := range []string{"admin", "built-in"} {
-		_, e := h.postBasic(t, "/v1/iam/memberships",
+		_, e := h.postBasic(t, "/v1/iam/add-membership",
 			map[string]string{"user": "hanzo/alice", "org": org, "role": "admin"}, "hanzo-console", "console-secret")
 		if e.Status != "error" || e.Msg != "auth:Unauthorized operation" {
 			t.Fatalf("CapOrgAdmin ensure into %q env=%+v, want error auth:Unauthorized operation", org, e)
@@ -305,105 +278,25 @@ func TestEnsureMembership_reservedOrgRequiresSuper(t *testing.T) {
 	}
 
 	// Legit power preserved: the SAME client CAN ensure into a normal customer org.
-	_, ok := h.postBasic(t, "/v1/iam/memberships",
+	_, ok := h.postBasic(t, "/v1/iam/add-membership",
 		map[string]string{"user": "hanzo/alice", "org": "hanzo", "role": "member"}, "hanzo-console", "console-secret")
 	if ok.Status != "ok" {
 		t.Fatalf("CapOrgAdmin ensure into a normal org env=%+v, want ok (legit power broken)", ok)
 	}
 
 	// And a real SuperAdmin MAY grant a reserved-org membership (the escape hatch).
-	_, sup := h.post(t, "/v1/iam/memberships",
+	_, sup := h.post(t, "/v1/iam/add-membership",
 		map[string]string{"user": "hanzo/alice", "org": "admin", "role": "admin"}, h.token(t, "admin/root"))
 	if sup.Status != "ok" {
 		t.Fatalf("SuperAdmin ensure into admin env=%+v, want ok", sup)
 	}
 }
 
-// ---- the read as a typed op ------------------------------------------------
-
-// The list is a TYPED op at BOTH addresses, so it reaches two seams a raw handler
-// never did: zip's query binder, and the op-invoke authorizer (authz.Authorize).
-// Both are silent when they work and fatal when they do not — a binder that missed
-// ?org= answers "exactly one of user or org is required", an authorizer that saw a
-// target answers 403 — so these cases assert the RAW BODY BYTES at each address.
-//
-// The bytes are the point. Typing this read is a projection, not a change: same
-// address, same status, same envelope, before and after.
-func TestList_wire(t *testing.T) {
-	h := newHarness(t)
-	seedMembership(t, h.db, "hanzo/alice", "hanzo", store.RoleMember)
-	seedMembership(t, h.db, "hanzo/boss", "hanzo", store.RoleAdmin)
-	boss := h.token(t, "hanzo/boss")
-
-	// Both addresses, one handler, one answer.
-	for _, path := range []string{"/v1/iam/memberships"} {
-		t.Run(path, func(t *testing.T) {
-			status, body := h.read(t, path+"?org=hanzo", boss)
-			if status != 200 {
-				t.Fatalf("status=%d body=%s, want 200", status, body)
-			}
-			if !strings.HasPrefix(body, `{"status":"ok","msg":"","data":[`) || !strings.HasSuffix(body, `],"data2":2}`) {
-				t.Fatalf("body=%s, want the v1 envelope with data2=2", body)
-			}
-			// The other question the same op answers: one identity's orgs.
-			status, body = h.read(t, path+"?user=hanzo/alice", boss)
-			if status != 200 || !strings.HasSuffix(body, `],"data2":1}`) {
-				t.Fatalf("?user status=%d body=%s, want 200 with data2=1", status, body)
-			}
-		})
-	}
-}
-
-// The refusals, byte for byte at both addresses: 400 carrying {status:"error",
-// msg, data:null}.
-func TestList_refusals(t *testing.T) {
-	h := newHarness(t)
-	boss := h.token(t, "hanzo/boss") // admin of hanzo, NOT of orgb
-	const denied = `{"status":"error","msg":"auth:Unauthorized operation","data":null}`
-	for _, c := range []struct{ name, query, want string }{
-		{"neither", "", `{"status":"error","msg":"exactly one of user or org is required","data":null}`},
-		{"both", "?user=hanzo/alice&org=hanzo", `{"status":"error","msg":"exactly one of user or org is required","data":null}`},
-		// The angle brackets arrive escaped: encoding/json escapes HTML by
-		// default, so the bytes carry the < form. The brackets are the
-		// message's, the escaping is the encoder's, and the escaped form is what
-		// this address has always put on the wire — assert the bytes, not the
-		// message.
-		{"unqualified user", "?user=alice", `{"status":"error","msg":"user must be \u003cowner\u003e/\u003cname\u003e","data":null}`},
-		{"cross-tenant org", "?org=orgb", denied},
-		{"cross-tenant user", "?user=orgb/bob", denied},
-	} {
-		for _, path := range []string{"/v1/iam/memberships"} {
-			t.Run(c.name+" "+path, func(t *testing.T) {
-				status, body := h.read(t, path+c.query, boss)
-				if status != 400 || body != c.want {
-					t.Fatalf("status=%d body=%s, want 400 %s", status, body, c.want)
-				}
-			})
-		}
-	}
-}
-
-// The op-invoke authorizer admits this read because its input names no owner —
-// `lookup` declares no Owner field and no AuthzTarget(). An unknown query key is
-// therefore just an unknown query key: it is ignored by the binder and can never
-// become the target the authorizer decides on. Give the input an Owner field and
-// this is a 403, which is why the case is here rather than in a comment.
-func TestList_ownerQueryIsNotATarget(t *testing.T) {
-	h := newHarness(t)
-	seedMembership(t, h.db, "hanzo/alice", "hanzo", store.RoleMember)
-	for _, path := range []string{"/v1/iam/memberships"} {
-		status, body := h.read(t, path+"?org=hanzo&owner=orgb&name=whatever", h.token(t, "hanzo/boss"))
-		if status != 200 {
-			t.Fatalf("%s status=%d body=%s, want 200 — the read is authorized by scoped(), not by ?owner=", path, status, body)
-		}
-	}
-}
-
 // The verbs are gated: no bearer → the Guard fails closed (401).
 func TestMembershipVerbs_requireAuth(t *testing.T) {
 	h := newHarness(t)
-	if status, _ := h.get(t, "/v1/iam/memberships?org=hanzo", ""); status != 401 {
-		t.Fatalf("unauthenticated membership list status=%d, want 401", status)
+	if status, _ := h.get(t, "/v1/iam/get-memberships?org=hanzo", ""); status != 401 {
+		t.Fatalf("unauthenticated get-memberships status=%d, want 401", status)
 	}
 }
 
@@ -439,7 +332,7 @@ func seedCert(t *testing.T, db orm.DB, owner, name, privPEM string) {
 	c := orm.New[schema.Cert](db)
 	c.Owner, c.Name = owner, name
 	c.CryptoAlgorithm = "RS256"
-	keyring.Set(name, privPEM) // the deployment supplies key material; the row never carries it
+	c.PrivateKey = privPEM
 	c.SetId(owner + "/" + name)
 	if err := c.CreateCtx(context.Background()); err != nil {
 		t.Fatalf("seed cert: %v", err)
@@ -477,14 +370,4 @@ func pemOf(t *testing.T, k *rsa.PrivateKey) string {
 	return string(pem.EncodeToMemory(&pem.Block{
 		Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(k),
 	}))
-}
-
-// readBasic drives a GET authenticating as a confidential client, the way a
-// brand console reaches this surface.
-func (h *harness) readBasic(t *testing.T, path, clientID, secret string) (int, string) {
-	t.Helper()
-	req := httptest.NewRequest("GET", path, nil)
-	req.Host = "hanzo.id"
-	req.SetBasicAuth(clientID, secret)
-	return h.raw(t, req)
 }

@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -14,9 +13,8 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/httpx"
-	"github.com/hanzoai/iam/internal/sessions"
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // The RFC 8628 device authorization grant: how a machine with no browser and no
@@ -94,110 +92,15 @@ type deviceResponse struct {
 // authenticates the CLIENT inline — a confidential client by its secret, a
 // public device client by its client_id — so it needs no bearer and joins no
 // allow-list, membership in this group is what makes it reachable.
-//
-// The sibling POST names the client a pending user_code belongs to. It is on the
-// same public group and authenticates the same way every browser path here does:
-// by the session cookie, resolved inline.
-//
-// POST for a read, deliberately, and for the reason RFC 7662 introspection beside
-// it is POST: the argument is a SECRET. A user_code in a request line is copied
-// into ingress and proxy access logs, which a POST body is not — and this flow's
-// own approval page ships a scrubUrl() to keep the code out of the address bar,
-// so putting it back into every request line would undo that on the server side.
 func routeDevice(r zip.Router, db orm.DB) {
 	r.Post(PathDevice, deviceHandler(db))
-	r.Post(PathDeviceInfo, deviceInfoHandler(db))
 }
 
-// deviceInfo is what the approval page must show a human: WHICH application is
-// asking to sign in. Both fields come off the pending device code's own
-// application — never off the portal the browser happens to be on.
-type deviceInfo struct {
-	ClientId    string `json:"clientId"`
-	DisplayName string `json:"displayName"`
-}
-
-// deviceInfoHandler answers "what am I approving?" for a pending device code.
-//
-// The approval page exists to tell a human WHICH application they are authorizing;
-// a page that names any other one defeats the control it implements. The client is
-// a property of the CODE, not of the page or of whatever app the browser happens
-// to be signed in to, so it is read from the code's row here and nowhere else.
-//
-// Requires a signed-in session, and answers with the same ONE opaque refusal
-// approveDevice uses. That is deliberate: the user_code is only 40 bits and is the
-// one secret in this flow, so an unauthenticated lookup — or one that
-// distinguished unknown from expired from already-approved — would be an oracle
-// for hunting live codes. Gated and opaque, it reveals strictly less than the
-// approval the same caller could already attempt.
-func deviceInfoHandler(db orm.DB) zip.Handler {
-	return func(c *zip.Ctx) error {
-		setTokenCacheHeaders(c)
-		ctx := c.Context()
-
-		// The identity is the browser's session, exactly as the approval itself
-		// resolves it. Not signed in is not a refusal to explain — it is the
-		// page's cue to sign the human in first, so it carries the stable code
-		// the SPA branches on.
-		owner, name, ok := sessions.Resolve(ctx, c.Fiber(), db)
-		if !ok {
-			return httpx.ErrCode(c, "please sign in first", CodeLoginRequired)
-		}
-		user, err := store.GetUserByName(ctx, db, owner, name)
-		if err != nil || user == nil || user.IsForbidden || user.IsDeleted {
-			return httpx.ErrCode(c, "please sign in first", CodeLoginRequired)
-		}
-
-		// JSON body from the approval page, form/query for anything else — the same
-		// bind-then-fall-back login uses, so one endpoint serves both
-		// without a second spelling of the request.
-		var f struct {
-			UserCode string `json:"userCode"`
-		}
-		_ = c.Bind(&f)
-		userCode := f.UserCode
-		if userCode == "" {
-			userCode = param(c, "userCode")
-		}
-
-		const refuse = "the user code is invalid or expired"
-		row, err := store.GetTokenByUserCode(ctx, db, userCode)
-		if err != nil {
-			return httpx.Err(c, refuse)
-		}
-		if row == nil || !isDevice(row) || row.CodeIsUsed || row.User != "" ||
-			expired(row.CodeExpireIn, nowFunc()) {
-			return httpx.Err(c, refuse)
-		}
-		// The same tenant boundary approveDevice enforces: what you may LOOK AT is
-		// exactly what you may approve, so this leaks nothing the caller could not
-		// already have learned by approving.
-		if row.Organization == "" {
-			return httpx.Err(c, refuse)
-		}
-		super, err := store.IsSuperAdmin(ctx, db, user.Owner, user.Name)
-		if err != nil || (!super && user.Owner != row.Organization) {
-			return httpx.Err(c, "your organization may not approve this device sign-in")
-		}
-
-		app, err := resolveTokenApp(ctx, db, row)
-		if err != nil || app == nil {
-			return httpx.Err(c, refuse)
-		}
-		label := app.DisplayName
-		if label == "" {
-			label = app.Name
-		}
-		return httpx.Ok(c, deviceInfo{ClientId: app.ClientId, DisplayName: label})
-	}
-}
-
-// deviceHandler starts a sign-in on a device with no browser and no keyboard —
-// a TV, a CLI, a headless box. It returns a short code to show the person and
-// the address to send them to on a phone or laptop.
-//
-// Nothing is granted until a human approves it there; until then the code is
-// just a pending request.
+// deviceHandler serves the device authorization request (RFC 8628 §3.1): it
+// mints the device_code/user_code pair and tells the device where to send its
+// human. A confidential client must authenticate its secret here (§3.1 → RFC
+// 6749 §3.2.1); a public device client presents only its client_id. The row it
+// creates grants nothing until a human approves it.
 func deviceHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		setTokenCacheHeaders(c)
@@ -335,7 +238,7 @@ func deviceCodeGrant(c *zip.Ctx, db orm.DB) error {
 	}
 	resp, err := issueTokens(ctx, db, c, app, row, newFamilyID(row), now)
 	if err != nil {
-		return mintError(c, err)
+		return tokenError(c, 500, "server_error", "")
 	}
 	if err := store.SaveToken(ctx, db, row); err != nil {
 		return tokenError(c, 500, "server_error", "")
@@ -374,8 +277,7 @@ func approveDevice(c *zip.Ctx, db orm.DB, user *schema.User, userCode string) er
 	if row.Organization == "" {
 		return httpx.Err(c, refuse)
 	}
-	super, err := store.IsSuperAdmin(ctx, db, user.Owner, user.Name)
-	if err != nil || (!super && user.Owner != row.Organization) {
+	if !store.IsSuperAdmin(user.Owner) && user.Owner != row.Organization {
 		return httpx.Err(c, "your organization may not approve this device sign-in")
 	}
 

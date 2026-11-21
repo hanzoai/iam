@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -12,8 +11,8 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // RFC 8693 Token Exchange — the standard on-behalf-of flow (replaces the retired
@@ -81,7 +80,7 @@ func directSubjectToken(t *testing.T, db orm.DB, certName, owner, name string) s
 		t.Fatalf("user %s/%s not seeded: %v", owner, name, err)
 	}
 	app := &schema.Application{Organization: u.Owner, ClientId: "direct"}
-	tok, err := signer.Sign(app, Identity{Id: subjectOf(u), Email: u.Email, Name: u.Name}, "openid profile", "", time.Hour, nowFunc())
+	tok, err := signer.Sign(app, subjectOf(u), u.Email, u.Name, u.Name, "openid profile", nil, time.Hour, nowFunc())
 	if err != nil {
 		t.Fatalf("sign subject token: %v", err)
 	}
@@ -89,7 +88,7 @@ func directSubjectToken(t *testing.T, db orm.DB, certName, owner, name string) s
 }
 
 func TestTokenExchange_mintsForSubject(t *testing.T) {
-	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
+	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
@@ -133,7 +132,7 @@ func TestTokenExchange_mintsForSubject(t *testing.T) {
 }
 
 func TestTokenExchange_notAllowlisted_403(t *testing.T) {
-	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "some-other-app")
+	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "some-other-app")
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
@@ -151,7 +150,7 @@ func TestTokenExchange_notAllowlisted_403(t *testing.T) {
 // OWN clientId is refused at the allow-list (matched by clientId only), even though
 // it holds a valid subject_token for its own tenant user.
 func TestTokenExchange_nameCollisionAttacker_403(t *testing.T) {
-	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
+	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 	// Attacker: a DIFFERENT clientId, but NAME collides with the allow-listed one.
@@ -169,7 +168,7 @@ func TestTokenExchange_nameCollisionAttacker_403(t *testing.T) {
 }
 
 func TestTokenExchange_reservedOrgSubject_requiresAdminCapability(t *testing.T) {
-	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console") // general only
+	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console") // general only
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 	// An admin-org user with a password, so we can mint their subject_token.
@@ -186,8 +185,8 @@ func TestTokenExchange_reservedOrgSubject_requiresAdminCapability(t *testing.T) 
 }
 
 func TestTokenExchange_reservedOrgSubject_admitsWithAdminCapability(t *testing.T) {
-	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
-	t.Setenv("IAM_ADMIN_TOKEN_EXCHANGE_APPS", "hanzo-console")
+	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
+	t.Setenv("IAM_ADMIN_MINT_ALLOWED_APPS", "hanzo-console")
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 	seedUserInOrg(t, db, "admin", "root", "root@hanzo.ai", "admin pw")
@@ -206,7 +205,7 @@ func TestTokenExchange_reservedOrgSubject_admitsWithAdminCapability(t *testing.T
 }
 
 func TestTokenExchange_invalidSubjectToken_invalidGrant(t *testing.T) {
-	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
+	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 
@@ -217,7 +216,7 @@ func TestTokenExchange_invalidSubjectToken_invalidGrant(t *testing.T) {
 }
 
 func TestTokenExchange_publicClient_rejected(t *testing.T) {
-	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "pub")
+	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "pub")
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "pub"}) // no secret → public
 	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
@@ -229,7 +228,7 @@ func TestTokenExchange_publicClient_rejected(t *testing.T) {
 }
 
 func TestTokenExchange_emitsAudit(t *testing.T) {
-	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
+	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
@@ -243,60 +242,5 @@ func TestTokenExchange_emitsAudit(t *testing.T) {
 	}
 	if len(logs) != 1 || logs[0].User != "hanzo/alice" || logs[0].Object != "hanzo-console" {
 		t.Fatalf("token-exchange audit = %+v, want one row {user:hanzo/alice, minter:hanzo-console}", logs)
-	}
-}
-
-// A client that knows how long it needs the token may ask for less than the
-// application grants, and the token really is shorter — this is what lets a
-// credential handed to a leased process die with the lease.
-func TestTokenExchange_lifetimeShortensTheToken(t *testing.T) {
-	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
-	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
-	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
-	subject := subjectTokenFor(t, app, "hanzo-console", "top-secret", "hanzo", "alice@hanzo.ai", "correct horse")
-
-	status, tok := exchange(t, app, "hanzo-console", "top-secret", url.Values{
-		"subject_token": {subject},
-		"lifetime":      {"900"},
-	})
-	if status != 200 {
-		t.Fatalf("status = %d; body=%v", status, tok)
-	}
-	if got, _ := tok["expires_in"].(float64); int(got) != 900 {
-		t.Errorf("expires_in = %v, want 900", tok["expires_in"])
-	}
-	access, _ := tok["access_token"].(string)
-	claims, err := verifyToken(context.Background(), db, access)
-	if err != nil {
-		t.Fatalf("exchanged token does not verify: %v", err)
-	}
-	if life := claims.ExpiresAt.Sub(nowFunc()); life > 15*time.Minute {
-		t.Errorf("token lives %v, want no more than the 900s asked for", life)
-	}
-}
-
-// The clamp runs ONE WAY. A request for more life than the application declares
-// leaves the application's own lifetime standing, so no caller can lengthen a
-// credential by asking.
-func TestTokenExchange_lifetimeCannotOutrunTheApplication(t *testing.T) {
-	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
-	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
-	seedUser(t, db, "alice", "alice@hanzo.ai", "correct horse")
-	subject := subjectTokenFor(t, app, "hanzo-console", "top-secret", "hanzo", "alice@hanzo.ai", "correct horse")
-
-	for _, asked := range []string{"86400", "0", "-1", "forever", ""} {
-		status, tok := exchange(t, app, "hanzo-console", "top-secret", url.Values{
-			"subject_token": {subject},
-			"lifetime":      {asked},
-		})
-		if status != 200 {
-			t.Fatalf("lifetime=%q: status = %d; body=%v", asked, status, tok)
-		}
-		want := int(appTTL(&schema.Application{}).Seconds())
-		if got, _ := tok["expires_in"].(float64); int(got) != want {
-			t.Errorf("lifetime=%q: expires_in = %v, want the application's own %d", asked, tok["expires_in"], want)
-		}
 	}
 }

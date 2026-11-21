@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package scim_test
 
@@ -30,12 +29,9 @@ import (
 	ormdb "github.com/hanzoai/orm/db"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/keyring"
 	"github.com/hanzoai/iam/internal/routes"
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
-
-	"github.com/hanzoai/iam/internal/testhttp"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 const (
@@ -76,9 +72,7 @@ func newHarness(t *testing.T) *harness {
 
 	app := zip.New(zip.Config{AppName: "scim-test", DisableStartupMessage: true})
 	routes.Route(app, db)
-	if err := app.Build(); err != nil {
-		t.Fatalf("build: %v", err)
-	}
+	app.Prepare()
 	return &harness{app: app, key: key, db: db}
 }
 
@@ -112,7 +106,7 @@ func (h *harness) do(t *testing.T, method, path, bearer, body string) (int, stri
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
 	}
-	resp, err := testhttp.Do(h.app, req)
+	resp, err := h.app.Fiber().Test(req)
 	if err != nil {
 		t.Fatalf("%s %s: %v", method, path, err)
 	}
@@ -237,15 +231,15 @@ func TestSCIM_patchDeactivate(t *testing.T) {
 
 func TestSCIM_crossTenant_denied(t *testing.T) {
 	h := newHarness(t)
-	// hanzo's admin addressing an orgb user: principal.Scope refuses the foreign owner
-	// outright, so the store is never consulted — neither for orgb/bob's data nor
-	// for a same-named hanzo row to answer in its place.
+	// hanzo's admin addressing an orgb user: authz.Scope re-pins the owner to hanzo,
+	// so the lookup targets hanzo/bob (nonexistent) → 404, never orgb/bob's data.
 	status, body := h.do(t, "GET", scimUsers+"/orgb/bob", h.token(t, "hanzo/boss"), "")
-	if status != 403 {
-		t.Fatalf("cross-tenant get status = %d, want 403 (foreign org refused); body=%s", status, body)
+	if status != 404 {
+		t.Fatalf("cross-tenant get status = %d, want 404 (re-scoped to own org); body=%s", status, body)
 	}
-	// Prove it's a SCIM Error, not a leaked user resource (no userName, no orgb
-	// owner in a resource body).
+	// The lookup was re-scoped to the caller's org (hanzo/bob, nonexistent) — never
+	// orgb's row. Prove it's a SCIM Error, not a leaked user resource (no userName,
+	// no orgb owner in a resource body).
 	if !strings.Contains(body, "urn:ietf:params:scim:api:messages:2.0:Error") {
 		t.Fatalf("cross-tenant get did not return a SCIM Error; body=%s", body)
 	}
@@ -294,7 +288,7 @@ func seedCert(t *testing.T, db orm.DB, owner, name, privPEM string) {
 	c := orm.New[schema.Cert](db)
 	c.Owner, c.Name = owner, name
 	c.CryptoAlgorithm = "RS256"
-	keyring.Set(name, privPEM) // the deployment supplies key material; the row never carries it
+	c.PrivateKey = privPEM
 	c.SetId(owner + "/" + name)
 	if err := c.CreateCtx(context.Background()); err != nil {
 		t.Fatalf("seed cert: %v", err)

@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package wallet
 
@@ -12,12 +11,11 @@ import (
 	"strings"
 	"time"
 
-	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	wc "github.com/luxwallet/connect/go/walletconnect"
 
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // The chain-agnostic wallet-login core, decomplected from HTTP: the handler
@@ -68,17 +66,13 @@ type login struct {
 // supported reports whether a chain family is one this build knows. Per-chain
 // verifier readiness is a separate gate; an unverifiable chain fails closed in
 // VerifyProof.
-//
-// It reads schema.WalletChains — the SAME list the login descriptor advertises
-// from — so a screen can never offer a chain these endpoints refuse. The names
-// are pinned against the luxwallet constants by TestWalletChainsMatchSDK.
 func supported(chain wc.Chain) bool {
-	for _, name := range schema.WalletChains() {
-		if wc.Chain(name) == chain {
-			return true
-		}
+	switch chain {
+	case wc.ChainEVM, wc.ChainSolana, wc.ChainBitcoin, wc.ChainTON, wc.ChainXRP, wc.ChainPolkadot, wc.ChainCardano:
+		return true
+	default:
+		return false
 	}
-	return false
 }
 
 // verify is the one server-side entry point for wallet login. It fails closed at
@@ -186,17 +180,7 @@ func resolve(ctx context.Context, db orm.DB, in login, address string, now time.
 				user = in.Session
 			case in.Method == "login":
 				return errNoAccount
-			case !in.App.EnableSignUp || policy.IsReservedOrg(in.App.Organization):
-				// The SAME reserved-org predicate signup, onboarding, federated
-				// provisioning, and token exchange enforce (policy.IsReservedOrg) —
-				// wallet login was the ONE public account-creation endpoint that
-				// did not consult it. An application row owned by a reserved org
-				// (admin/built-in/service) with EnableSignUp set would otherwise let
-				// an unauthenticated, wallet-signed POST mint a user under a platform
-				// org — and a user under "admin" IS a SuperAdmin (authz derives Super
-				// from owner == adminOrg). Folded into the EXISTING case, not a new
-				// one, so the refusal stays byte-identical to "signup is off here"
-				// and a prober cannot distinguish the two (no authority oracle).
+			case !in.App.EnableSignUp:
 				return errNoSignup
 			default:
 				if user, err = provision(ctx, tx, in, address, now); err != nil {
@@ -229,17 +213,9 @@ func resolve(ctx context.Context, db orm.DB, in login, address string, now time.
 // provision creates a fresh user for a first-seen wallet. No password is set —
 // this is a wallet-only identity; the user can add email/password later.
 func provision(ctx context.Context, db orm.DB, in login, address string, now time.Time) (*schema.User, error) {
-	// Machine-generated, but still checked against THE username rule: a generated
-	// name is only conformant while whatever generates it stays conformant, and this
-	// path writes through orm directly rather than users.Create, so nothing else
-	// would notice if a new chain's identifier stopped fitting.
-	uname, err := schema.Username(name(in.Proof.Chain, address))
-	if err != nil {
-		return nil, err
-	}
 	u := orm.New[schema.User](db)
 	u.Owner = in.App.Organization
-	u.Name = uname
+	u.Name = name(in.Proof.Chain, address)
 	u.Type = "normal-user"
 	u.DisplayName = fmt.Sprintf("%s:%s", in.Proof.Chain, short(address))
 	u.Avatar = in.Org.DefaultAvatar

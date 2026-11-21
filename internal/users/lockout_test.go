@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package users
 
@@ -10,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // TestAuthenticate_ConcurrentWrongPasswords_NoLostUpdates is the crisp atomicity
@@ -22,7 +21,7 @@ import (
 // under a per-row lock, so the counter is exactly C.
 func TestAuthenticate_ConcurrentWrongPasswords_NoLostUpdates(t *testing.T) {
 	ctx := context.Background()
-	db, err := store.Open("sqlite", filepath.Join(t.TempDir(), "lockout-noloss.db"), "")
+	db, err := store.Open("sqlite", filepath.Join(t.TempDir(), "lockout-noloss.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -83,11 +82,11 @@ func TestAuthenticate_ConcurrentWrongPasswords_NoLostUpdates(t *testing.T) {
 // threshold parallel wrong attempts (Red's PoC) must LOCK the account — the correct
 // password is refused afterward. Pre-fix the flood persists a counter of 1 and the
 // account never locks; the fix accumulates past the threshold and locks. The counter
-// caps AT the threshold (a locked account stops counting — legacy semantics), so the
+// caps AT the threshold (a locked account stops counting — casdoor semantics), so the
 // assertion is "reached the lock", not "== C".
 func TestAuthenticate_ConcurrentFlood_Locks(t *testing.T) {
 	ctx := context.Background()
-	db, err := store.Open("sqlite", filepath.Join(t.TempDir(), "lockout-flood.db"), "")
+	db, err := store.Open("sqlite", filepath.Join(t.TempDir(), "lockout-flood.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -149,7 +148,7 @@ func TestAuthenticate_ConcurrentFlood_Locks(t *testing.T) {
 // the fix (counter 0), PASSES after (counter preserved at the lock threshold).
 func TestUpdate_preservesLockoutCounter(t *testing.T) {
 	ctx := context.Background()
-	db, err := store.Open("sqlite", filepath.Join(t.TempDir(), "f6-update.db"), "")
+	db, err := store.Open("sqlite", filepath.Join(t.TempDir(), "f6-update.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -198,7 +197,7 @@ func TestUpdate_preservesLockoutCounter(t *testing.T) {
 // regress plain lockout semantics.
 func TestAuthenticate_SequentialLockAndReset(t *testing.T) {
 	ctx := context.Background()
-	db, err := store.Open("sqlite", filepath.Join(t.TempDir(), "lockout-seq.db"), "")
+	db, err := store.Open("sqlite", filepath.Join(t.TempDir(), "lockout-seq.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

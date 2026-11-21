@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -21,15 +20,14 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/pkg/pkce"
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // Federation is driven through the REAL registered routes (authorize → IdP → callback
 // → code → token). The external IdP is an httptest server — a real HTTP RP round
 // trip with a real OIDC discovery document, a real JWKS, and a real RS256-signed
-// id_token whose signature/issuer/audience/nonce iam actually verifies (Google
+// id_token whose signature/issuer/audience/nonce iam2 actually verifies (Google
 // dialect), plus a real GitHub userinfo + verified-email exchange. No live
 // Google/GitHub is contacted.
 
@@ -161,11 +159,7 @@ type mockGitHub struct {
 	name         string
 	profileEmail string
 	emails       []map[string]any // {email, primary, verified}
-	// emailsForbidden makes /user/emails answer 403, which is what a GitHub APP
-	// whose "Email addresses" permission is missing really does — GitHub Apps
-	// ignore the requested `scope`, so the read fails and no address arrives.
-	emailsForbidden bool
-	tokenForm       url.Values
+	tokenForm    url.Values
 }
 
 func newMockGitHub(t *testing.T) *mockGitHub {
@@ -191,10 +185,6 @@ func newMockGitHub(t *testing.T) *mockGitHub {
 	mux.HandleFunc("/user/emails", func(w http.ResponseWriter, _ *http.Request) {
 		m.mu.Lock()
 		defer m.mu.Unlock()
-		if m.emailsForbidden {
-			w.WriteHeader(http.StatusForbidden)
-			return
-		}
 		writeJSON(w, m.emails)
 	})
 	mux.HandleFunc("/user", func(w http.ResponseWriter, _ *http.Request) {
@@ -274,7 +264,7 @@ func beginAuthorize(t *testing.T, app *zip.App, clientID, provider string) (url.
 		"redirect_uri":          {testRedirect},
 		"scope":                 {"openid email profile"},
 		"state":                 {fedAppState},
-		"code_challenge":        {pkce.Challenge(fedVerifier)},
+		"code_challenge":        {ComputeS256Challenge(fedVerifier)},
 		"code_challenge_method": {"S256"},
 		"provider":              {provider},
 	}
@@ -385,11 +375,11 @@ func TestFederation_AuthorizeRedirectsToGitHub(t *testing.T) {
 }
 
 // Full OIDC round-trip: a first-time login PROVISIONS a user (no password, not
-// admin) and mints an iam authorization code; the relying party's existing PKCE
+// admin) and mints an iam2 authorization code; the relying party's existing PKCE
 // code→token exchange then completes unchanged and carries the new user's sub.
 func TestFederation_OIDCCallbackProvisionsUserAndIssuesCode(t *testing.T) {
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "webapp", signup: true, redirectURIs: []string{testRedirect}})
+	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
 	m := newMockOIDC(t, fedGoogleCID)
 	seedOIDCProvider(t, db, "webapp", m)
 
@@ -404,7 +394,7 @@ func TestFederation_OIDCCallbackProvisionsUserAndIssuesCode(t *testing.T) {
 	cb, _ := url.Parse(loc)
 	code := cb.Query().Get("code")
 	if code == "" {
-		t.Fatalf("callback must redirect with an iam code; got %q", loc)
+		t.Fatalf("callback must redirect with an iam2 code; got %q", loc)
 	}
 	if cb.Query().Get("state") != fedAppState {
 		t.Errorf("app state not echoed: %q", cb.Query().Get("state"))
@@ -428,19 +418,19 @@ func TestFederation_OIDCCallbackProvisionsUserAndIssuesCode(t *testing.T) {
 		t.Fatalf("expected exactly one new user")
 	}
 
-	// The iam code redeems through the ordinary PKCE token exchange, unchanged.
+	// The iam2 code redeems through the ordinary PKCE token exchange, unchanged.
 	tokResp, tok := exchangeCode(t, app, url.Values{
 		"code": {code}, "client_id": {"webapp"}, "redirect_uri": {testRedirect}, "code_verifier": {fedVerifier},
 	})
 	if tokResp.StatusCode != 200 {
-		t.Fatalf("iam code exchange failed: %d %v", tokResp.StatusCode, tok)
+		t.Fatalf("iam2 code exchange failed: %d %v", tokResp.StatusCode, tok)
 	}
 	if tok["access_token"] == nil {
-		t.Fatal("no access_token from the iam code exchange")
+		t.Fatal("no access_token from the iam2 code exchange")
 	}
 	// The token subject is the provisioned user; no IdP token leaks into it.
 	if body := tokenBody(tok); strings.Contains(body, "idp-at-") || strings.Contains(body, "google-secret-do-not-log") {
-		t.Fatal("IdP access token / client secret leaked into the iam token response")
+		t.Fatal("IdP access token / client secret leaked into the iam2 token response")
 	}
 }
 
@@ -448,7 +438,7 @@ func TestFederation_OIDCCallbackProvisionsUserAndIssuesCode(t *testing.T) {
 // primary VERIFIED email.
 func TestFederation_GitHubCallbackProvisionsViaVerifiedEmail(t *testing.T) {
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "webapp", signup: true, redirectURIs: []string{testRedirect}})
+	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
 	m := newMockGitHub(t)
 	seedGitHubProvider(t, db, "webapp", m)
 
@@ -456,7 +446,7 @@ func TestFederation_GitHubCallbackProvisionsViaVerifiedEmail(t *testing.T) {
 	resp := callback(t, app, q.Get("state"), "gh-code-1", cookie)
 	loc := requireRedirect(t, resp, testRedirect)
 	if code := mustQuery(t, loc).Get("code"); code == "" {
-		t.Fatalf("GitHub federation did not mint an iam code: %q", loc)
+		t.Fatalf("GitHub federation did not mint an iam2 code: %q", loc)
 	}
 	u, err := store.GetUserByConnector(context.Background(), db, "hanzo", "github", "424242")
 	if err != nil || u == nil {
@@ -477,7 +467,7 @@ func TestFederation_GitHubCallbackProvisionsViaVerifiedEmail(t *testing.T) {
 // account is created on the second login.
 func TestFederation_ReloginBySubjectIsStable(t *testing.T) {
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "webapp", signup: true, redirectURIs: []string{testRedirect}})
+	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
 	m := newMockOIDC(t, fedGoogleCID)
 	seedOIDCProvider(t, db, "webapp", m)
 
@@ -489,26 +479,12 @@ func TestFederation_ReloginBySubjectIsStable(t *testing.T) {
 	}
 }
 
-// proveEmail marks a seeded account's address as PROVEN — the state a row reaches
-// by having its address verified. Linkability turns on it, so the tests that are
-// about something else say so explicitly rather than inheriting it.
-func proveEmail(t *testing.T, db orm.DB, name string) {
-	t.Helper()
-	u := userRow(t, db, name)
-	u.EmailVerified = true
-	if err := u.UpdateCtx(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// A verified IdP email that matches an EXISTING account whose address was ALSO
-// proven LINKS to it (sets the connector column) instead of creating a duplicate.
-// Both sides proved the address, so both are the same person.
+// A verified IdP email that matches an EXISTING local account LINKS to it (sets
+// the connector column) instead of creating a duplicate.
 func TestFederation_LinksExistingAccountByVerifiedEmail(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
 	seedUser(t, db, "alice", "alice@example.com", "pw") // pre-existing password account, same email
-	proveEmail(t, db, "alice")
 	m := newMockOIDC(t, fedGoogleCID)
 	seedOIDCProvider(t, db, "webapp", m)
 
@@ -524,93 +500,9 @@ func TestFederation_LinksExistingAccountByVerifiedEmail(t *testing.T) {
 	}
 }
 
-// An account with NO password links even though its own address was never proven:
-// there is no credential on it for an unproven party to keep, so the party that
-// DID prove the address is the only one who can open it.
-func TestFederation_LinksAPasswordlessAccountByVerifiedEmail(t *testing.T) {
-	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
-	seedUser(t, db, "alice", "alice@example.com", "") // invited, never set a password
-	u := userRow(t, db, "alice")
-	u.PasswordHash, u.PasswordType = "", ""
-	if err := u.UpdateCtx(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	m := newMockOIDC(t, fedGoogleCID)
-	seedOIDCProvider(t, db, "webapp", m)
-
-	before := countUsers(t, db)
-	runOIDCLogin(t, app, db, m, "webapp", nil)
-	if countUsers(t, db) != before {
-		t.Fatalf("a passwordless account must be linked, not duplicated")
-	}
-	linked, _ := store.GetUserByName(context.Background(), db, "hanzo", "alice")
-	if linked == nil || linked.Google != m.sub || !linked.EmailVerified {
-		t.Fatalf("connector not linked onto the passwordless account: %+v", linked)
-	}
-}
-
-// THE takeover. Signup writes EmailVerified:false and nothing a password signup
-// can reach ever sets it, so an attacker who signs up with a stranger's address
-// holds a row with a real digest and an unproven address. When the real owner
-// arrives with a VERIFIED Google identity, adopting that row leaves the attacker's
-// password working on the account the victim now owns — silently, and for good.
-// 218 live rows are in exactly that shape.
-//
-// The link needs proof on BOTH sides. It is refused, the digest is untouched, and
-// no second row appears on the address.
-func TestFederation_WillNotAdoptAnUnprovenAccount(t *testing.T) {
-	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
-	seedUser(t, db, "victim", "alice@example.com", "the attacker's passphrase")
-	squatted := userRow(t, db, "victim")
-	if squatted.EmailVerified || squatted.PasswordHash == "" {
-		t.Fatalf("premise: the row must carry a digest and an unproven address: %+v", squatted)
-	}
-	m := newMockOIDC(t, fedGoogleCID) // emailVerified: true, the REAL owner
-	seedOIDCProvider(t, db, "webapp", m)
-
-	before := countUsers(t, db)
-	q, cookie := beginAuthorize(t, app, "webapp", fedProvGoogle)
-	m.mu.Lock()
-	m.nonce = q.Get("nonce")
-	m.mu.Unlock()
-	resp := callback(t, app, q.Get("state"), "idp-code-adopt", cookie)
-	loc := requireRedirect(t, resp, testRedirect)
-	qs := mustQuery(t, loc)
-	if qs.Get("code") != "" {
-		t.Fatalf("ACCOUNT TAKEOVER: federation minted a code onto an unproven account: %q", loc)
-	}
-	if qs.Get("error") != "access_denied" {
-		t.Fatalf("error = %q, want access_denied with a reason: %q", qs.Get("error"), loc)
-	}
-
-	after := userRow(t, db, "victim")
-	if after.Google != "" {
-		t.Fatalf("the provider subject was linked onto the unproven account: %q", after.Google)
-	}
-	if after.EmailVerified {
-		t.Fatal("the address was marked proven by a party that did not prove it")
-	}
-	if after.PasswordHash != squatted.PasswordHash {
-		t.Fatal("the digest was rewritten; this refuses, it does not evict")
-	}
-	// And it did NOT fall through to provisioning, which would put a second row on
-	// one address — the ambiguity the lookup refuses to resolve.
-	if countUsers(t, db) != before {
-		t.Fatalf("a duplicate account was provisioned on the same address (%d -> %d)", before, countUsers(t, db))
-	}
-	if _, err := store.GetUserByEmail(context.Background(), db, "hanzo", "alice@example.com"); err != nil {
-		t.Fatalf("the address is no longer resolvable: %v", err)
-	}
-}
-
-// email_verified:false must NOT auto-link by email, so an unproven address can
-// never take over an existing one — and must not provision alongside it either.
-// A second row on one address is what made GetUserByEmail pick arbitrarily between
-// two people, so "don't link" and "don't duplicate" are one rule: the address is
-// held, and only proving it gets you in.
-func TestFederation_UnverifiedEmailNeitherLinksNorDuplicates(t *testing.T) {
+// email_verified:false must NOT auto-link by email — it provisions a fresh
+// account, so an unproven address can never take over an existing one.
+func TestFederation_UnverifiedEmailDoesNotAutoLink(t *testing.T) {
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}})
 	seedUser(t, db, "victim", "victim@example.com", "pw")
@@ -621,35 +513,19 @@ func TestFederation_UnverifiedEmailNeitherLinksNorDuplicates(t *testing.T) {
 	seedOIDCProvider(t, db, "webapp", m)
 
 	before := countUsers(t, db)
-	q, cookie := beginAuthorize(t, app, "webapp", fedProvGoogle)
-	m.mu.Lock()
-	m.nonce = q.Get("nonce")
-	m.mu.Unlock()
-	resp := callback(t, app, q.Get("state"), "idp-code-unverified", cookie)
-	qs := mustQuery(t, requireRedirect(t, resp, testRedirect))
-	if qs.Get("code") != "" {
-		t.Fatalf("an unproven address minted a code: %v", qs)
-	}
-	if qs.Get("error") != "access_denied" {
-		t.Fatalf("error = %q, want access_denied", qs.Get("error"))
-	}
+	runOIDCLogin(t, app, db, m, "webapp", nil)
 
 	// The victim account was NOT linked.
 	victim, _ := store.GetUserByName(context.Background(), db, "hanzo", "victim")
 	if victim == nil || victim.Google != "" {
 		t.Fatalf("unverified email must not link onto the victim account: %+v", victim)
 	}
-	// And no second row now claims the victim's address.
-	if countUsers(t, db) != before {
-		t.Fatalf("a duplicate account was provisioned on the victim's address (%d -> %d)", before, countUsers(t, db))
+	// A fresh account was provisioned instead.
+	if countUsers(t, db) != before+1 {
+		t.Fatalf("expected a freshly provisioned account, not a takeover")
 	}
-	if u, _ := store.GetUserByConnector(context.Background(), db, "hanzo", "google", "attacker-sub-9"); u != nil {
-		t.Fatalf("the unproven identity was provisioned an account anyway: %s", u.Name)
-	}
-	// The victim's address still resolves to the victim, unambiguously.
-	got, err := store.GetUserByEmail(context.Background(), db, "hanzo", "victim@example.com")
-	if err != nil || got == nil || got.Name != "victim" {
-		t.Fatalf("victim@example.com = %v, %v; want the victim's own row", got, err)
+	if u, _ := store.GetUserByConnector(context.Background(), db, "hanzo", "google", "attacker-sub-9"); u == nil {
+		t.Fatal("federated identity should have been provisioned onto its own account")
 	}
 }
 
@@ -824,7 +700,7 @@ func TestFederation_NonAllowlistedRedirectUriRefused(t *testing.T) {
 	q := url.Values{
 		"response_type": {"code"}, "client_id": {"webapp"},
 		"redirect_uri":   {"https://evil.example/steal"},
-		"code_challenge": {pkce.Challenge(fedVerifier)},
+		"code_challenge": {ComputeS256Challenge(fedVerifier)},
 		"provider":       {fedProvGoogle},
 	}
 	resp, _ := do(t, app, formReqNoBody("GET", PathAuthorize+"?"+q.Encode()))
@@ -834,7 +710,7 @@ func TestFederation_NonAllowlistedRedirectUriRefused(t *testing.T) {
 }
 
 // runOIDCLogin drives a full successful OIDC federation login (authorize →
-// callback) and asserts it lands an iam code. mutate may tweak the mock after
+// callback) and asserts it lands an iam2 code. mutate may tweak the mock after
 // the nonce is bound.
 func runOIDCLogin(t *testing.T, app *zip.App, db orm.DB, m *mockOIDC, clientID string, mutate func()) {
 	t.Helper()
@@ -848,7 +724,7 @@ func runOIDCLogin(t *testing.T, app *zip.App, db orm.DB, m *mockOIDC, clientID s
 	resp := callback(t, app, q.Get("state"), "idp-code-"+randHex(3), cookie)
 	loc := requireRedirect(t, resp, testRedirect)
 	if mustQuery(t, loc).Get("code") == "" {
-		t.Fatalf("federation login did not mint an iam code: %q", loc)
+		t.Fatalf("federation login did not mint an iam2 code: %q", loc)
 	}
 }
 
@@ -885,9 +761,6 @@ func seedFederationTarget(t *testing.T, db orm.DB, appClientID, appOwner, serves
 	a.Owner, a.Name, a.ClientId = appOwner, appClientID, appClientID
 	a.Organization = serves
 	a.EnablePassword = true
-	// Registration ON, so a refusal below can only be the ORG gate refusing — never
-	// the app's own signup switch standing in for it.
-	a.EnableSignUp = true
 	a.ExpireInHours = 1
 	a.RedirectUris = []string{testRedirect}
 	a.Providers = []*schema.ProviderItem{{Owner: provOwner, Name: fedProvGoogle, CanSignIn: true}}
@@ -902,7 +775,7 @@ func federationAuthorizeQuery(clientID string) url.Values {
 		"response_type":         {"code"},
 		"client_id":             {clientID},
 		"redirect_uri":          {testRedirect},
-		"code_challenge":        {pkce.Challenge(fedVerifier)},
+		"code_challenge":        {ComputeS256Challenge(fedVerifier)},
 		"code_challenge_method": {"S256"},
 		"state":                 {fedAppState},
 		"provider":              {fedProvGoogle},
@@ -1007,7 +880,7 @@ func TestRedTeam_FederationMintsSuperAdmin_TenantOwnedApp(t *testing.T) {
 // happy path.
 func TestFederation_PlatformAppLegitimateOrgAllowed(t *testing.T) {
 	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "webapp", signup: true, redirectURIs: []string{testRedirect}}) // Owner=admin, Org=hanzo
+	seedApp(t, db, appOpts{clientID: "webapp", redirectURIs: []string{testRedirect}}) // Owner=admin, Org=hanzo
 	m := newMockOIDC(t, fedGoogleCID)
 	seedOIDCProvider(t, db, "webapp", m)
 	runOIDCLogin(t, app, db, m, "webapp", nil)

@@ -1,11 +1,12 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 // Package projects serves the IAM v2 CRUD surface for the `projects` entity: an
 // organization-scoped work container owner-scoped by (owner, name), where Owner
 // is the owning organization. Every operation is a typed zip handler over
 // hanzoai/orm; the orm string key is "owner/name". Reads scope to one owner
-// (organization); writes address one project by its (owner, name) key.
+// (organization); writes address one project by its (owner, name) key. This is
+// the ONE project CRUD path — the Casdoor get-organization-projects / add-project
+// / delete-project verb aliases (internal/compat) reuse it via New.
 package projects
 
 import (
@@ -16,8 +17,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/principal"
-	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
 // Handler binds the projects operations to one orm store.
@@ -25,17 +25,20 @@ type Handler struct {
 	db orm.DB
 }
 
-//go:generate go run github.com/zap-proto/zip/cmd/zipdoc
-
 // Route registers the projects CRUD routes on app against db.
 func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
-	zip.Get(app, "/v1/iam/projects", h.List, zip.WithTags("projects"))
-	zip.Post(app, "/v1/iam/projects", h.Create, zip.WithTags("projects"))
-	zip.Get(app, "/v1/iam/projects/:owner/:name", h.Get, zip.WithTags("projects"))
-	zip.Put(app, "/v1/iam/projects/:owner/:name", h.Update, zip.WithTags("projects"))
-	zip.Delete(app, "/v1/iam/projects/:owner/:name", h.Delete, zip.WithTags("projects"))
+	zip.Get(app, "/v1/iam/projects", h.List, zip.WithSummary("List projects for an owner"), zip.WithTags("projects"))
+	zip.Post(app, "/v1/iam/projects", h.Create, zip.WithSummary("Create a project"), zip.WithTags("projects"))
+	zip.Post(app, "/v1/iam/projects/get", h.Get, zip.WithSummary("Get one project"), zip.WithTags("projects"))
+	zip.Post(app, "/v1/iam/projects/update", h.Update, zip.WithSummary("Update a project"), zip.WithTags("projects"))
+	zip.Post(app, "/v1/iam/projects/delete", h.Delete, zip.WithSummary("Delete a project"), zip.WithTags("projects"))
 }
+
+// New exposes a project Handler so the Casdoor add-/delete-project verb aliases
+// (internal/compat) reuse the ONE project CRUD path, wrapped in the compat
+// envelope.
+func New(db orm.DB) *Handler { return &Handler{db: db} }
 
 // Ref addresses one project by its owner-scoped natural key.
 type Ref struct {
@@ -48,14 +51,14 @@ type Ref struct {
 type Input struct {
 	Owner        string   `json:"owner"`
 	Name         string   `json:"name"`
-	CreatedTime  string   `json:"createdTime" url:"-"`
-	DisplayName  string   `json:"displayName" url:"-"`
-	Description  string   `json:"description" url:"-"`
+	CreatedTime  string   `json:"createdTime"`
+	DisplayName  string   `json:"displayName"`
+	Description  string   `json:"description"`
 	Organization string   `json:"organization"`
-	Workspace    string   `json:"workspace" url:"-"`
+	Workspace    string   `json:"workspace"`
 	Tags         []string `json:"tags"`
-	Metadata     string   `json:"metadata" url:"-"`
-	IsDefault    bool     `json:"isDefault" url:"-"`
+	Metadata     string   `json:"metadata"`
+	IsDefault    bool     `json:"isDefault"`
 }
 
 // ListInput scopes a listing to one owner (organization).
@@ -82,40 +85,19 @@ func key(owner, name string) string { return owner + "/" + name }
 func apply(dst *schema.Project, in *Input) {
 	dst.DisplayName = in.DisplayName
 	dst.Description = in.Description
-	// The organization a project belongs to IS its owner — one fact, reported under
-	// the name a v1 client reads it by. Taking it from the request instead let a
-	// stored row name an organization the row does not belong to, which is a
-	// misleading answer for anything that ever starts reading it.
-	dst.Organization = in.Owner
+	dst.Organization = pick(in.Organization, in.Owner)
 	dst.Workspace = in.Workspace
 	dst.Tags = in.Tags
 	dst.Metadata = in.Metadata
 	dst.IsDefault = in.IsDefault
 }
 
-// List returns your organization's projects, newest first — the scope
-// people pick between when their work is separated by product or client rather
-// than by team.
-//
-// You see your own organization's projects and no one else's; which organization that
-// is comes from your credentials, not from the request.
+// List returns the projects for one owner, newest first. An empty owner lists
+// every project (the unscoped admin view).
 func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
-	// The owner is resolved from the authenticated principal, never taken from the
-	// input: in.Owner is whatever the CALLER wrote in the URL, since zip binds a
-	// typed op's scalar fields from the query string on every method. Filtering on
-	// it would let a request name the tenant it reads.
-	//
-	// ScopeRead, not Scope, because BELONGING opens a project list: an operator's
-	// account lives in one org while the orgs they work in are a set, and a
-	// switcher that lists them has to be able to read them. A stranger is refused
-	// exactly as Scope would refuse.
-	owner, err := principal.ScopeRead(ctx, in.Owner)
-	if err != nil {
-		return nil, err
-	}
 	q := orm.TypedQuery[schema.Project](h.db)
-	if owner != "" {
-		q = q.Filter("owner", owner)
+	if in.Owner != "" {
+		q = q.Filter("owner", in.Owner)
 	}
 	rows, err := q.Order("-createdTime").GetAll(ctx)
 	if err != nil {
@@ -124,7 +106,7 @@ func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) 
 	return &ListOutput{Projects: rows, Total: len(rows)}, nil
 }
 
-// Get returns one project: what it is called and how it is set up.
+// Get returns one project addressed by (owner, name).
 func (h *Handler) Get(ctx context.Context, in *Ref) (*schema.Project, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -136,9 +118,7 @@ func (h *Handler) Get(ctx context.Context, in *Ref) (*schema.Project, error) {
 	return p, nil
 }
 
-// Create makes a project inside your organization — the scope people pick
-// between when their work is separated by product or client rather than by team.
-// A name already used in the organization is refused.
+// Create persists a new project. It rejects a duplicate (owner, name).
 func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Project, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -166,8 +146,8 @@ func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Project, error
 	return p, nil
 }
 
-// Update changes a project's settings. What it is called does not change, and
-// neither does when it was created.
+// Update mutates an existing project. Identity and created stamp are immutable; a
+// missing project is a 404.
 func (h *Handler) Update(ctx context.Context, in *Input) (*schema.Project, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -183,9 +163,7 @@ func (h *Handler) Update(ctx context.Context, in *Input) (*schema.Project, error
 	return p, nil
 }
 
-// Delete removes a project. The people and roles in your organization are
-// unchanged; what goes is the scope itself, so move anything addressed by it
-// first.
+// Delete removes one project addressed by (owner, name).
 func (h *Handler) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -206,4 +184,12 @@ func mapErr(err error) error {
 		return zip.ErrNotFound("project not found")
 	}
 	return zip.ErrInternal(err.Error())
+}
+
+// pick returns a if non-empty, else b.
+func pick(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }

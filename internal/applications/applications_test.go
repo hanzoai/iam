@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package applications
 
@@ -11,7 +10,7 @@ import (
 	"github.com/hanzoai/orm"
 	ormdb "github.com/hanzoai/orm/db"
 
-	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
 func memDB(t *testing.T) orm.DB {

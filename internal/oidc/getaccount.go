@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 package oidc
 
 import (
@@ -10,11 +9,11 @@ import (
 
 	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/sessions"
-	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/internal/store"
 )
 
-// PathAccount (canonical.go) is the native account endpoint — what
-// the hanzo.id portal's account page and the gateway admin-guard call.
+// PathGetAccount is the native front-door account endpoint — what the hanzo.id
+// portal's account page and the gateway admin-guard call.
 //
 // SECURITY CONTRACT. The gateway admin-guard derives the global-admin
 // (SuperAdmin) predicate from the `owner` this returns — a caller is a global
@@ -23,7 +22,9 @@ import (
 // and every secret (password hash, access secret, TOTP, recovery codes) MUST be
 // redacted. Anonymous callers get {status:"error"} (200, casibase convention),
 // never a leak: the admin-guard reads status=="error" → not-admin, fail-closed.
-// accountResponse mirrors v1's Response for the account read (the casibase envelope).
+const PathGetAccount = "/v1/iam/get-account"
+
+// accountResponse mirrors v1's Response for get-account (the casibase envelope).
 type accountResponse struct {
 	Status string `json:"status"`
 	Msg    string `json:"msg,omitempty"`
@@ -33,11 +34,9 @@ type accountResponse struct {
 	Data2  any    `json:"data2,omitempty"`
 }
 
-// getAccount returns the signed-in person's own account and the organization
-// they belong to — what a console reads to draw the account menu.
-//
-// Passwords, API secrets and MFA material are stripped. It answers for a session
-// cookie or a bearer token alike.
+// getAccount resolves the signed-in caller and returns their REDACTED account +
+// organization. Resolution (callerOf) is by session cookie first — the portal +
+// gateway-admin-guard path — then bearer access token — the API path.
 func getAccount(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
@@ -82,17 +81,10 @@ func accountEnvelopeFor(ctx context.Context, db orm.DB, owner, name string) (acc
 // and gateway-admin-guard path) then bearer access token (the API path) — two
 // credentials, one identity. ok=false means no valid session or token.
 func callerOf(ctx context.Context, c *zip.Ctx, db orm.DB) (owner, name string, ok bool) {
-	return callerFrom(ctx, db, c.Fiber().Cookies(sessions.CookieName), httpx.Bearer(c))
-}
-
-// callerFrom is callerOf for a typed handler, which zip hands no *Ctx — it gets
-// the same two credentials as bound header values instead. Same order and the
-// same checks: session cookie first (the portal), then bearer (the API). callerOf
-// delegates here so one of the two cannot quietly become the lenient one.
-func callerFrom(ctx context.Context, db orm.DB, sessionCookie, bearer string) (owner, name string, ok bool) {
-	if sc, ok := sessions.CurrentValue(ctx, sessionCookie, db); ok {
-		return sc.Owner, sc.Name, true
+	if o, n, ok := sessions.Resolve(ctx, c.Fiber(), db); ok {
+		return o, n, true
 	}
+	bearer := httpx.Bearer(c)
 	if bearer == "" {
 		return "", "", false
 	}
