@@ -48,7 +48,7 @@ var errConfined = errors.New("verify: a confined token is not a bearer here")
 
 // verifyBearer is the verification of a credential presented to act: verifyToken,
 // then the token must be an access token (tokenType "access-token"), name an
-// audience, carry an issuer this IAM mints under, and not be confined. It is the
+// audience, carry an issuer this IAM mints under or accepts (IAM_ACCEPTED_ISSUERS), and not be confined. It is the
 // PLATFORM's: a token an organization's own cert signed resolves no kid here and
 // carries no platform issuer, so every route that grants authority refuses it.
 func verifyBearer(ctx context.Context, db orm.DB, tokenStr string) (*Claims, error) {
@@ -56,7 +56,7 @@ func verifyBearer(ctx context.Context, db orm.DB, tokenStr string) (*Claims, err
 	if err != nil {
 		return nil, err
 	}
-	if claims.TokenType != "access-token" || len(claims.Audience) == 0 || !issues(claims.Issuer) {
+	if claims.TokenType != "access-token" || len(claims.Audience) == 0 || !accepts(claims.Issuer) {
 		return nil, errNotBearer
 	}
 	if schema.Confined(claims.Scope) {

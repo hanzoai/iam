@@ -1876,3 +1876,24 @@ An application listing no forge scope therefore never emits one, which is every
 application today: nothing changes until an administrator lists scopes on one
 (`PUT /v1/iam/applications`, `scopes: [{name: "read:repository"}]`).
 The forge narrows once more to the holder's role and resource permissions.
+
+## Moving the platform issuer: IAM_ACCEPTED_ISSUERS
+`IAM_ACCEPTED_ISSUERS` is a comma list of https origins (`https://hanzo.id,https://hanzo.ai`):
+the platform issuers whose tokens this IAM VERIFIES and never mints under. It exists so the
+platform issuer can move (hanzo.id to hanzo.ai) while tokens under the old one are still in
+flight. A platform-signed token whose `iss` is listed passes `verifyBearer` (so every
+authority path), an agent's identity assertion (it lives seven days) and the workload
+grant's audience check (a projected ServiceAccount token's `aud` is the issuer; the one asked
+of and every accepted one verify, nothing else loosens). It is NOT minting: `resolveIssuer`
+never returns a listed issuer unless it is also IAM_ISSUER or a map value, a credential that
+replaces one under an accepted-only issuer (assume/release) is minted under the default
+issuer, userinfo echoes the issuer the token carries, and discovery never mentions the set.
+An organization's issuer `<IAM_TENANT_ISSUER>/<org>` is never accepted through it: the match
+is exact and the set holds origins only.
+The tenant origin may be a platform issuer (`https://hanzo.ai`); a platform issuer UNDER
+`<tenant origin>/` is refused at boot.
+The order of the flip: (1) every verifier trusts both issuers; (2) set IAM_ACCEPTED_ISSUERS to
+both and route hanzo.ai's `/.well-known/*` to IAM; (3) set IAM_ISSUER and the IAM_ISSUER_MAP
+values to `https://hanzo.ai`; (4) wait one maximum token lifetime (agent assertions: 7 days;
+refresh tokens: the longest `refreshExpireInHours` of any application); (5) drop hanzo.id from
+the set and from every verifier.

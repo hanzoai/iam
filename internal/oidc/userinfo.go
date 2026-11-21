@@ -65,6 +65,8 @@ func userinfoHandler(db orm.DB) zip.Handler {
 		}
 		if _, own := tenantOrgOf(claims.Issuer); own {
 			iss = claims.Issuer // already verified to be the organization's exact issuer
+		} else if acceptedOnly(claims.Issuer) {
+			iss = normalizeIssuer(claims.Issuer) // the issuer the relying party holds a token under
 		}
 		// The membership set is read from the store, not echoed from the token, for
 		// the reason isAdmin is: a grant revoked a minute ago must stop counting now

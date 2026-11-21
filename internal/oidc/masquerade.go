@@ -154,7 +154,11 @@ func rescope(ctx context.Context, db orm.DB, in *assumeBody, org string) (*httpx
 	if app == nil {
 		return httpx.Bad(400, "the access token names no application", ""), nil
 	}
-	signer, err := signerFor(ctx, db, app, claims.Issuer)
+	iss, err := reissuer(claims.Issuer)
+	if err != nil {
+		return httpx.Bad(500, "server_error", ""), nil
+	}
+	signer, err := signerFor(ctx, db, app, iss)
 	if err != nil {
 		return httpx.Bad(500, "server_error", ""), nil
 	}
@@ -198,6 +202,16 @@ func rescope(ctx context.Context, db orm.DB, in *assumeBody, org string) (*httpx
 // accepted by whatever accepted the one it replaces. A token that somehow carries
 // none falls back to the application's own client id, which is what every other
 // mint here defaults to.
+// reissuer is the issuer a credential that replaces one under issuer claimed is minted
+// under: the same one, unless it is only accepted (IAM_ACCEPTED_ISSUERS), in which case
+// it is the default issuer. Nothing is ever minted under an issuer IAM only accepts.
+func reissuer(claimed string) (string, error) {
+	if acceptedOnly(claimed) {
+		return resolveIssuer("")
+	}
+	return claimed, nil
+}
+
 func audienceOf(claims *Claims, app *schema.Application) string {
 	if len(claims.Audience) > 0 && claims.Audience[0] != "" {
 		return claims.Audience[0]
