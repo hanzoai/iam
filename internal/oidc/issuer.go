@@ -64,6 +64,12 @@ type issuerResolver struct {
 	// issuerFor derive `iss` from the request host; absent it, a no-issuer config is
 	// a hard boot error, so the request host is NEVER echoed as `iss` in any mode.
 	devHostRelative bool
+
+	// accepted is the set of platform issuers whose tokens this IAM VERIFIES and never
+	// mints under (IAM_ACCEPTED_ISSUERS): the issuer a deployment is moving away from, or
+	// toward, while tokens under it are still in flight. It is a separate set from def and
+	// byHost on purpose: nothing that mints, advertises or redirects reads it.
+	accepted map[string]bool
 }
 
 // newIssuerResolver builds a resolver from the default issuer and the JSON
@@ -256,18 +262,61 @@ func InitIssuerResolver() error {
 	if err != nil {
 		return err
 	}
-	// A tenant origin that is, or lies under, a platform issuer would send platform tokens
-	// to the tenant verifier (tenantOrgOf), so the two never overlap.
+	acc, err := newAcceptedIssuers(os.Getenv(EnvAcceptedIssuers))
+	if err != nil {
+		return err
+	}
+	r.accepted = acc
+	// A platform issuer that lies UNDER the tenant origin (`<origin>/<path>`) would be read
+	// as an organization's issuer by tenantOrgOf and send platform tokens to the tenant
+	// verifier, so none does. The origin ITSELF may be a platform issuer: an organization's
+	// issuer always carries a non-empty org after it, so the two never read alike.
 	if base != "" {
-		for _, iss := range append([]string{r.def}, mapValues(r.byHost)...) {
-			if iss = normalizeIssuer(iss); iss != "" && (iss == base || strings.HasPrefix(iss, base+"/")) {
-				return fmt.Errorf("%s %s is, or holds, the platform issuer %s", EnvTenantIssuer, base, iss)
+		for _, iss := range append(append([]string{r.def}, mapValues(r.byHost)...), acceptedList(acc)...) {
+			if iss = normalizeIssuer(iss); iss != "" && strings.HasPrefix(iss, base+"/") {
+				return fmt.Errorf("%s %s holds the platform issuer %s", EnvTenantIssuer, base, iss)
 			}
 		}
 	}
 	activeResolver.Store(r)
 	activeTenantBase.Store(&base)
 	return nil
+}
+
+// EnvAcceptedIssuers names the platform issuers IAM verifies tokens under and never mints
+// under: a comma list of https origins, e.g. `https://hanzo.id,https://hanzo.ai`. It is
+// deployment config, pinned like IAM_ISSUER. It exists for moving the platform issuer:
+// while the issuer changes, tokens minted under the old one are still valid for their
+// lifetime, and a verifier must take them and the new one both. Every platform-signed token
+// whose `iss` is listed passes verifyBearer, the agent assertion check and the workload
+// audience check; no token is ever minted under an issuer only because it is listed here,
+// discovery never advertises one, and an organization's issuer (`<tenant origin>/<org>`)
+// is never accepted through it.
+const EnvAcceptedIssuers = "IAM_ACCEPTED_ISSUERS"
+
+// newAcceptedIssuers parses IAM_ACCEPTED_ISSUERS: each entry an https origin (no path,
+// query or user), normalized as a sign-in origin is, without repeats. "" is none.
+func newAcceptedIssuers(raw string) (map[string]bool, error) {
+	out := map[string]bool{}
+	for _, part := range strings.Split(raw, ",") {
+		if strings.TrimSpace(part) == "" {
+			continue
+		}
+		o, err := signinOrigin(part)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", EnvAcceptedIssuers, err)
+		}
+		out[o] = true
+	}
+	return out, nil
+}
+
+func acceptedList(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }
 
 func mapValues(m map[string]string) []string {
@@ -336,6 +385,26 @@ func issues(iss string) bool {
 		}
 	}
 	return r.def == "" && len(r.byHost) == 0 && r.devHostRelative
+}
+
+// accepts reports whether a token under iss is one this IAM VERIFIES: an issuer it
+// mints under (issues) or one it only accepts (IAM_ACCEPTED_ISSUERS). An organization's
+// issuer is neither: the match is exact, and an organization's issuer always has an org
+// path after the tenant origin.
+func accepts(iss string) bool {
+	return issues(iss) || acceptedOnly(iss)
+}
+
+// acceptedOnly reports whether iss is an issuer this IAM verifies and does not mint
+// under. A token under it is real, and everything IAM mints for the person it names is
+// minted under the issuer of the host asked, never under it.
+func acceptedOnly(iss string) bool {
+	r := activeResolver.Load()
+	if r == nil || len(r.accepted) == 0 {
+		return false
+	}
+	iss = normalizeIssuer(iss)
+	return r.accepted[iss] && !issues(iss)
 }
 
 // Issuer is the canonical OIDC issuer for a request host, for a caller outside

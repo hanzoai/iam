@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -648,7 +649,14 @@ func agentAssertion(c *zip.Ctx) bool {
 		return false
 	}
 	iss, err := tokenIssuer(c)
-	return err == nil && claims.Issuer == iss
+	return err == nil && assertionIssuer(claims.Issuer, iss)
+}
+
+// assertionIssuer reports whether an agent assertion's `iss` is one this request may
+// verify: the issuer the request was asked of, or an accepted one. An assertion lives
+// days, so one minted under an issuer being moved from is still the agent's credential.
+func assertionIssuer(claimed, asked string) bool {
+	return claimed == asked || acceptedOnly(claimed)
 }
 
 // agentAssertionGrant exchanges an agent's identity_assertion for a fresh access
@@ -724,10 +732,13 @@ func verifyAgentAssertion(ctx context.Context, db orm.DB, raw, iss string) (*Cla
 	if typ, _ := tok.Header["typ"].(string); !strings.EqualFold(typ, agentAssertionTyp) {
 		return nil, errNotAgentAssertion
 	}
-	claims, err := parseToken(ctx, db, raw,
-		jwt.WithIssuer(iss), jwt.WithAudience(iss), jwt.WithExpirationRequired(), jwt.WithIssuedAt())
+	claims, err := parseToken(ctx, db, raw, jwt.WithExpirationRequired(), jwt.WithIssuedAt())
 	if err != nil {
 		return nil, err
+	}
+	// `iss` is the issuer asked of or an accepted one, and `aud` is that same issuer.
+	if !assertionIssuer(claims.Issuer, iss) || !slices.Contains(claims.Audience, claims.Issuer) {
+		return nil, jwt.ErrTokenInvalidIssuer
 	}
 	if claims.TokenType != "" || !validRegistrationID(claims.Subject) {
 		return nil, errNotAgentAssertion

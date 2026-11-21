@@ -758,7 +758,8 @@ func TestTenant_ATenantRowNeverFallsThroughToAPlatformCert(t *testing.T) {
 	}
 }
 
-// A tenant origin that is, or holds, a platform issuer is refused at boot.
+// A tenant origin that holds a platform issuer is refused at boot; one that IS a platform
+// issuer is allowed, since an organization's issuer always has an org after the origin.
 func TestTenantOrigin_NeverOverlapsAPlatformIssuer(t *testing.T) {
 	prevIss, prevMap, prevTen := os.Getenv("IAM_ISSUER"), os.Getenv("IAM_ISSUER_MAP"), os.Getenv(EnvTenantIssuer)
 	t.Cleanup(func() {
@@ -774,8 +775,7 @@ func TestTenantOrigin_NeverOverlapsAPlatformIssuer(t *testing.T) {
 		}
 	})
 	for name, c := range map[string]struct{ iss, m, tenant string }{
-		"default is the tenant origin": {"https://hanzo.ai", "", "https://hanzo.ai"},
-		"a brand issuer is it":         {"https://hanzo.id", `{"lux.id":"https://hanzo.ai"}`, "https://hanzo.ai"},
+		"default lies under it":        {"https://hanzo.ai/x", "", "https://hanzo.ai"},
 		"a brand issuer lies under it": {"https://hanzo.id", `{"lux.id":"https://hanzo.ai/lux"}`, "https://hanzo.ai"},
 	} {
 		os.Setenv("IAM_ISSUER", c.iss)

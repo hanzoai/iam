@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -141,7 +142,7 @@ func workloadGrant(c *zip.Ctx, db orm.DB) error {
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}
-	claims, err := verifyAssertion(assertion, iss, set)
+	claims, err := verifyAssertion(assertion, assertionAudiences(iss), set)
 	if err != nil {
 		return tokenError(c, 400, "invalid_grant", "the assertion is invalid or expired")
 	}
@@ -222,7 +223,7 @@ func serviceAccount(sub string) (namespace, name string) {
 // returns its validated claims. Fail-closed by construction: the issuer selects
 // the key source, so an issuer nobody configured has no keys and therefore no
 // verification path at all — there is nothing to relax.
-func verifyAssertion(assertion, audience string, set map[string]*cluster) (*assertionClaims, error) {
+func verifyAssertion(assertion string, audiences []string, set map[string]*cluster) (*assertionClaims, error) {
 	claims := &assertionClaims{}
 	key := func(t *jwt.Token) (any, error) {
 		// ParseWithClaims decodes the claims before it asks for a key, so `iss` is
@@ -240,12 +241,31 @@ func verifyAssertion(assertion, audience string, set map[string]*cluster) (*asse
 	if _, err := jwt.ParseWithClaims(assertion, claims, key,
 		jwt.WithValidMethods(clusterAlgs),
 		jwt.WithTimeFunc(nowFunc),
-		jwt.WithAudience(audience),
 		jwt.WithExpirationRequired(),
 	); err != nil {
 		return nil, err
 	}
+	// The assertion is for this IAM: its audience is one of the issuers it answers as.
+	if !slices.ContainsFunc(claims.Audience, func(a string) bool { return slices.Contains(audiences, a) }) {
+		return nil, jwt.ErrTokenInvalidAudience
+	}
 	return claims, nil
+}
+
+// assertionAudiences are the audiences a workload assertion may name: the issuer the
+// request was asked of and every accepted issuer (IAM_ACCEPTED_ISSUERS). A pod's projected
+// token is rotated by the kubelet, so while the issuer moves some pods still hold the old
+// audience. Nothing else about the assertion's verification changes.
+func assertionAudiences(iss string) []string {
+	out := []string{iss}
+	if r := activeResolver.Load(); r != nil {
+		for a := range r.accepted {
+			if a != iss {
+				out = append(out, a)
+			}
+		}
+	}
+	return out
 }
 
 // cluster is one trusted Kubernetes issuer: where its key set is published, what
