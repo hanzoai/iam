@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -10,13 +9,11 @@ import (
 	"testing"
 	"time"
 
-	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/pkg/pkce"
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // The RFC 8628 device grant, driven through the real router exactly as the two
@@ -47,15 +44,11 @@ func requestDevice(t *testing.T, app *zip.App, clientID, scope string) (*http.Re
 // case.
 func requestDeviceSecret(t *testing.T, app *zip.App, clientID, secret, scope string) (*http.Response, map[string]any) {
 	t.Helper()
-	// RFC 8628 3.1 fixes this request at application/x-www-form-urlencoded, the
-	// same encoding the poll uses. The secret in particular has no other home:
-	// RFC 6749 2.3.1 forbids a client credential in the URI query, so a helper
-	// that put it there drove a shape no client may send.
-	form := url.Values{"client_id": {clientID}, "scope": {scope}, "response_type": {"device_code"}}
+	q := url.Values{"client_id": {clientID}, "scope": {scope}, "response_type": {"device_code"}}
 	if secret != "" {
-		form.Set("client_secret", secret)
+		q.Set("client_secret", secret)
 	}
-	resp, body := do(t, app, formReq("POST", PathDevice, form))
+	resp, body := do(t, app, formReqNoBody("POST", PathDevice+"?"+q.Encode()))
 	return resp, decode(t, body)
 }
 
@@ -301,29 +294,18 @@ func TestDevice_ConfidentialClientAuth(t *testing.T) {
 // that is the identity an operator signs a CLI into any brand with.
 func TestDevice_ApprovalTenantBoundary(t *testing.T) {
 	for _, tc := range []struct {
-		name string
-		org  string // approver's org; the device app lives in "hanzo"
-		// operator grants a membership in the reserved org — how an operator is
-		// actually made. The one below is anchored in a FOREIGN tenant and still
-		// crosses, which is the whole point: asking the home org denied every
-		// operator who is also an ordinary member of some brand.
-		operator bool
-		allow    bool
+		name  string
+		org   string // approver's org; the device app lives in "hanzo"
+		allow bool
 	}{
-		{"same org approves", "hanzo", false, true},
-		{"foreign org refused", "lux", false, false},
-		{"superadmin crosses tenants", "admin", false, true},
-		{"brand-anchored operator crosses tenants", "lux", true, true},
+		{"same org approves", "hanzo", true},
+		{"foreign org refused", "lux", false},
+		{"superadmin crosses tenants", "admin", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			app, db := newServer(t)
 			seedApp(t, db, appOpts{clientID: "hanzo-app", grants: deviceGrants}) // org "hanzo"
 			seedUserInOrg(t, db, tc.org, "eve", "eve@"+tc.org+".example", "pw")
-			if tc.operator {
-				if _, err := store.EnsureMembership(tctx(), db, tc.org+"/eve", policy.AdminOrg, store.RoleAdmin); err != nil {
-					t.Fatalf("grant the reserved-org membership: %v", err)
-				}
-			}
 
 			_, da := requestDevice(t, app, "hanzo-app", "openid")
 			deviceCode, userCode := da["device_code"].(string), da["user_code"].(string)
@@ -492,7 +474,7 @@ func TestDevice_AuthorizationCodeIsNotRedeemableAsDeviceCode(t *testing.T) {
 	code, _, _ := loginForCode(t, app, map[string]string{
 		"organization": "hanzo", "username": "alice", "password": "pw",
 		"clientId": "hanzo-app", "redirectUri": testRedirect, "scope": "openid",
-		"codeChallenge": pkce.Challenge(verifier), "codeChallengeMethod": "S256",
+		"codeChallenge": ComputeS256Challenge(verifier), "codeChallengeMethod": "S256",
 	})
 	if code == "" {
 		t.Fatal("setup: no authorization code minted")
@@ -598,91 +580,5 @@ func withdrawGrants(t *testing.T, db orm.DB, name string) {
 	a.GrantTypes = nil
 	if err := a.UpdateCtx(tctx()); err != nil {
 		t.Fatalf("withdraw grants: %v", err)
-	}
-}
-
-// approveWithSessionOnly approves the way the approval PAGE actually does: a
-// session cookie and the user_code, and NOT one credential field. Every other
-// device test here posts organization+username+password (approveAs), which is a
-// shape the product never sends — the page exists precisely because the human is
-// already signed in.
-func approveWithSessionOnly(t *testing.T, app *zip.App, cookie, userCode string) map[string]any {
-	t.Helper()
-	req := jsonReq("POST", PathLogin, map[string]string{
-		"type": "device", "userCode": userCode, "application": "hanzo-app",
-	})
-	req.Header.Set("Cookie", cookie)
-	_, body := do(t, app, req)
-	return decode(t, body)
-}
-
-// A signed-in human approves a device WITHOUT re-entering a password.
-//
-// This is the whole RFC 8628 terminal leg and it was broken: the session branch
-// in login.go was gated to type=code, so a credential-less type=device post fell
-// through to the credential check and answered "organization, username and
-// password are required" — with HTTP 200, so nothing looked wrong. `hanzo login`
-// hung at "Waiting for approval…" forever and no test noticed, because every
-// device test approved with a full password.
-func TestDevice_ApproveFromSessionWithoutCredentials(t *testing.T) {
-	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
-	seedRichUser(t, db)
-	seedDeviceApp(t, db, "hanzo-app")
-
-	_, da := requestDevice(t, app, "hanzo-app", "openid profile")
-	deviceCode, userCode := da["device_code"].(string), da["user_code"].(string)
-
-	cookie := sessionCookieFor(t, app)
-	if m := approveWithSessionOnly(t, app, cookie, userCode); m["status"] != "ok" {
-		t.Fatalf("a signed-in human must approve without re-entering a password, got: %v", m)
-	}
-
-	// The approval binds the SESSION's identity onto the row — the same binding
-	// the credentialed path makes, so the device is signed in as the approver.
-	row, _ := store.GetTokenByCode(tctx(), db, deviceCode)
-	if row == nil || row.User != "hanzo/alice" {
-		t.Fatalf("approval must bind the approver onto the row, got %+v", row)
-	}
-
-	// And the device's poll now completes, which is the point of the whole flow.
-	resp, m := pollDevice(t, app, "hanzo-app", deviceCode)
-	if resp.StatusCode != 200 {
-		t.Fatalf("poll after session approval: status %d: %v", resp.StatusCode, m)
-	}
-	if access, _ := m["access_token"].(string); access == "" {
-		t.Fatalf("an approved device must mint a token: %v", m)
-	}
-}
-
-// Anonymous is still refused. Dropping the type=code restriction must not turn
-// the approval endpoint into one an unauthenticated caller can drive: without a
-// session there is no identity to bind, and a device that could be approved by
-// nobody would be a device anybody could take over.
-func TestDevice_ApproveWithoutSessionIsRefused(t *testing.T) {
-	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
-	seedRichUser(t, db)
-	seedDeviceApp(t, db, "hanzo-app")
-
-	_, da := requestDevice(t, app, "hanzo-app", "openid profile")
-	deviceCode, userCode := da["device_code"].(string), da["user_code"].(string)
-
-	// No Cookie header at all.
-	_, body := do(t, app, jsonReq("POST", PathLogin, map[string]string{
-		"type": "device", "userCode": userCode, "application": "hanzo-app",
-	}))
-	if m := decode(t, body); m["status"] != "error" {
-		t.Fatalf("anonymous device approval must be refused, got: %v", m)
-	}
-
-	// Nothing was bound, and the device is still waiting.
-	row, _ := store.GetTokenByCode(tctx(), db, deviceCode)
-	if row != nil && row.User != "" {
-		t.Fatalf("a refused approval must bind nobody, got user=%q", row.User)
-	}
-	resp, m := pollDevice(t, app, "hanzo-app", deviceCode)
-	if resp.StatusCode == 200 {
-		t.Fatalf("an unapproved device must not mint: %v", m)
 	}
 }

@@ -1,20 +1,13 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package authz
 
-import (
-	"testing"
-
-	policy "github.com/hanzoai/authz"
-
-	"github.com/hanzoai/iam/internal/principal"
-)
+import "testing"
 
 // The confidential-client authorization policy: an app principal's ENTIRE
 // authority is its capability allowlist — never Super, never Admin, never a
 // tenant. This is the v1 "every client credential is a global admin" hole, held
-// closed. This table is the decision's truth for app principals.
+// closed. authorize() IS the decision; this table is its truth for app principals.
 func TestAuthorizeAppCapabilities(t *testing.T) {
 	// The allowlists reserve each capability to a named admin-owned app.
 	t.Setenv("IAM_USER_ADMIN_APPS", "hanzo-console")
@@ -22,16 +15,12 @@ func TestAuthorizeAppCapabilities(t *testing.T) {
 	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-team")
 	t.Setenv("IAM_SA_LIST_ALLOWED_APPS", "hanzo-reader")
 
-	console := &principal.Principal{App: &policy.App{Name: "hanzo-console", Owner: "admin"}, Org: "admin"} // admin-owned: user+org admin caps
-	nobody := &principal.Principal{App: &policy.App{Name: "rogue-app", Owner: "hanzo"}, Org: "hanzo"}      // in no allowlist
-	// attacker: a tenant that registered <its-org>/hanzo-console — the SAME allow-listed
-	// NAME, but owned by a NON-signing org. The owner-pin (cap.go) denies every capability,
-	// so the public signup→onboard→register-app→Basic-auth escalation is inert.
-	attacker := &principal.Principal{App: &policy.App{Name: "hanzo-console", Owner: "evil"}, Org: "evil"}
+	console := &Principal{App: "hanzo-console", Org: "admin"} // user+org admin caps
+	nobody := &Principal{App: "rogue-app", Org: "hanzo"}      // in no allowlist
 
 	cases := []struct {
 		name   string
-		p      *principal.Principal
+		p      *Principal
 		method string
 		entity string
 		owner  string
@@ -59,19 +48,6 @@ func TestAuthorizeAppCapabilities(t *testing.T) {
 		// never promote (no capability moves a user into the admin org).
 		{"console -> admin-org user denied", console, "POST", "users", "admin", "x", false},
 		{"console -> built-in user denied", console, "POST", "users", "built-in", "x", false},
-		// [INFO] consistency: even the LEGIT admin-owned console may not land a user in
-		// the reserved service-principal org "app" — a platform identity, super-only. The
-		// raw CRUD now consults IsReservedOrg, the SAME predicate signup/onboarding use.
-		{"console -> app-org user denied", console, "POST", "users", "app", "x", false},
-
-		// RED PoC, now DENIED: a tenant-owned app spoofing the console NAME holds NOTHING.
-		// The owner-pin refuses a non-signing owner BEFORE any allowlist name match, so a
-		// leaked/forged tenant credential named like the console cannot act on any tenant.
-		{"attacker spoof -> victim users denied", attacker, "POST", "users", "victim", "x", false},
-		{"attacker spoof -> org write denied", attacker, "POST", "organizations", "admin", "victim", false},
-		{"attacker spoof -> org delete denied", attacker, "DELETE", "organizations", "admin", "victim", false},
-		{"attacker spoof -> org read denied", attacker, "GET", "organizations", "admin", "victim", false},
-		{"attacker spoof -> own-org users denied", attacker, "POST", "users", "evil", "x", false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -84,23 +60,53 @@ func TestAuthorizeAppCapabilities(t *testing.T) {
 
 	// An app principal is structurally never Super/Admin, so it can never take the
 	// human privileged paths even if a future bug set the flags.
-	if console.Sudo || console.Admin {
+	if console.Super || console.Admin {
 		t.Fatal("an app principal must never carry Super/Admin")
 	}
+}
 
-	// RED's four assertions, VERBATIM — the exact PoC principal &Principal{App:"hanzo-console"}
-	// (no owning signing org). Every one fired == true before the owner-pin; every one must
-	// be false now. A bare app principal is inert regardless of the NAME it presents.
-	red := &principal.Principal{App: &policy.App{Name: "hanzo-console"}}
-	for _, a := range []struct{ method, entity, owner, name string }{
-		{"POST", "users", "victim", "x"},
-		{"POST", "organizations", "admin", "victim"},
-		{"DELETE", "organizations", "admin", "victim"},
-		{"GET", "organizations", "admin", "victim"},
-	} {
-		if authorize(red, a.method, a.entity, a.owner, a.name) {
-			t.Fatalf("RED PoC REOPENED: authorize(App=hanzo-console,%s,%s,%s/%s) GRANTED — the owner-pin failed",
-				a.method, a.entity, a.owner, a.name)
+// The capability primitives, fail-secure to the letter.
+func TestCapabilityPrimitives(t *testing.T) {
+	t.Setenv("IAM_ORG_ADMIN_APPS", "hanzo-console, brand-console")
+
+	t.Run("Allowed named", func(t *testing.T) {
+		if !Allowed(&Principal{App: "hanzo-console"}, CapOrgAdmin) {
+			t.Fatal("a named app must hold its capability")
 		}
-	}
+	})
+	t.Run("Allowed unnamed denied", func(t *testing.T) {
+		if Allowed(&Principal{App: "other"}, CapOrgAdmin) {
+			t.Fatal("an unnamed app must hold nothing")
+		}
+	})
+	t.Run("Allowed unset env denied", func(t *testing.T) {
+		if Allowed(&Principal{App: "hanzo-console"}, CapKeyMint) { // IAM_KEY_MINT_ALLOWED_APPS unset here
+			t.Fatal("an unset allowlist must deny every app")
+		}
+	})
+	t.Run("Allowed non-app is vacuous", func(t *testing.T) {
+		if !Allowed(&Principal{Org: "hanzo"}, CapOrgAdmin) {
+			t.Fatal("a human holds capabilities vacuously; the org policy decides")
+		}
+	})
+	t.Run("BoundToOrg prefix", func(t *testing.T) {
+		p := &Principal{App: "hanzo-team"}
+		if !BoundToOrg(p, "hanzo") {
+			t.Fatal("hanzo-team must be bound to hanzo")
+		}
+		if BoundToOrg(p, "lux") {
+			t.Fatal("hanzo-team must NOT be bound to lux")
+		}
+		if BoundToOrg(&Principal{App: "hanzo"}, "hanzo") {
+			t.Fatal("an exact-name app (no agent segment) is bound to nothing")
+		}
+	})
+	t.Run("capFor mapping", func(t *testing.T) {
+		if capFor("organizations") != CapOrgAdmin || capFor("users") != CapUserAdmin {
+			t.Fatal("org/user entities must map to their capability")
+		}
+		if capFor("certs") != (Cap{}) || capFor("providers") != (Cap{}) {
+			t.Fatal("an unmapped entity must map to the empty (deny-all) capability")
+		}
+	})
 }

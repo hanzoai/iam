@@ -1,12 +1,11 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package authz_test
 
-// Read-path authorization, driven through the REAL registered router. A status code
+// Read-path authorization, driven through the REAL mounted router. A status code
 // is not the contract here — the BODY is: a listing that returns 200 while
 // carrying the admin signing key is a total compromise. Every case asserts on
-// what actually crossed the network.
+// what actually crossed the wire.
 
 import (
 	"bytes"
@@ -15,8 +14,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/hanzoai/iam/internal/testhttp"
 )
 
 // doBody is do() plus the response body — the read surface's real contract.
@@ -35,7 +32,7 @@ func (h *harness) doBody(t *testing.T, method, path, bearer string, body any) (i
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
 	}
-	resp, err := testhttp.Do(h.app, req)
+	resp, err := h.app.Fiber().Test(req)
 	if err != nil {
 		t.Fatalf("%s %s: %v", method, path, err)
 	}
@@ -52,9 +49,9 @@ func leaks(body string) bool {
 // TestCertPrivateKeyNeverLeaks is the PoC that proved a full token-forgery
 // compromise: a hanzo org admin listed certs and received the admin trust
 // anchor's private key. Two independent defects composed into it — the listing
-// ignored its owner, so an empty owner listed EVERY tenant, and the response
-// serialized privateKey. Both
-// are closed: the owner is resolved from the verified bearer (principal.Scope), and
+// ignored its owner (a GET binds no query, so in.Owner was always "", and an
+// empty owner listed EVERY tenant), and the response serialized privateKey. Both
+// are closed: the owner is resolved from the verified bearer (authz.Scope), and
 // a Cert is masked on the way out (schema.Cert.Mask), so the key material that
 // signs every token cannot cross the API at all — a relying party reads the
 // PUBLIC half from the JWKS (RFC 7517).

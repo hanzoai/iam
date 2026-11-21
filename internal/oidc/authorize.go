@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -10,30 +9,18 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
-// The authorization endpoint: GET/POST /v1/iam/oauth/authorize — the entry point
-// of the authorization-code flow. iam validates the request BEFORE it trusts
+// The authorization endpoint: GET/POST /v1/iam/oauth/authorize — the front door
+// of the authorization-code flow. iam2 validates the request BEFORE it trusts
 // any redirect: an unknown client_id or an unregistered redirect_uri is answered
 // in place and NEVER redirected to (RFC 6749 §4.1.2.1), closing the open-redirect
-// and code-injection surface that a bare pass-through would leave open.
-//
-// A validated request then has THREE possible answers, and which one it gets is
-// the whole of single sign-on:
-//
-//	the session answers it   — a code, straight back to the registered
-//	                           redirect_uri, no screen (prompt.go)
-//	nobody is signed in, and — error=login_required, back to the registered
-//	the client said none       redirect_uri, still no screen
-//	otherwise                — the hosted login UI, which collects credentials
-//	                           and posts to /v1/iam/login
-//
-// Before this, only the third existed: every request rendered a login page,
-// prompt=none included. A relying party therefore had no way to ask "is anyone
-// signed in?" without putting a login screen in front of a user who already
-// was — which is not a missing feature, it is the absence of SSO.
+// and code-injection surface that a bare pass-through would leave open. A
+// well-formed request is delegated to the hosted login UI (matching v1), which
+// collects credentials and posts to /v1/iam/login; that endpoint mints the
+// PKCE-bound code and the browser lands back on the registered redirect_uri.
 
 // hostedLoginPath is the default hosted-login route the authorize endpoint hands
 // a validated request to when the application pins no SigninUrl of its own.
@@ -52,40 +39,10 @@ type authorizeRequest struct {
 	resource            string
 	responseMode        string
 	provider            string
-	prompt              string
-	signup              bool
 }
 
-// authorizeHandler starts a sign-in — the address you send a browser to, and the
-// beginning of every OAuth and OpenID Connect flow.
-//
-// If the person is ALREADY signed in here, it does not ask them again: it
-// returns them to the application with a one-time code and they never see this
-// page. Otherwise it shows the right way to sign in for the application they are
-// signing in to, or hands off to another identity provider if that is what they
-// pick.
-//
-// A client can say what it wants with `prompt`: `none` means answer without any
-// screen at all — with the code if a session exists, with an error if not, but
-// never with a page; `login` means ask for the password again even if a session
-// exists; `select_account` means let the person choose which identity to use.
-//
-// It returns only to an address the application has registered. That check
-// happens before anything else, so a request naming an unregistered address is
-// refused where the person can see it rather than being bounced onwards.
 func authorizeHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
-		// A sign-in must run AT its brand's issuer, because everything a flow
-		// sets along the way — the hanzo_fed browser binding, the session — is a
-		// host-only cookie, while the IdP callback and `iss` are pinned to the
-		// issuer. Answering on an alias host (iam.hanzo.ai, www.zoolabs.id, any
-		// host the map folds) strands those cookies and social sign-in fails
-		// closed at the callback. So an alias is answered with the same request
-		// relocated to the issuer, before anything is minted or set; 307 keeps
-		// the method. See issuerRelocation for the fail-closed guards.
-		if loc, ok := issuerRelocation(c); ok {
-			return c.Redirect(307, loc)
-		}
 		ctx := c.Context()
 		q := authorizeParams(c)
 
@@ -120,49 +77,16 @@ func authorizeHandler(db orm.DB) zip.Handler {
 			return authorizeErrorRedirect(c, q, "invalid_request", "PKCE is required for public clients")
 		}
 
-		p := parsePrompt(q.prompt)
-		if p.combined {
-			return authorizeErrorRedirect(c, q, "invalid_request", "prompt=none must not be combined with other values")
-		}
-
 		// A request that names a social `provider` is federated to that external
 		// IdP (Google/GitHub, …) instead of the hosted credential login. The
 		// client + redirect_uri + PKCE policy above are already enforced, so the
 		// federation broker starts from a validated request and a trusted target.
-		//
-		// It is decided BEFORE the session is consulted, because naming a provider
-		// is an explicit instruction about WHICH identity to authenticate — the
-		// person pressed "continue with Google" — and an ambient session is not an
-		// answer to that. Which also means it can never be silent: the external IdP
-		// is the one who decides, and reaching it is an interaction.
 		if q.provider != "" {
-			if p.none {
-				return authorizeErrorRedirect(c, q, errInteractionRequired, "an external identity provider cannot be used without interaction")
-			}
 			return beginFederation(c, db, app, q, method)
 		}
 
-		// SINGLE SIGN-ON. A live session answers the request outright — this is
-		// the branch that means "log in once at the issuer and every other app
-		// already knows you". It is skipped only when the client asked for a
-		// screen (prompt=login / select_account), and its refusals are the OIDC
-		// error codes prompt=none is owed.
-		if !p.interactive() {
-			code, refusal := silentGrant(c, db, app, q)
-			if refusal == "" {
-				return authorizeCodeRedirect(c, q, code)
-			}
-			if p.none {
-				return authorizeErrorRedirect(c, q, refusal, "no interaction was permitted and the request could not be answered from an existing session")
-			}
-		}
-
-		// prompt=none has now been answered one way or the other; reaching here
-		// with it set means the client asked for no UI and for a UI at once, which
-		// `combined` already refused. Everything else gets the hosted login with a
-		// clean, re-encoded request. The login page posts credentials to
-		// /v1/iam/login, which mints the code.
-		q.prompt = p.forwarded()
+		// Delegate to the hosted login with a clean, re-encoded request. The login
+		// page posts credentials to /v1/iam/login, which mints the code.
 		return c.Redirect(302, hostedLoginTarget(app)+"?"+authorizeForwardQuery(q, method))
 	}
 }
@@ -182,8 +106,6 @@ func authorizeParams(c *zip.Ctx) authorizeRequest {
 		resource:            param(c, "resource"),
 		responseMode:        param(c, "response_mode"),
 		provider:            param(c, "provider"),
-		prompt:              param(c, "prompt"),
-		signup:              param(c, "signup") == "true",
 	}
 }
 
@@ -213,34 +135,7 @@ func authorizeForwardQuery(q authorizeRequest, method string) string {
 	}
 	setIfPresent(v, "resource", q.resource)
 	setIfPresent(v, "response_mode", q.responseMode)
-	// The surviving prompt is carried to the page, because the page is what has
-	// to act on it: `select_account` is a request to show an account CHOOSER
-	// rather than a bare credential form, and only the UI can do that. `none`
-	// never reaches here — it is answered above, without a page, which is what it
-	// asked for.
-	setIfPresent(v, "prompt", q.prompt)
-	// Which of the two screens to open. Like `prompt`, the page is what acts on
-	// it: an application sending someone to create an account wants the
-	// registration form, not the credential form with a link to it. Re-encoded
-	// from the parsed flag rather than echoed, so only the literal "true" ever
-	// reaches the page. An application that does not ask gets sign-in, and a
-	// deployment with registration closed gets sign-in either way.
-	if q.signup {
-		v.Set("signup", "true")
-	}
 	return v.Encode()
-}
-
-// authorizeCodeRedirect returns a successful silent authorization to the client:
-// the code and the state, on the registered redirect_uri.
-//
-// It is the SAME return path an interactive sign-in takes — the browser lands on
-// the client's callback with a code it exchanges at /token — so nothing
-// downstream can tell the two apart, and nothing downstream has to.
-func authorizeCodeRedirect(c *zip.Ctx, q authorizeRequest, code string) error {
-	v := url.Values{}
-	v.Set("code", code)
-	return authorizeRedirect(c, q, v)
 }
 
 // authorizeErrorRedirect bounces a protocol error back to the (already
@@ -249,20 +144,6 @@ func authorizeErrorRedirect(c *zip.Ctx, q authorizeRequest, code, desc string) e
 	v := url.Values{}
 	v.Set("error", code)
 	setIfPresent(v, "error_description", desc)
-	return authorizeRedirect(c, q, v)
-}
-
-// authorizeRedirect returns the browser to the redirect_uri carrying v, in the
-// requested response mode, with `state` echoed.
-//
-// Success and failure share it deliberately. They are the same act — hand these
-// parameters to the client's registered address — and splitting them is how a
-// server ends up echoing state on one and forgetting it on the other, or
-// honouring response_mode=fragment for an error and not for a code.
-//
-// It runs only AFTER redirect_uri has been matched against the application's
-// registered list, which is what makes appending to it safe.
-func authorizeRedirect(c *zip.Ctx, q authorizeRequest, v url.Values) error {
 	setIfPresent(v, "state", q.state)
 
 	sep := "?"
@@ -284,7 +165,7 @@ func authorizeUserError(c *zip.Ctx, msg string) error {
 }
 
 // normalizeChallengeMethod maps an omitted PKCE method to S256 when a challenge
-// is present (S256 is the only method iam supports); an explicit non-S256
+// is present (S256 is the only method iam2 supports); an explicit non-S256
 // method is returned unchanged so the caller rejects the downgrade.
 func normalizeChallengeMethod(challenge, method string) string {
 	if challenge == "" {

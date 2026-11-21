@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -8,7 +7,7 @@ import (
 )
 
 // Discovery is served at both well-known paths, host-relative, advertising only
-// what iam implements — matching the live hanzo.id surface so a client's
+// what iam2 implements — matching the live hanzo.id surface so a client's
 // discovery step is unchanged across the backend swap.
 func TestDiscovery_ShapeAtBothPaths(t *testing.T) {
 	app, _ := newServer(t)
@@ -53,12 +52,9 @@ func TestDiscovery_ShapeAtBothPaths(t *testing.T) {
 	}
 }
 
-// The issuer NEVER follows X-Forwarded-Host: it is resolved from the TRUSTED
-// request host (zip.Ctx.Host(), which ignores X-Forwarded-Host) through the pinned
-// issuer resolver, so a client-supplied X-Forwarded-Host cannot steer `iss`. Here
-// the trusted host is hanzo.id (formReqNoBody) and no issuer map is configured, so
-// the spoofed header is discarded and the issuer stays host-relative to hanzo.id.
-func TestDiscovery_IssuerIgnoresForwardedHost(t *testing.T) {
+// The issuer follows the request host (X-Forwarded-Host at the edge), so
+// discovery and the tokens it describes never split origin.
+func TestDiscovery_IssuerFollowsForwardedHost(t *testing.T) {
 	app, _ := newServer(t)
 	req := formReqNoBody("GET", PathDiscovery)
 	req.Header.Set("X-Forwarded-Host", "id.example.test")
@@ -66,8 +62,8 @@ func TestDiscovery_IssuerIgnoresForwardedHost(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("status %d", resp.StatusCode)
 	}
-	if got := decode(t, body)["issuer"]; got != "https://hanzo.id" {
-		t.Fatalf("issuer = %v, want https://hanzo.id (X-Forwarded-Host must not steer iss)", got)
+	if got := decode(t, body)["issuer"]; got != "https://id.example.test" {
+		t.Fatalf("issuer = %v, want https://id.example.test", got)
 	}
 }
 

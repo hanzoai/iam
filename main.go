@@ -1,13 +1,13 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
-// Command iam is the Hanzo IAM identity service: a clean-room rewrite of the
-// legacy fork's identity layer on the native Hanzo stack — zip (HTTP) over
-// hanzoai/orm. No Beego, no xorm, no base, no consensus engine.
+// Command iam2 is the Hanzo IAM v2 identity service: a clean-room,
+// proprietary rewrite of the Casdoor-fork identity layer on the native
+// Hanzo stack — zip (HTTP) over hanzoai/orm. No Casdoor, no Beego, no xorm,
+// no base, no consensus engine.
 //
 // Subcommands:
 //
-//	serve     open the entity store and serve the IAM API
+//	serve     open the entity store and serve the IAM v2 API
 //	compare   read-only v1 -> v2 drift report (needs a `-tags migration` build)
 //	version   print the build version
 //
@@ -25,7 +25,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -34,13 +33,10 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/compare"
-	"github.com/hanzoai/iam/internal/oidc"
-	"github.com/hanzoai/iam/internal/provision"
 	"github.com/hanzoai/iam/internal/routes"
+	_ "github.com/hanzoai/iam/internal/schema" // registers the v2 entity kinds
 	"github.com/hanzoai/iam/internal/seed"
-	_ "github.com/hanzoai/iam/pkg/schema" // registers the v2 entity kinds
-	"github.com/hanzoai/iam/pkg/store"
-	"github.com/hanzoai/iam/server"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // version is set at build time via -ldflags "-X main.version=vX.Y.Z".
@@ -53,147 +49,62 @@ func main() {
 	defer stop()
 
 	root := &cobra.Command{
-		Use:           "iam",
-		Short:         "Hanzo IAM — identity service (zip + orm)",
+		Use:           "iam2",
+		Short:         "Hanzo IAM v2 — proprietary identity service (zip + orm, no Casdoor)",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(serveCmd(), compareCmd(), provisionCmd(), normalizeCmd(), versionCmd())
+	root.AddCommand(serveCmd(), compareCmd(), versionCmd())
 
 	if err := root.ExecuteContext(ctx); err != nil {
-		fmt.Fprintf(os.Stderr, "iam: %v\n", err)
+		fmt.Fprintf(os.Stderr, "iam2: %v\n", err)
 		os.Exit(1)
 	}
 }
 
 func serveCmd() *cobra.Command {
-	var storeBackend, dbPath, sqlAddr, zapAddr, httpAddr, opsAddr, initData string
+	var storeBackend, dbPath, zapAddr, httpAddr, initData string
 	cmd := &cobra.Command{
 		Use:   "serve",
-		Short: "Open the entity store and serve the IAM API",
+		Short: "Open the entity store and serve the IAM v2 API",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return serve(cmd.Context(), storeBackend, dbPath, sqlAddr, zapAddr, httpAddr, opsAddr, initData)
+			return serve(cmd.Context(), storeBackend, dbPath, zapAddr, httpAddr, initData)
 		},
 	}
 	f := cmd.Flags()
 	f.StringVar(&storeBackend, "store", "sqlite", "storage backend: sqlite | sql | datastore")
-	f.StringVar(&dbPath, "db", "data/iam.db", "SQLite database path (store=sqlite)")
-	// Resolve the env at the CLI edge, not inside the store: store.Open stays a pure
-	// function of its inputs. Empty falls back to the orm per-backend localhost default.
-	f.StringVar(&sqlAddr, "sql-addr", os.Getenv("IAM_SQL_ADDR"), "hanzoai/sql ZAP address for --store sql|datastore (default $IAM_SQL_ADDR)")
+	f.StringVar(&dbPath, "db", "data/iam2.db", "SQLite database path (store=sqlite)")
 	f.StringVar(&zapAddr, "zap", ":9653", "ZAP primary listen address")
 	f.StringVar(&httpAddr, "http", "http://:8080", "HTTP edge listen address")
-	// The third listener, said the same way as the other two. /healthz, /readyz
-	// and /metrics live here and never on the public port, so a probe does not
-	// queue behind public traffic (HIP-0119 §1). Empty means this process owns no
-	// ops listener — right for a grafted iam, where the HOST owns liveness
-	// (HIP-0106 §1.3(f)); wrong for a standalone one, which is why it defaults on.
-	f.StringVar(&opsAddr, "ops", zip.DefaultOpsAddr, "ops listen address for /healthz, /readyz and /metrics (empty: none)")
 	f.StringVar(&initData, "init-data", "", "path to init_data.json to seed on boot (new-only; ${VAR} from env)")
 	return cmd
 }
 
-func serve(ctx context.Context, storeBackend, dbPath, sqlAddr, zapAddr, httpAddr, opsAddr, initData string) error {
-	db, err := openStore(storeBackend, dbPath, sqlAddr)
+func serve(ctx context.Context, storeBackend, dbPath, zapAddr, httpAddr, initData string) error {
+	db, err := openStore(storeBackend, dbPath)
 	if err != nil {
 		return err
 	}
 	defer db.Close()
 
-	// Pin the per-brand OIDC issuer map from config (IAM_ISSUER + IAM_ISSUER_MAP)
-	// before the listener opens. A malformed or fail-open map fails the boot LOUD
-	// rather than silently minting tokens under the wrong `iss`; an unset map keeps
-	// the single-issuer (IAM_ISSUER) behavior unchanged.
-	if err := oidc.InitIssuerResolver(); err != nil {
-		return fmt.Errorf("serve: %w", err)
-	}
-
-	// Pin the ORG-constant origin external IdPs call back to. Separate from the
-	// issuer on purpose: the issuer must vary per brand (an RP pins `iss`), while
-	// a social provider holds ONE OAuth client per org with a FIXED redirect_uri
-	// list — so a per-brand callback is one the provider has never seen and it
-	// answers redirect_uri_mismatch. Unset keeps the pre-split behaviour (the
-	// federation origin follows the issuer).
-	if err := oidc.InitFederationResolver(); err != nil {
-		return fmt.Errorf("serve: %w", err)
-	}
-
-	// NO DELIVERY TRANSPORT IS BOUND HERE, and the line below is the whole reason.
-	//
-	// Everything code-shaped reads one predicate — otp.DeliveryConfigured, which
-	// reports on the BOUND SENDER and never on configuration — so email sign-in, SMS
-	// sign-in and the email and SMS second factors are exactly as available as the
-	// transport a composition root supplies. This root supplies none, so all four
-	// stay off and say so.
-	//
-	// notify is a cloud app reached by a ZAP op over its unix socket, and in the
-	// fleet it is started ON DEMAND by the router that owns the app list. This binary
-	// is not that router: it cannot start notify, and it cannot tell a notify that is
-	// absent from one that is merely cold. It used to guess — it looked for
-	// notify.sock and bound a sender when the FILE was there — which reported
-	// delivery from a socket a dead pod left behind and reported none for a service
-	// one call would have woken. A guess that can be wrong in both directions is
-	// worse than an honest no.
-	//
-	// Delivery lives where the router lives. cloud grafts this surface with
-	// server.Route and binds its own transport with server.BindSender, and that is
-	// the one deployment where a code can actually reach a person.
-	//
-	// Deliberately NOT fatal: password and social sign-in are complete without it,
-	// and an identity service that refuses to boot because it cannot send SMS is
-	// worse than one that honestly offers fewer methods.
-	fmt.Fprintln(os.Stderr, "iam: this binary binds no delivery transport — email/SMS codes and their second factors stay off (a grafting host supplies one)")
-
 	// Bootstrap the config (orgs/apps/providers/certs) from init_data.json — the
-	// same file the the legacy surface iam uses — so a fresh store comes up with the real
+	// same file the Casdoor iam uses — so a fresh store comes up with the real
 	// application/provider/cert set instead of empty. New-only + idempotent.
 	if initData != "" {
 		sum, err := seed.FromInitData(ctx, db, initData)
 		if err != nil {
 			return fmt.Errorf("serve: seed: %w", err)
 		}
-		fmt.Fprintf(os.Stderr, "iam: seeded from %s — created orgs=%d apps=%d providers=%d certs=%d\n",
+		fmt.Fprintf(os.Stderr, "iam2: seeded from %s — created orgs=%d apps=%d providers=%d certs=%d\n",
 			initData, sum.Created["organizations"], sum.Created["applications"],
 			sum.Created["providers"], sum.Created["certs"])
-	}
-
-	// Record the HOME-org membership every user already HOLDS. An org's roster is
-	// built from membership rows while access comes from the user row's home org,
-	// so a user nobody wrote a row for holds the org and is absent from its
-	// roster — invisible to the access review that reads it. This writes the row
-	// that says out loud what the token already grants.
-	//
-	// Invisible to every token by construction: MemberOrgRefs emits the home ref
-	// from the user row and dedupes by org, so the row this adds is skipped and
-	// the claim keeps its length, its order and its role — which is what makes it
-	// safe to run against a live estate (pkg/store: TestRoster_BackfillChangesNoClaim).
-	// Idempotent and never a downgrade, so every boot is the same boot.
-	//
-	// NOT fatal, and the count is the point: nothing yet DEPENDS on the rows —
-	// the home org is still granted implicitly — so an incomplete backfill costs
-	// visibility, not access. Refusing to serve identity over it would trade a
-	// reporting gap for an outage. It is also the prerequisite for ever resolving
-	// tenancy from rows alone; that step needs this to have reached every user,
-	// which is why the number is printed rather than assumed.
-	if n, err := store.BackfillMemberships(ctx, db); err != nil {
-		fmt.Fprintf(os.Stderr, "iam: membership backfill incomplete — org rosters may omit members that hold access: %v\n", err)
-	} else if n > 0 {
-		fmt.Fprintf(os.Stderr, "iam: recorded %d home-org membership(s) that were held but unwritten\n", n)
-	}
-
-	// A process that cannot sign cannot issue, so it does not open a listener.
-	// Asserted AFTER the seed, because the seed is what creates the certificates,
-	// and BEFORE the listener, because a keyless replica passes every probe and
-	// then fails every mint — which a rollout reads as success.
-	if err := server.RequireSigning(ctx, db); err != nil {
-		return fmt.Errorf("serve: %w", err)
 	}
 
 	// MCP projects every typed CRUD handler onto one generic /mcp tool-call
 	// endpoint. The authz Guard gates it like any other route (fail-closed), but
 	// an identity service has no need to expose its admin CRUD as an agent tool
 	// surface, so it is disabled outright — one fewer surface to defend.
-	app := zip.New(zip.Config{AppName: "iam", MCP: zip.MCPConfig{Disabled: true}, OpsAddr: opsAddr})
+	app := zip.New(zip.Config{AppName: "iam2", MCP: zip.MCPConfig{Disabled: true}})
 	routes.Route(app, db)
 	app.OnShutdown(func(context.Context) error { return db.Close() })
 
@@ -210,18 +121,18 @@ func serve(ctx context.Context, storeBackend, dbPath, sqlAddr, zapAddr, httpAddr
 }
 
 func compareCmd() *cobra.Command {
-	var store, dbPath, sqlAddr, legacy string
+	var store, dbPath, legacy string
 	cmd := &cobra.Command{
 		Use:   "compare",
-		Short: "Read-only drift report: row counts per entity, v1  vs v2",
-		Long: "Counts rows per entity in the v1 the legacy surface database and the v2 store " +
+		Short: "Read-only drift report: row counts per entity, v1 (Casdoor) vs v2",
+		Long: "Counts rows per entity in the v1 Casdoor database and the v2 store " +
 			"and prints the absolute drift. Cutover is gated on drift 0. Requires a " +
 			"`-tags migration` build to link the v1 Postgres/MySQL driver.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if legacy == "" {
 				return fmt.Errorf("--legacy <dsn> is required (postgres:// or mysql://)")
 			}
-			db, err := openStore(store, dbPath, sqlAddr)
+			db, err := openStore(store, dbPath)
 			if err != nil {
 				return err
 			}
@@ -231,117 +142,17 @@ func compareCmd() *cobra.Command {
 	}
 	f := cmd.Flags()
 	f.StringVar(&store, "store", "sqlite", "v2 storage backend: sqlite | sql | datastore")
-	f.StringVar(&dbPath, "db", "data/iam.db", "v2 SQLite database path (store=sqlite)")
-	f.StringVar(&sqlAddr, "sql-addr", os.Getenv("IAM_SQL_ADDR"), "hanzoai/sql ZAP address for --store sql|datastore (default $IAM_SQL_ADDR)")
-	f.StringVar(&legacy, "legacy", "", "v1 the legacy surface DSN (postgres:// or mysql://)")
-	return cmd
-}
-
-// provisionCmd converges a live IAM onto an org's declarative app graph. The
-// document is DATA owned by that org's universe repo; this command is the ONE
-// mechanism that applies it, for every brand. Re-running is a no-op: the upsert
-// keys on <org>-<app> and preserves each existing client secret.
-func provisionCmd() *cobra.Command {
-	var config, url, token, credentials string
-	var dryRun bool
-	cmd := &cobra.Command{
-		Use:   "provision",
-		Short: "Converge orgs + OAuth apps from a declarative provision document",
-		Long: "Reads a provision document (orgs[].apps[]) and idempotently upserts every " +
-			"OAuth client via /v1/iam/admin/applications/upsert. clientId is always " +
-			"<org>-<app> and redirect URIs are derived per app type, so a document line " +
-			"cannot drift from the app that actually calls it. Requires the IAM service " +
-			"token (--token or IAM_SERVICE_TOKEN).",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			if config == "" {
-				return fmt.Errorf("--config <provision.yaml> is required")
-			}
-			raw, err := os.ReadFile(config)
-			if err != nil {
-				return err
-			}
-			doc, err := provision.Parse(raw)
-			if err != nil {
-				return err
-			}
-			clients, err := provision.Derive(doc)
-			if err != nil {
-				return err
-			}
-			if token == "" {
-				token = os.Getenv("IAM_SERVICE_TOKEN")
-			}
-			if token == "" && !dryRun {
-				return fmt.Errorf("no service token: pass --token or set IAM_SERVICE_TOKEN")
-			}
-
-			out := cmd.OutOrStdout()
-			r := &provision.Reconciler{BaseURL: url, Token: token, DryRun: dryRun}
-			if credentials != "" {
-				r.Credentials = provision.DirCredentials(credentials)
-			}
-			var failed int
-			for _, res := range r.Apply(cmd.Context(), clients) {
-				if res.Err != nil {
-					failed++
-					fmt.Fprintf(out, "  FAIL     %-28s %v\n", res.Client.Name, res.Err)
-					continue
-				}
-				fmt.Fprintf(out, "  %-8s %-28s %s\n", res.Action, res.Client.Name,
-					strings.Join(res.Client.RedirectUris, " "))
-			}
-			// Accounts converge in the SAME run as the clients, because they are one
-			// document and a half-applied document is the state nobody can reason
-			// about. The run report is the audit record (the Job keeps the pod so
-			// `kubectl logs` can read it), so it says what each account is, WHAT
-			// AUTHORITY it asks for, and whether a credential was actually delivered —
-			// "converged", "privileged" and "usable" are three different facts and a
-			// line that shows only the first hides the other two. The admin bit is
-			// printed for every account, including the false ones: a grant is
-			// reviewable only beside the accounts that do not have it. It never prints
-			// the credential itself.
-			accounts := provision.Accounts(doc)
-			for _, res := range r.ApplyAccounts(cmd.Context(), accounts) {
-				name := res.Account.Org + "/" + res.Account.Account.Name
-				if res.Err != nil {
-					failed++
-					fmt.Fprintf(out, "  FAIL     %-28s %v\n", name, res.Err)
-					continue
-				}
-				cred := "credential preserved"
-				if res.Credential {
-					cred = "credential set"
-				}
-				fmt.Fprintf(out, "  %-8s %-28s %s account, isAdmin=%t, %s\n",
-					res.Action, name, res.Account.Account.Type, res.Admin, cred)
-			}
-			fmt.Fprintf(out, "%d app(s), %d account(s), %d failed\n", len(clients), len(accounts), failed)
-			if failed > 0 {
-				return fmt.Errorf("%d item(s) did not converge", failed)
-			}
-			return nil
-		},
-	}
-	f := cmd.Flags()
-	f.StringVar(&config, "config", "", "path to the provision document (orgs[].apps[])")
-	f.StringVar(&url, "url", "https://hanzo.id", "IAM base URL to converge")
-	f.StringVar(&token, "token", "", "IAM service token (default $IAM_SERVICE_TOKEN)")
-	// The credential material a `kms://<path>` passwordRef resolves against —
-	// `<dir>/<path>`. It is the KMS→KMSSecret→Secret mount, not a KMS client:
-	// this command fetches no secrets of its own. Unset means no credential is
-	// sent and every account's existing one is PRESERVED, so a converge that only
-	// means to fix shape needs no access to secrets at all.
-	f.StringVar(&credentials, "credentials", "", "directory holding the credential material kms:// refs resolve against")
-	f.BoolVar(&dryRun, "dry-run", false, "print the derived plan without writing")
+	f.StringVar(&dbPath, "db", "data/iam2.db", "v2 SQLite database path (store=sqlite)")
+	f.StringVar(&legacy, "legacy", "", "v1 Casdoor DSN (postgres:// or mysql://)")
 	return cmd
 }
 
 func versionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
-		Short: "Print the iam build version",
+		Short: "Print the iam2 build version",
 		Run: func(cmd *cobra.Command, _ []string) {
-			fmt.Fprintf(cmd.OutOrStdout(), "iam %s\n", version)
+			fmt.Fprintf(cmd.OutOrStdout(), "iam2 %s\n", version)
 		},
 	}
 }
@@ -349,6 +160,6 @@ func versionCmd() *cobra.Command {
 // openStore opens the v2 entity store on the chosen backend via the shared
 // store.Open — the ONE store-open path, reused by the migrate-v1 tool so a
 // migrated store and a served store share identical open config.
-func openStore(backend, path, addr string) (orm.DB, error) {
-	return store.Open(backend, path, addr)
+func openStore(backend, path string) (orm.DB, error) {
+	return store.Open(backend, path)
 }

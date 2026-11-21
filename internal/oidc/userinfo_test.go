@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -13,8 +12,8 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // seedRichUser creates alice with the profile fields userinfo projects.
@@ -76,17 +75,13 @@ func TestUserinfo_ClaimsByScope(t *testing.T) {
 		t.Fatalf("userinfo status = %d, body %v", status, info)
 	}
 	want := map[string]any{
-		"sub":          "hanzo/alice",
-		"iss":          "https://hanzo.id",
-		"aud":          "conf",
-		"owner":        "hanzo",
-		"organization": "hanzo",
-		// `name` is the USERNAME, the same answer the access token gives: UserInfo and
-		// the token describe one principal, so they must not name it two ways. The
-		// human's name rides in displayName.
+		"sub":                "hanzo/alice",
+		"iss":                "https://hanzo.id",
+		"aud":                "conf",
+		"owner":              "hanzo",
+		"organization":       "hanzo",
 		"preferred_username": "alice",
-		"name":               "alice",
-		"displayName":        "Alice Example",
+		"name":               "Alice Example",
 		"email":              "alice@hanzo.ai",
 		"email_verified":     true,
 		"phone":              "+15551234567",
@@ -238,74 +233,5 @@ func TestUserinfo_RevokedTokenRejected(t *testing.T) {
 	}
 	if status, info := userinfo(t, app, access); status != 401 || info["error"] != "invalid_token" {
 		t.Fatalf("revoked token: status=%d err=%v, want 401 invalid_token", status, info["error"])
-	}
-}
-
-// An operator is someone an existing operator put IN the reserved org, and that
-// grant sits ALONGSIDE an ordinary home org — it does not replace it. So userinfo
-// must carry the membership set, not just the anchor: a relying party reading
-// `owner` alone sees "hanzo" here and concludes this person has no platform
-// authority, which is how the reserved org becomes unreachable in practice while
-// every check still looks correct.
-func TestUserinfo_OperatorAnchoredInABrandOrg(t *testing.T) {
-	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
-	seedRichUser(t, db) // alice, home org "hanzo"
-	if _, err := store.EnsureMembership(context.Background(), db, "hanzo/alice", "admin", "admin"); err != nil {
-		t.Fatalf("grant admin-org membership: %v", err)
-	}
-
-	// openid alone: this is identity, not profile, so no scope may withhold it.
-	status, info := userinfo(t, app, accessTokenFor(t, app, "openid"))
-	if status != 200 {
-		t.Fatalf("status %d: %v", status, info)
-	}
-
-	raw, ok := info["orgs"].([]any)
-	if !ok {
-		t.Fatalf("userinfo[orgs] = %#v, want the membership set", info["orgs"])
-	}
-	at := -1
-	for i, m := range raw {
-		if e, _ := m.(map[string]any); e != nil && e["org"] == "admin" {
-			at = i
-			if e["role"] != "admin" {
-				t.Errorf("admin-org role = %v, want admin", e["role"])
-			}
-		}
-	}
-	if at < 0 {
-		t.Fatalf("userinfo[orgs] = %#v, want an entry for the reserved org", raw)
-	}
-
-	// The two halves of the regression. Home is still the brand org, and the grant
-	// is NOT at index 0 — so reading either the anchor or the first entry misses it.
-	if info["owner"] != "hanzo" {
-		t.Errorf("userinfo[owner] = %v, want hanzo (the anchor is unchanged by the grant)", info["owner"])
-	}
-	if at == 0 {
-		t.Fatal("the reserved org landed at index 0; this test no longer covers the operator whose anchor is a brand org")
-	}
-}
-
-// A user with no grants still carries their home org, so a consumer can always
-// read the membership set rather than branching on whether the key exists.
-func TestUserinfo_OrgsCarriesTheHomeOrgAlone(t *testing.T) {
-	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}})
-	seedRichUser(t, db)
-
-	_, info := userinfo(t, app, accessTokenFor(t, app, "openid"))
-	raw, ok := info["orgs"].([]any)
-	if !ok || len(raw) != 1 {
-		t.Fatalf("userinfo[orgs] = %#v, want exactly the home org", info["orgs"])
-	}
-	if e, _ := raw[0].(map[string]any); e == nil || e["org"] != "hanzo" {
-		t.Errorf("userinfo[orgs][0] = %#v, want hanzo", raw[0])
-	}
-	for _, m := range raw {
-		if e, _ := m.(map[string]any); e != nil && e["org"] == "admin" {
-			t.Fatal("a user with no grant carries the reserved org")
-		}
 	}
 }

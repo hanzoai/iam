@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package bootstrap_test
 
@@ -17,10 +16,8 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/routes"
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
-
-	"github.com/hanzoai/iam/internal/testhttp"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 const svcToken = "svc-token-secret-value"
@@ -40,9 +37,7 @@ func boot(t *testing.T) (*zip.App, orm.DB) {
 	t.Cleanup(func() { _ = db.Close() })
 	app := zip.New(zip.Config{AppName: "bootstrap-test", DisableStartupMessage: true})
 	routes.Route(app, db)
-	if err := app.Build(); err != nil {
-		t.Fatalf("build: %v", err)
-	}
+	app.Prepare()
 	return app, db
 }
 
@@ -54,7 +49,7 @@ func post(t *testing.T, app *zip.App, path, token, body string) (int, map[string
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	resp, err := testhttp.Do(app, req)
+	resp, err := app.Fiber().Test(req)
 	if err != nil {
 		t.Fatalf("POST %s: %v", path, err)
 	}

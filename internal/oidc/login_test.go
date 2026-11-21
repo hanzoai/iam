@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -12,9 +11,8 @@ import (
 
 	"github.com/hanzoai/orm"
 
-	"github.com/hanzoai/iam/pkg/pkce"
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // seedUser creates a user with a bcrypt password in org "hanzo".
@@ -48,10 +46,10 @@ func TestLoginToTokenFlow(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 
 	verifier := "login-verifier-000000000000000000000000000000000"
-	challenge := pkce.Challenge(verifier)
+	challenge := ComputeS256Challenge(verifier)
 
 	// --- login side: resolve app+user, verify password, mint the code ---
-	user, err := resolveInOrg(ctx, db, "hanzo", "alice@hanzo.ai") // login by EMAIL
+	user, err := resolveLoginUser(ctx, db, "hanzo", "alice@hanzo.ai") // login by EMAIL
 	if err != nil || user == nil {
 		t.Fatalf("resolve user by email: %v (nil=%v)", err, user == nil)
 	}
@@ -73,21 +71,21 @@ func TestLoginToTokenFlow(t *testing.T) {
 	}
 }
 
-func TestResolveInOrg_ByUsernameAndEmail(t *testing.T) {
+func TestResolveLoginUser_ByUsernameAndEmail(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()
 	seedUser(t, db, "bob", "bob@hanzo.ai", "pw")
 
-	byName, _ := resolveInOrg(ctx, db, "hanzo", "bob")
+	byName, _ := resolveLoginUser(ctx, db, "hanzo", "bob")
 	if byName == nil || byName.Name != "bob" {
 		t.Fatal("login by username failed")
 	}
-	byEmail, _ := resolveInOrg(ctx, db, "hanzo", "bob@hanzo.ai")
+	byEmail, _ := resolveLoginUser(ctx, db, "hanzo", "bob@hanzo.ai")
 	if byEmail == nil || byEmail.Name != "bob" {
 		t.Fatal("login by email failed")
 	}
 	// Wrong org → not found (tenant isolation).
-	other, _ := resolveInOrg(ctx, db, "lux", "bob")
+	other, _ := resolveLoginUser(ctx, db, "lux", "bob")
 	if other != nil {
 		t.Fatal("user resolved in the wrong org — tenant isolation broken")
 	}

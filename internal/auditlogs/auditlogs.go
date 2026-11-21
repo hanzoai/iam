@@ -1,12 +1,10 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 // Package auditlogs serves the IAM v2 CRUD surface for the `audit_logs` entity:
 // an append-only action record owner-scoped by (owner, name). Every operation
 // is a typed zip handler over hanzoai/orm; the orm string key is "owner/name".
-// Listing scopes to one owner (organization); one log is addressed by its
-// (owner, name) key in the path, /v1/iam/audit-logs/:owner/:name, where the
-// method carries the verb. Rows are written once at request time — the update path
+// Reads scope to one owner (organization); writes address one log by its
+// (owner, name) key. Rows are written once at request time — the update path
 // exists only for administrative correction, never for normal operation.
 package auditlogs
 
@@ -18,8 +16,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/principal"
-	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
 // Handler binds the audit-log operations to one orm store.
@@ -27,16 +24,14 @@ type Handler struct {
 	db orm.DB
 }
 
-//go:generate go run github.com/zap-proto/zip/cmd/zipdoc
-
 // Route registers the audit-log CRUD routes on app against db.
 func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
-	zip.Get(app, "/v1/iam/audit-logs", h.List, zip.WithTags("audit-logs"))
-	zip.Post(app, "/v1/iam/audit-logs", h.Create, zip.WithTags("audit-logs"))
-	zip.Get(app, "/v1/iam/audit-logs/:owner/:name", h.Get, zip.WithTags("audit-logs"))
-	zip.Put(app, "/v1/iam/audit-logs/:owner/:name", h.Update, zip.WithTags("audit-logs"))
-	zip.Delete(app, "/v1/iam/audit-logs/:owner/:name", h.Delete, zip.WithTags("audit-logs"))
+	zip.Get(app, "/v1/iam/audit-logs", h.List, zip.WithSummary("List audit logs for an owner"), zip.WithTags("audit-logs"))
+	zip.Post(app, "/v1/iam/audit-logs", h.Create, zip.WithSummary("Create an audit log"), zip.WithTags("audit-logs"))
+	zip.Post(app, "/v1/iam/audit-logs/get", h.Get, zip.WithSummary("Get one audit log"), zip.WithTags("audit-logs"))
+	zip.Post(app, "/v1/iam/audit-logs/update", h.Update, zip.WithSummary("Update an audit log"), zip.WithTags("audit-logs"))
+	zip.Post(app, "/v1/iam/audit-logs/delete", h.Delete, zip.WithSummary("Delete an audit log"), zip.WithTags("audit-logs"))
 }
 
 // Ref addresses one audit log by its owner-scoped natural key.
@@ -46,23 +41,23 @@ type Ref struct {
 }
 
 // Input is the writable projection of an audit log (the v1 add/update-record
-// body). It keeps the HTTP contract clean of the orm.Model bookkeeping fields
+// body). It keeps the wire contract clean of the orm.Model bookkeeping fields
 // and of the v1 integer surrogate id, which the orm string key supersedes.
 type Input struct {
 	Owner        string `json:"owner"`
 	Name         string `json:"name"`
-	CreatedTime  string `json:"createdTime" url:"-"`
+	CreatedTime  string `json:"createdTime"`
 	Organization string `json:"organization"`
-	ClientIp     string `json:"clientIp" url:"-"`
+	ClientIp     string `json:"clientIp"`
 	User         string `json:"user"`
-	Method       string `json:"method" url:"-"`
-	RequestUri   string `json:"requestUri" url:"-"`
-	Action       string `json:"action" url:"-"`
-	Language     string `json:"language" url:"-"`
-	Object       string `json:"object" url:"-"`
-	Response     string `json:"response" url:"-"`
-	StatusCode   int    `json:"statusCode" url:"-"`
-	IsTriggered  bool   `json:"isTriggered" url:"-"`
+	Method       string `json:"method"`
+	RequestUri   string `json:"requestUri"`
+	Action       string `json:"action"`
+	Language     string `json:"language"`
+	Object       string `json:"object"`
+	Response     string `json:"response"`
+	StatusCode   int    `json:"statusCode"`
+	IsTriggered  bool   `json:"isTriggered"`
 }
 
 // ListInput scopes a listing to one owner (organization).
@@ -101,25 +96,12 @@ func apply(dst *schema.AuditLog, in *Input) {
 	dst.IsTriggered = in.IsTriggered
 }
 
-// List returns your organization's audit trail, newest first — who did
-// what, when, and from where. It is the record you reach for during a security
-// review or an incident.
-//
-// You see your own organization's audit trail and no one else's; which organization that
-// is comes from your credentials, not from the request.
+// List returns the audit logs for one owner, newest first. An empty owner lists
+// every log (the unscoped admin view).
 func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
-	// The owner is resolved by principal.Scope from the authenticated principal,
-	// never taken from the input: a tenant reads only its own org, a SuperAdmin
-	// reads the owner it asks for. in.Owner is whatever the CALLER wrote in the URL,
-	// since zip binds a typed op's scalar fields from the query string on every
-	// method, so filtering on it would let a request name the tenant it reads.
-	owner, err := principal.Scope(ctx, in.Owner)
-	if err != nil {
-		return nil, err
-	}
 	q := orm.TypedQuery[schema.AuditLog](h.db)
-	if owner != "" {
-		q = q.Filter("owner", owner)
+	if in.Owner != "" {
+		q = q.Filter("owner", in.Owner)
 	}
 	logs, err := q.Order("-createdTime").GetAll(ctx)
 	if err != nil {
@@ -128,8 +110,7 @@ func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) 
 	return &ListOutput{AuditLogs: logs, Total: len(logs)}, nil
 }
 
-// Get returns one audit entry in full: the action, the person or key behind it,
-// and the request it came in on.
+// Get returns one audit log addressed by (owner, name).
 func (h *Handler) Get(ctx context.Context, in *Ref) (*schema.AuditLog, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -141,14 +122,10 @@ func (h *Handler) Get(ctx context.Context, in *Ref) (*schema.AuditLog, error) {
 	return log, nil
 }
 
-// Create records an audit entry, so activity from your own systems lands in the
-// same trail as everything the Hanzo Cloud records for you.
+// Create persists a new audit log. It rejects a duplicate (owner, name).
 func (h *Handler) Create(ctx context.Context, in *Input) (*schema.AuditLog, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
-	}
-	if err := refusePlatformAction(in.Action); err != nil {
-		return nil, err
 	}
 	switch _, err := orm.Get[schema.AuditLog](h.db, key(in.Owner, in.Name)); {
 	case err == nil:
@@ -173,9 +150,9 @@ func (h *Handler) Create(ctx context.Context, in *Input) (*schema.AuditLog, erro
 	return log, nil
 }
 
-// Update corrects an audit entry. The trail is append-only in normal operation
-// and nothing in the Hanzo Cloud rewrites it — this exists for an administrator
-// to correct an entry their own systems recorded wrongly.
+// Update mutates an existing audit log in place. Identity and created stamp are
+// immutable; a missing log is a 404. Audit rows are append-only in normal
+// operation — this path is for administrative correction only.
 func (h *Handler) Update(ctx context.Context, in *Input) (*schema.AuditLog, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -184,15 +161,6 @@ func (h *Handler) Update(ctx context.Context, in *Input) (*schema.AuditLog, erro
 	if err != nil {
 		return nil, mapErr(err)
 	}
-	// Neither the row you are correcting nor the correction may be a platform
-	// record: the first would rewrite evidence, the second would forge it by
-	// relabelling a row you own.
-	if err := refusePlatformAction(log.Action); err != nil {
-		return nil, err
-	}
-	if err := refusePlatformAction(in.Action); err != nil {
-		return nil, err
-	}
 	apply(log, in)
 	if err := log.UpdateCtx(ctx); err != nil {
 		return nil, zip.ErrInternal(err.Error())
@@ -200,8 +168,7 @@ func (h *Handler) Update(ctx context.Context, in *Input) (*schema.AuditLog, erro
 	return log, nil
 }
 
-// Delete removes an audit entry. Retention policy is normally what should expire
-// a trail; deleting by hand leaves a gap a reviewer will notice.
+// Delete removes one audit log addressed by (owner, name).
 func (h *Handler) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -210,32 +177,10 @@ func (h *Handler) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 	if err != nil {
 		return nil, mapErr(err)
 	}
-	if err := refusePlatformAction(log.Action); err != nil {
-		return nil, err
-	}
 	if err := log.DeleteCtx(ctx); err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
 	return &DeleteOutput{Deleted: true}, nil
-}
-
-// refusePlatformAction rejects an action the PLATFORM writes about itself.
-//
-// This surface exists so your own systems can file their activity in the same
-// trail. It is not a way to author the platform's half of it. A consent grant, a
-// credential issued: those rows are the evidence that a thing happened, and
-// evidence anybody can write is not evidence — an org admin could mint a
-// "consent-training" row granting permission nobody gave, or delete the one
-// recording a refusal, and the trail would read exactly the same either way.
-//
-// So the platform's actions are reserved: not creatable here, and not alterable
-// or removable here once written. Retention expires them; nothing else does.
-func refusePlatformAction(action string) error {
-	if schema.PlatformWritten(action) {
-		return zip.ErrForbidden("the action " + action + " is written by the platform; " +
-			"audit rows recording it cannot be created, corrected or deleted through this surface")
-	}
-	return nil
 }
 
 // mapErr translates an orm lookup error into the matching HTTP status.

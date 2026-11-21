@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -20,15 +19,12 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/keyring"
-	"github.com/hanzoai/iam/pkg/schema"
-
-	"github.com/hanzoai/iam/internal/testhttp"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
-// HTTP-level test harness: register the whole OIDC surface on a fresh store and
+// HTTP-level test harness: mount the whole OIDC surface on a fresh store and
 // drive it through the real router (app.Fiber().Test), so every test exercises
-// the HTTP contract a client sees — status codes, headers, redirects, bodies.
+// the wire contract a client sees — status codes, headers, redirects, bodies.
 
 // sharedKey is one RSA key reused across tests (keygen is the slow part; the
 // crypto under test is identical regardless of which key it is).
@@ -57,22 +53,20 @@ type appOpts struct {
 	refreshHours float64
 	shared       bool     // IsShared → accepts users from any org
 	signup       bool     // EnableSignUp → the app allows new-account creation
-	codeSignin   bool     // EnableCodeSignin → the app allows sign-in by emailed/texted code
-	orgChoice    string   // OrgChoiceMode → "" none, "create" = self-serve org creation
 	grants       []string // declared OAuth grants; a grant absent here is refused
 }
 
 // tctx is the background context used by the test seed helpers.
 func tctx() context.Context { return context.Background() }
 
-// newServer registers the full OIDC surface on a fresh SQLite store.
+// newServer mounts the full OIDC surface on a fresh SQLite store.
 func newServer(t *testing.T) (*zip.App, orm.DB) {
 	t.Helper()
 	db := openTestDB(t)
-	app := zip.New(zip.Config{AppName: "iam-test", DisableStartupMessage: true})
+	app := zip.New(zip.Config{AppName: "iam2-test", DisableStartupMessage: true})
 	// The whole OIDC surface is the pre-authentication PUBLIC group; a root
 	// (empty-prefix) router registers it at its absolute paths, no Guard.
-	Route(app.Group("").(*zip.App), db)
+	Route(app.Group(""), db)
 	return app, db
 }
 
@@ -83,7 +77,7 @@ func seedRSACert(t *testing.T, db orm.DB, name string) {
 	c.Owner = "admin"
 	c.Name = name
 	c.CryptoAlgorithm = "RS256"
-	keyring.Set(name, rsaKeyToPEM(t, sharedKey(t))) // deployment-supplied; the row never carries it
+	c.PrivateKey = rsaKeyToPEM(t, sharedKey(t))
 	c.SetId("admin/" + name)
 	if err := c.CreateCtx(context.Background()); err != nil {
 		t.Fatalf("seed cert: %v", err)
@@ -104,12 +98,10 @@ func seedApp(t *testing.T, db orm.DB, o appOpts) *schema.Application {
 	a.Cert = "cert-" + o.clientID
 	a.EnablePassword = true
 	a.EnableSignUp = o.signup
-	a.EnableCodeSignin = o.codeSignin
 	a.ExpireInHours = 1
 	a.RefreshExpireInHours = o.refreshHours
 	a.RedirectUris = o.redirectURIs
 	a.IsShared = o.shared
-	a.OrgChoiceMode = o.orgChoice
 	a.GrantTypes = o.grants
 	a.SetId("admin/" + o.clientID)
 	if err := a.CreateCtx(context.Background()); err != nil {
@@ -143,7 +135,7 @@ func jsonReq(method, path string, body any) *http.Request {
 
 func do(t *testing.T, app *zip.App, req *http.Request) (*http.Response, []byte) {
 	t.Helper()
-	resp, err := testhttp.Do(app, req)
+	resp, err := app.Fiber().Test(req)
 	if err != nil {
 		t.Fatalf("test request %s %s: %v", req.Method, req.URL.Path, err)
 	}

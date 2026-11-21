@@ -1,22 +1,18 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
 import (
 	"crypto/rand"
 	"encoding/base64"
-	"errors"
 	"math/big"
 	"testing"
-	"time"
 
 	"github.com/luxfi/crypto/pq/mldsa/mldsa65"
 
 	"github.com/hanzoai/orm"
 
-	"github.com/hanzoai/iam/internal/keyring"
-	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
 // seedMLDSACert creates an ML-DSA-65 signing cert (raw base64 private key).
@@ -30,7 +26,7 @@ func seedMLDSACert(t *testing.T, db orm.DB, name string) {
 	c.Owner = "admin"
 	c.Name = name
 	c.CryptoAlgorithm = "MLDSA65"
-	keyring.Set(name, base64.StdEncoding.EncodeToString(sk.Bytes()))
+	c.PrivateKey = base64.StdEncoding.EncodeToString(sk.Bytes())
 	c.SetId("admin/" + name)
 	if err := c.CreateCtx(tctx()); err != nil {
 		t.Fatalf("seed mldsa cert: %v", err)
@@ -128,7 +124,7 @@ func TestJWKS_ExcludesTLSCert(t *testing.T) {
 	c.Name = "cert-tls"
 	c.Type = "SSL"
 	c.CryptoAlgorithm = "RS256"
-	keyring.Set(c.Name, rsaKeyToPEM(t, sharedKey(t)))
+	c.PrivateKey = rsaKeyToPEM(t, sharedKey(t))
 	c.SetId("admin/cert-tls")
 	if err := c.CreateCtx(tctx()); err != nil {
 		t.Fatal(err)
@@ -152,7 +148,7 @@ func TestJWKS_ExcludesNonPlatformCert(t *testing.T) {
 	c.Owner = "attacker-org"
 	c.Name = "cert-evil"
 	c.CryptoAlgorithm = "RS256"
-	keyring.Set(c.Name, rsaKeyToPEM(t, sharedKey(t)))
+	c.PrivateKey = rsaKeyToPEM(t, sharedKey(t))
 	c.SetId("attacker-org/cert-evil")
 	if err := c.CreateCtx(tctx()); err != nil {
 		t.Fatal(err)
@@ -177,7 +173,7 @@ func TestJWKS_DedupesByKid(t *testing.T) {
 		c.Owner = owner
 		c.Name = "cert-shared"
 		c.CryptoAlgorithm = "RS256"
-		keyring.Set(c.Name, rsaKeyToPEM(t, sharedKey(t)))
+		c.PrivateKey = rsaKeyToPEM(t, sharedKey(t))
 		c.SetId(owner + "/cert-shared")
 		if err := c.CreateCtx(tctx()); err != nil {
 			t.Fatal(err)
@@ -223,133 +219,4 @@ func hasKid(t *testing.T, body []byte, kid string) bool {
 		}
 	}
 	return false
-}
-
-// Verifying a token needs these keys, so a relying party fetches them — and reading the
-// store on every fetch puts the store's latency in front of every authenticated request
-// in the estate. The set is held for its TTL, which is the same number the response
-// already tells callers to hold it for.
-func TestTheKeySetIsReadOncePerTTL(t *testing.T) {
-	var set keySet
-	reads := 0
-	read := func() ([]byte, string, error) {
-		reads++
-		return []byte(`{"keys":[]}`), `"abc"`, nil
-	}
-
-	for i := 0; i < 50; i++ {
-		if _, _, err := set.current(read); err != nil {
-			t.Fatalf("current: %v", err)
-		}
-	}
-	if reads != 1 {
-		t.Errorf("read the store %d times for 50 verifications, want 1", reads)
-	}
-
-	// Past the TTL it reads again — a rotated key must arrive.
-	set.at = time.Now().Add(-jwksTTL - time.Second)
-	if _, _, err := set.current(read); err != nil {
-		t.Fatalf("current after TTL: %v", err)
-	}
-	if reads != 2 {
-		t.Errorf("reads = %d after the TTL passed, want 2", reads)
-	}
-}
-
-// A key set changes when a certificate is rotated, not when a database connection has a
-// bad moment. Failing the read must not withdraw keys that are still correct: every
-// service that verifies a token offline depends on this document being answerable.
-func TestAFailedReadStillPublishesTheKeysWeHave(t *testing.T) {
-	var set keySet
-	good := func() ([]byte, string, error) { return []byte(`{"keys":[1]}`), `"good"`, nil }
-	bad := func() ([]byte, string, error) { return nil, "", errors.New("store busy") }
-
-	if _, _, err := set.current(good); err != nil {
-		t.Fatalf("first read: %v", err)
-	}
-	set.at = time.Now().Add(-jwksTTL - time.Second) // force a refresh attempt
-
-	body, etag, err := set.current(bad)
-	if err != nil {
-		t.Fatalf("a failed refresh withdrew the key set: %v", err)
-	}
-	if string(body) != `{"keys":[1]}` || etag != `"good"` {
-		t.Errorf("served %s / %s, want the last good set", body, etag)
-	}
-}
-
-// With nothing ever published, a failed read is the honest answer: there are no keys to
-// serve and pretending otherwise would publish an empty set that fails every token.
-func TestWithNothingPublishedAFailedReadIsAnError(t *testing.T) {
-	var set keySet
-	if _, _, err := set.current(func() ([]byte, string, error) { return nil, "", errors.New("cold") }); err == nil {
-		t.Error("a cold cache with a failing read reported success")
-	}
-}
-
-// A STORE THAT IS FAILING IS ASKED ONCE, NOT ONCE PER REQUEST. The read happens under the
-// lock — deliberately, so a hundred callers arriving together cause one read rather than a
-// hundred — and that same lock is what makes a failing store expensive. Without a floor,
-// every caller queues behind its own attempt, which is slower than the per-request read
-// this cache replaced: the fix would have become the fault.
-func TestAFailingStoreIsNotAskedOncePerRequest(t *testing.T) {
-	var set keySet
-	good := func() ([]byte, string, error) { return []byte(`{"keys":[1]}`), `"g"`, nil }
-
-	if _, _, err := set.current(good); err != nil {
-		t.Fatalf("first read: %v", err)
-	}
-	set.at = time.Now().Add(-jwksTTL - time.Second) // the held set is now stale
-
-	reads := 0
-	bad := func() ([]byte, string, error) { reads++; return nil, "", errors.New("store busy") }
-
-	for i := 0; i < 50; i++ {
-		body, _, err := set.current(bad)
-		if err != nil {
-			t.Fatalf("a failing refresh withdrew the key set: %v", err)
-		}
-		if string(body) != `{"keys":[1]}` {
-			t.Fatalf("served %s, want the last good set", body)
-		}
-	}
-	if reads != 1 {
-		t.Errorf("asked the failing store %d times across 50 verifications, want 1", reads)
-	}
-
-	// Past the retry window it tries again — a store that recovers must be noticed.
-	set.failed = time.Now().Add(-jwksRetry - time.Second)
-	if _, _, err := set.current(bad); err != nil {
-		t.Fatalf("current after the retry window: %v", err)
-	}
-	if reads != 2 {
-		t.Errorf("reads = %d after the retry window passed, want 2", reads)
-	}
-}
-
-// A store that comes back is trusted again immediately: the backoff is not sticky.
-func TestARecoveredStoreIsTrustedAgain(t *testing.T) {
-	var set keySet
-	if _, _, err := set.current(func() ([]byte, string, error) { return []byte(`{"keys":[1]}`), `"g"`, nil }); err != nil {
-		t.Fatal(err)
-	}
-	set.at = time.Now().Add(-jwksTTL - time.Second)
-	if _, _, err := set.current(func() ([]byte, string, error) { return nil, "", errors.New("busy") }); err != nil {
-		t.Fatal(err)
-	}
-	if set.failed.IsZero() {
-		t.Fatal("a failed read did not record that it failed")
-	}
-
-	set.failed = time.Now().Add(-jwksRetry - time.Second)
-	body, _, err := set.current(func() ([]byte, string, error) { return []byte(`{"keys":[2]}`), `"n"`, nil })
-	if err != nil {
-		t.Fatalf("recovered read: %v", err)
-	}
-	if string(body) != `{"keys":[2]}` {
-		t.Errorf("served %s, want the newly read set", body)
-	}
-	if !set.failed.IsZero() {
-		t.Error("a successful read left the failure mark standing, so the next refresh would back off")
-	}
 }

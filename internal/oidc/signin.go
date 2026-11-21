@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -9,12 +8,12 @@ import (
 
 	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/sessions"
-	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // The code→session exchange: POST /v1/iam/signin. After the authorize/login flow
 // redirects back with `?code&state`, the console posts them here (code+state ride
-// the query — what the @hanzo/iam client sends — or a JSON body) and iam redeems
+// the query — what the @hanzo/iam client sends — or a JSON body) and iam2 redeems
 // the code for a durable SESSION, returning the account envelope like get-account.
 //
 // This is the session-establishment counterpart to the OAuth token endpoint: the
@@ -33,12 +32,7 @@ type signinForm struct {
 	State string `json:"state"`
 }
 
-// signinHandler completes a sign-in: it exchanges the one-time code your
-// application was handed at the end of the login flow for a live session, and
-// returns the signed-in account.
-//
-// The code works once. This is the call that turns a finished login into
-// something your application can act on.
+// signinHandler redeems an authorization code for a session and returns the account.
 func signinHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()

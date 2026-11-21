@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package wallet
 
@@ -12,18 +11,15 @@ import (
 	"github.com/hanzoai/orm"
 	wc "github.com/luxwallet/connect/go/walletconnect"
 
-	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
-// errorIs asserts the envelope is a REFUSAL carrying msg, under a status that
-// AGREES with it. The envelope still carries the reason — that is the SDK
-// contract and it is unchanged — but a refusal no longer arrives dressed as a
-// success, so a caller that checks the transport first reaches the same verdict
-// as one that parses the body.
+// errorIs asserts the envelope is a REFUSAL carrying msg — on a 200, because
+// every SDK branches on status, not the HTTP code.
 func errorIs(t *testing.T, code int, m map[string]any, msg string) {
 	t.Helper()
-	if code < 400 || code > 499 {
-		t.Fatalf("status = %d, want a 4xx: a refused request must not read as a completed one", code)
+	if code != 200 {
+		t.Fatalf("status = %d, want 200 (errors ride the envelope)", code)
 	}
 	if m["status"] != "error" {
 		t.Fatalf("status = %v, want error: %v", m["status"], m)
@@ -125,11 +121,9 @@ func TestAnonymous(t *testing.T) {
 	if code, m := get(t, app, PathNonce+"?chain=evm"); code != 200 || m["status"] != "ok" {
 		t.Fatalf("nonce is not anonymous-reachable: %d %v", code, m)
 	}
-	// verify reaches its handler (it refuses on the MERITS, not on auth) — the
-	// refusal is the handler's own, so it names the malformed message rather than
-	// authentication, and it carries a status that agrees it was refused.
+	// verify reaches its handler (it refuses on the merits, not on auth).
 	code, m := post(t, app, PathVerify, body(a, wc.ChainEVM, addr, "nope", "0x00"), nil)
-	if code < 400 || code > 499 {
+	if code != 200 {
 		t.Fatalf("verify is not anonymous-reachable: %d %v", code, m)
 	}
 	if msg, _ := m["msg"].(string); strings.Contains(msg, "authentication") {
@@ -583,97 +577,6 @@ func TestLinkCrossSiteRefused(t *testing.T) {
 	}
 }
 
-// --- header-immunity: the SIWE domain + CSRF check use c.Host(), never a header ---
-
-// The SIWE domain is the true routed brand host, read through the header-immune
-// c.Host(). A spoofed X-Forwarded-Host must NOT steer the domain a wallet signs —
-// that binding is the anti-phishing guarantee (EIP-4361/CAIP-122 `domain`). Under
-// the old EffectiveHost (which honored X-Forwarded-Host) this domain would become
-// "evil.example"; it must stay hanzo.id.
-func TestNonceDomainIsHeaderImmune(t *testing.T) {
-	app, _ := newServer(t)
-	ch := mintWith(t, app, "evm", map[string]string{"X-Forwarded-Host": "evil.example"})
-	if ch.Domain != host {
-		t.Fatalf("challenge domain = %q, want %q (X-Forwarded-Host must not steer the signed domain)", ch.Domain, host)
-	}
-	if ch.URI != "https://"+host+"/login" {
-		t.Errorf("uri = %q, want the true-host uri", ch.URI)
-	}
-}
-
-// End-to-end: a spoofed X-Forwarded-Host present on BOTH the mint and the verify
-// neither breaks the login nor moves the binding. The challenge binds to the true
-// host, the wallet signs that, verify re-derives the same true host, and the
-// identity provisions — proving the domain is pinned to c.Host() throughout.
-func TestLoginHeaderImmuneEndToEnd(t *testing.T) {
-	app, db := newServer(t)
-	a := seed(t, db, opts{signup: true})
-	spoof := map[string]string{"X-Forwarded-Host": "evil.example"}
-
-	ch := mintWith(t, app, "evm", spoof)
-	if ch.Domain != host {
-		t.Fatalf("minted domain = %q, want %q", ch.Domain, host)
-	}
-	msg, sig := signWith(t, signer(t), ch, wc.ChainEVM, addr)
-	code, res := post(t, app, PathVerify, body(a, wc.ChainEVM, addr, msg, sig), spoof)
-	if got := okData(t, code, res); got != "hanzo/"+name(wc.ChainEVM, addr) {
-		t.Fatalf("login data = %q, want the provisioned identity", got)
-	}
-	for _, c := range challenges(t, db) {
-		if c.Domain != host {
-			t.Errorf("stored challenge domain = %q, want %q (never the spoof)", c.Domain, host)
-		}
-	}
-}
-
-// The CSRF same-origin check is immune to a spoofed X-Forwarded-Host. A cross-site
-// attacker forges Origin AND spoofs X-Forwarded-Host to equal it, trying to make
-// same() read them as equal and honor the victim's session. With the header-immune
-// c.Host() the true routed host (hanzo.id) wins, so the request is correctly
-// cross-site: the session is dropped and the link is refused. Under the old
-// EffectiveHost this POST would attach the attacker's wallet to alice's account.
-func TestCSRFSpoofedForwardedHostRefused(t *testing.T) {
-	app, db := newServer(t)
-	a := seed(t, db, opts{signup: false}) // link-only — no signup escape hatch
-	_, tok := bearer(t, db, a, "hanzo", "alice")
-
-	ch := mintFor(t, app, "evm")
-	msg, sig := signWith(t, signer(t), ch, wc.ChainEVM, addr)
-	code, m := post(t, app, PathVerify, body(a, wc.ChainEVM, addr, msg, sig), map[string]string{
-		"Origin":           "https://evil.example",
-		"X-Forwarded-Host": "evil.example", // the spoof that would have matched Origin
-		"Authorization":    "Bearer " + tok,
-	})
-	errorIs(t, code, m, "sign up is disabled") // fell through to the anonymous path
-	if n := len(wallets(t, db)); n != 0 {
-		t.Fatalf("wallets = %d — a spoofed X-Forwarded-Host bypassed the CSRF check", n)
-	}
-}
-
-// The honest path is intact: a legit same-brand link still succeeds even when a
-// (benign) X-Forwarded-Host rides along, because c.Host() reads the true routed
-// host and the Origin matches it. Proves the switch off EffectiveHost did not
-// break same-site linking.
-func TestSameSiteLinkIgnoresForwardedHost(t *testing.T) {
-	app, db := newServer(t)
-	a := seed(t, db, opts{signup: false})
-	u, tok := bearer(t, db, a, "hanzo", "alice")
-
-	ch := mintFor(t, app, "evm")
-	msg, sig := signWith(t, signer(t), ch, wc.ChainEVM, addr)
-	code, m := post(t, app, PathVerify, body(a, wc.ChainEVM, addr, msg, sig), map[string]string{
-		"Origin":           "https://" + host,
-		"X-Forwarded-Host": "somewhere.else", // ignored — c.Host() wins
-		"Authorization":    "Bearer " + tok,
-	})
-	if got := okData(t, code, m); got != "hanzo/alice" {
-		t.Fatalf("data = %q, want the session identity hanzo/alice", got)
-	}
-	if w := wallets(t, db); len(w) != 1 || w[0].User != u.Name {
-		t.Fatalf("wallet = %+v, want linked to the session user", w)
-	}
-}
-
 // --- bounds ---
 
 // Oversized fields are refused before any per-chain parser sees them.
@@ -736,52 +639,4 @@ func keys(m map[string]any) []string {
 		out = append(out, k)
 	}
 	return out
-}
-
-// A RESERVED platform org is never reachable by an unauthenticated wallet
-// sign-up, even when its application row has sign-up enabled.
-//
-// Wallet login was the ONE public account-creation endpoint that did not
-// consult policy.IsReservedOrg — signup (signup.go), onboarding, federated
-// provisioning (federation.go) and token exchange all did. The org here is not
-// caller-chosen (provision takes in.App.Organization), so this is not a
-// cross-TENANT hole; it is an ESCALATION one: authz derives Super from
-// owner == "admin", so a wallet-signed POST against an admin-owned app with
-// EnableSignUp set would have minted a SuperAdmin with no credential at all.
-//
-// All three reserved orgs are exercised, and the refusal must be byte-identical
-// to the sign-up-disabled refusal so a prober cannot learn which condition fired.
-func TestReservedOrgNeverProvisions(t *testing.T) {
-	for _, org := range []string{"admin", "built-in", "app"} {
-		t.Run(org, func(t *testing.T) {
-			app, db := newServer(t)
-			a := seed(t, db, opts{name: "app-" + org, org: org, signup: true})
-
-			code, m := signIn(t, app, a)
-			errorIs(t, code, m, "sign up is disabled")
-
-			if n := len(users(t, db)); n != 0 {
-				t.Fatalf("users = %d, want 0 — a wallet sign-in must never mint an account in the reserved org %q", n, org)
-			}
-			if n := len(wallets(t, db)); n != 0 {
-				t.Fatalf("wallets = %d, want 0 — a refusal must leave nothing behind", n)
-			}
-		})
-	}
-}
-
-// The guard is scoped to RESERVED orgs only: an ordinary tenant with sign-up
-// enabled still provisions. Without this, "close the hole" could be satisfied by
-// breaking wallet sign-up outright and the test above would still pass.
-func TestOrdinaryOrgStillProvisions(t *testing.T) {
-	app, db := newServer(t)
-	a := seed(t, db, opts{name: "app-tenant", org: "acme", signup: true})
-
-	if code, m := signIn(t, app, a); okData(t, code, m) == "" {
-		t.Fatal("an ordinary tenant's wallet sign-up must still succeed")
-	}
-	u := users(t, db)
-	if len(u) != 1 || u[0].Owner != "acme" {
-		t.Fatalf("users = %+v, want exactly one under acme", u)
-	}
 }

@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -9,7 +8,7 @@ import (
 
 	"github.com/hanzoai/orm"
 
-	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
 // Red-team helpers + the field-preservation guard for the on-behalf-of primitives.
@@ -41,11 +40,11 @@ func seedAttackerApp(t *testing.T, db orm.DB, owner, name, clientID, secret, pla
 }
 
 // TestRedTeam_mintKeys_preservesPasswordHashAndIsAdmin proves the mint/revoke
-// read-modify-write (updateUser) does not blank PasswordHash nor flip privilege
-// bits. updateUser reads the FULL row fresh under a row lock and mutates only
-// AccessKey/UpdatedTime, so every field the handler didn't touch is preserved.
+// read-modify-write (saveUser) does not blank PasswordHash nor flip privilege
+// bits. GetUserByName returns the FULL row (no mask), so *existing = *user
+// preserves every field the handler didn't touch.
 func TestRedTeam_mintKeys_preservesPasswordHashAndIsAdmin(t *testing.T) {
-	t.Setenv("IAM_TOKEN_EXCHANGE_APPS", "hanzo-console")
+	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
 	app, db := newServer(t)
 	seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "top-secret"})
 
@@ -59,7 +58,7 @@ func TestRedTeam_mintKeys_preservesPasswordHashAndIsAdmin(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	if resp, body := do(t, app, keyReq("POST", userKeys("hanzo/carol"), "hanzo-console", "top-secret", "")); resp.StatusCode != 200 {
+	if resp, body := do(t, app, keyReq(PathMintUserKeys, "hanzo-console", "top-secret", "?id=hanzo/carol")); resp.StatusCode != 200 {
 		t.Fatalf("mint status=%d body=%s", resp.StatusCode, body)
 	}
 
@@ -76,7 +75,7 @@ func TestRedTeam_mintKeys_preservesPasswordHashAndIsAdmin(t *testing.T) {
 	if !got.IsAdmin {
 		t.Errorf("IsAdmin flipped false by mint")
 	}
-	// The credential no longer lives on the user row — it is a schema.Key the
-	// resolver reads. What this red-team test guards is that mint does not mutate
-	// the user's OTHER fields, which is asserted above.
+	if got.AccessKey == "" {
+		t.Errorf("mint did not set AccessKey")
+	}
 }

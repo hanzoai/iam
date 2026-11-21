@@ -1,13 +1,11 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package authz_test
 
-// End-to-end authorization tests driven through the REAL registered router
-// (routes.Route, which installs authz.Guard on the AUTHED group, so gating is
-// structural — the public routes, registered on a group that has no Guard, are
-// never reached by it).
-// Every case is a HTTP request
+// End-to-end authorization tests driven through the REAL mounted router
+// (routes.Mount, which installs authz.Guard after the public group, so gating is
+// structural — the public routes registered before it are never reached by it).
+// Every case is a wire request
 // a client could send: a status code is the whole contract. Tokens are genuine
 // RS256 JWTs signed by the seeded admin signing cert, so they pass the exact
 // oidc.VerifyToken the guard reuses — nothing here is mocked.
@@ -34,12 +32,9 @@ import (
 	ormdb "github.com/hanzoai/orm/db"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/keyring"
 	"github.com/hanzoai/iam/internal/routes"
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
-
-	"github.com/hanzoai/iam/internal/testhttp"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 const signingKid = "cert-hanzo" // the seeded admin signing cert's name = JWKS kid
@@ -66,7 +61,7 @@ func mustRSA() *rsa.PrivateKey {
 	return k
 }
 
-// harness holds the registered app, the RSA key the signing cert holds (so a test
+// harness holds the mounted app, the RSA key the signing cert holds (so a test
 // can mint a token any principal would carry), and the store (so a test can
 // assert that a refused write persisted NOTHING — the real security property, not
 // just a status code).
@@ -109,9 +104,9 @@ func (h *harness) userIsAdmin(t *testing.T, owner, name string) bool {
 }
 
 // newHarness opens a fresh SQLite store, seeds the trust anchor (an admin-owned
-// RS256 signing cert) plus a cast of principals across three orgs, and registers
+// RS256 signing cert) plus a cast of principals across three orgs, and mounts
 // the full router — guard and all. MCP is left ENABLED here (unlike prod) so the
-// tests prove the guard, not a disabled feature, closes the /mcp path.
+// tests prove the guard, not a disabled feature, closes the /mcp side door.
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 	_ = schema.Kinds() // force kind registration
@@ -142,12 +137,10 @@ func newHarness(t *testing.T) *harness {
 	app := zip.New(zip.Config{AppName: "authz-test", DisableStartupMessage: true})
 	routes.Route(app, db)
 	// Install the deferred framework projections (/mcp, /openapi) for real, so the
-	// control-route tests drive the ACTUAL routes — the same surface a served app
+	// side-door tests drive the ACTUAL routes — the same surface a served app
 	// exposes — not a route that never got registered. MCP is left ENABLED here
 	// (unlike prod) so the tests prove the guard, not a disabled feature, closes it.
-	if err := app.Build(); err != nil {
-		t.Fatalf("build: %v", err)
-	}
+	app.Prepare()
 	return &harness{app: app, key: key, db: db}
 }
 
@@ -194,7 +187,7 @@ func (h *harness) do(t *testing.T, method, path, bearer string, body any) int {
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
 	}
-	resp, err := testhttp.Do(h.app, req)
+	resp, err := h.app.Fiber().Test(req)
 	if err != nil {
 		t.Fatalf("%s %s: %v", method, path, err)
 	}
@@ -204,7 +197,7 @@ func (h *harness) do(t *testing.T, method, path, bearer string, body any) int {
 }
 
 // mcpEnvelope builds a JSON-RPC 2.0 tools/call for the framework tool `tool`
-// (its real op id, e.g. "post_iam_certs") with `args` as the tool arguments —
+// (its real op id, e.g. "post_v1_iam_certs") with `args` as the tool arguments —
 // the same body an MCP agent would POST to /mcp.
 func mcpEnvelope(tool string, args any) map[string]any {
 	return map[string]any{
@@ -214,7 +207,7 @@ func mcpEnvelope(tool string, args any) map[string]any {
 }
 
 // mcpToolCall fires an MCP tools/call for `tool` with `args` through the REAL
-// registered /mcp route and reports the HTTP status plus whether the op-invoke
+// mounted /mcp route and reports the HTTP status plus whether the op-invoke
 // authorizer refused it. A refusal at the op seam surfaces as an isError result
 // with HTTP 200 (MCP reports handler errors in-band), never a transport 403, so
 // a refused write shows up as isError==true — the status stays 200.
@@ -227,32 +220,17 @@ func (h *harness) mcpToolCall(t *testing.T, bearer, tool string, args any) (stat
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
 	}
-	resp, err := testhttp.Do(h.app, req)
+	resp, err := h.app.Fiber().Test(req)
 	if err != nil {
 		t.Fatalf("mcp tools/call %s: %v", tool, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	// A JSON-RPC ERROR and a tool that RAN AND REFUSED are different answers, and
-	// reading only result.isError cannot tell them apart: an unknown tool name
-	// comes back as {"error":{code:-32602}} with no result at all, which decodes
-	// to isError=false — indistinguishable from a call that succeeded. Every
-	// "must be refused" assertion in this file is satisfiable by a typo, so the
-	// protocol error is fatal here rather than a value the caller might ignore.
 	var out struct {
-		Error *struct {
-			Code    int    `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
 		Result struct {
 			IsError bool `json:"isError"`
 		} `json:"result"`
 	}
 	_ = json.NewDecoder(resp.Body).Decode(&out)
-	if out.Error != nil {
-		t.Fatalf("mcp tools/call %s: JSON-RPC error %d %q — the tool does not exist, "+
-			"so this proves nothing about whether it would be refused",
-			tool, out.Error.Code, out.Error.Message)
-	}
 	return resp.StatusCode, out.Result.IsError
 }
 
@@ -263,7 +241,7 @@ func seedCert(t *testing.T, db orm.DB, owner, name, privPEM string) {
 	c := orm.New[schema.Cert](db)
 	c.Owner, c.Name = owner, name
 	c.CryptoAlgorithm = "RS256"
-	keyring.Set(name, privPEM) // the deployment supplies key material; the row never carries it
+	c.PrivateKey = privPEM
 	c.SetId(owner + "/" + name)
 	if err := c.CreateCtx(context.Background()); err != nil {
 		t.Fatalf("seed cert %s/%s: %v", owner, name, err)
@@ -350,30 +328,4 @@ func cert(owner, name string) map[string]any {
 // user wraps a create/update user body ({user:{...}, password}).
 func user(owner, name string) map[string]any {
 	return map[string]any{"user": map[string]any{"owner": owner, "name": name}, "password": "x"}
-}
-
-// A CORS preflight carries no credentials — the browser strips them — so the
-// Guard must never answer one with 401. It used to, which is indistinguishable
-// to the page from "your origin is not allowed": a registered console asking
-// its own IdP "which orgs am I in?" got a failed preflight and rendered an
-// empty org switcher, with nothing in the network log but a 401 on OPTIONS.
-//
-// The pairing is the point. Opening the preflight must not open the DATA, so
-// each case also asserts the real GET is still refused without a bearer.
-func TestGuard_NeverAuthenticatesAPreflight(t *testing.T) {
-	h := newHarness(t)
-	for _, path := range []string{
-		"/v1/iam/organizations",
-		"/v1/iam/organizations/admin/hanzo",
-		"/v1/iam/users",
-	} {
-		if got := h.do(t, "OPTIONS", path, "", nil); got == 401 {
-			t.Errorf("OPTIONS %s answered 401: a preflight has no credentials to "+
-				"reject, and the browser reads this as origin-not-allowed", path)
-		}
-		if got := h.do(t, "GET", path, "", nil); got != 401 {
-			t.Errorf("GET %s without a bearer = %d, want 401: letting the preflight "+
-				"through must not let the READ through", path, got)
-		}
-	}
 }

@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 // Package invitations serves the IAM v2 CRUD surface for the `invitations`
 // entity: a pending org-membership invite owner-scoped by (owner, name). Every
@@ -16,10 +15,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/authz"
-	"github.com/hanzoai/iam/internal/principal"
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
 // Handler binds the invitations operations to one orm store.
@@ -27,16 +23,14 @@ type Handler struct {
 	db orm.DB
 }
 
-//go:generate go run github.com/zap-proto/zip/cmd/zipdoc
-
 // Route registers the invitations CRUD routes on app against db.
 func Route(app *zip.App, db orm.DB) {
 	h := &Handler{db: db}
-	zip.Get(app, "/v1/iam/invitations", h.List, zip.WithTags("invitations"))
-	zip.Post(app, "/v1/iam/invitations", h.Create, zip.WithTags("invitations"))
-	zip.Get(app, "/v1/iam/invitations/:owner/:name", h.Get, zip.WithTags("invitations"))
-	zip.Put(app, "/v1/iam/invitations/:owner/:name", h.Update, zip.WithTags("invitations"))
-	zip.Delete(app, "/v1/iam/invitations/:owner/:name", h.Delete, zip.WithTags("invitations"))
+	zip.Get(app, "/v1/iam/invitations", h.List, zip.WithSummary("List invitations for an owner"), zip.WithTags("invitations"))
+	zip.Post(app, "/v1/iam/invitations", h.Create, zip.WithSummary("Create an invitation"), zip.WithTags("invitations"))
+	zip.Post(app, "/v1/iam/invitations/get", h.Get, zip.WithSummary("Get one invitation"), zip.WithTags("invitations"))
+	zip.Post(app, "/v1/iam/invitations/update", h.Update, zip.WithSummary("Update an invitation"), zip.WithTags("invitations"))
+	zip.Post(app, "/v1/iam/invitations/delete", h.Delete, zip.WithSummary("Delete an invitation"), zip.WithTags("invitations"))
 }
 
 // Ref addresses one invitation by its owner-scoped natural key.
@@ -46,24 +40,24 @@ type Ref struct {
 }
 
 // Input is the writable projection of an invitation (the v1 add/update-invitation
-// body). It keeps the HTTP contract clean of the orm.Model bookkeeping fields.
+// body). It keeps the wire contract clean of the orm.Model bookkeeping fields.
 type Input struct {
 	Owner       string `json:"owner"`
 	Name        string `json:"name"`
-	CreatedTime string `json:"createdTime" url:"-"`
-	UpdatedTime string `json:"updatedTime" url:"-"`
-	DisplayName string `json:"displayName" url:"-"`
-	Code        string `json:"code" url:"-"`
-	IsRegexp    bool   `json:"isRegexp" url:"-"`
-	Quota       int    `json:"quota" url:"-"`
-	UsedCount   int    `json:"usedCount" url:"-"`
+	CreatedTime string `json:"createdTime"`
+	UpdatedTime string `json:"updatedTime"`
+	DisplayName string `json:"displayName"`
+	Code        string `json:"code"`
+	IsRegexp    bool   `json:"isRegexp"`
+	Quota       int    `json:"quota"`
+	UsedCount   int    `json:"usedCount"`
 	Application string `json:"application"`
-	Username    string `json:"username" url:"-"`
+	Username    string `json:"username"`
 	Email       string `json:"email"`
-	Phone       string `json:"phone" url:"-"`
-	SignupGroup string `json:"signupGroup" url:"-"`
-	DefaultCode string `json:"defaultCode" url:"-"`
-	State       string `json:"state" url:"-"`
+	Phone       string `json:"phone"`
+	SignupGroup string `json:"signupGroup"`
+	DefaultCode string `json:"defaultCode"`
+	State       string `json:"state"`
 }
 
 // ListInput scopes a listing to one owner (organization).
@@ -98,31 +92,18 @@ func apply(dst *schema.Invitation, in *Input) {
 	dst.Application = in.Application
 	dst.Username = in.Username
 	dst.Email = in.Email
-	dst.Phone = store.NormalizePhone(in.Phone)
+	dst.Phone = in.Phone
 	dst.SignupGroup = in.SignupGroup
 	dst.DefaultCode = in.DefaultCode
 	dst.State = in.State
 }
 
-// List returns your organization's invitations, newest first — who has
-// been asked to join, on what terms, and how many seats each invitation still
-// has left.
-//
-// You see your own organization's invitations and no one else's; which organization that
-// is comes from your credentials, not from the request.
+// List returns the invitations for one owner, newest first. An empty owner
+// lists every invitation (the unscoped admin view).
 func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
-	// The owner is resolved by principal.Scope from the authenticated principal,
-	// never taken from the input: a tenant reads only its own org, a SuperAdmin
-	// reads the owner it asks for. in.Owner is whatever the CALLER wrote in the URL,
-	// since zip binds a typed op's scalar fields from the query string on every
-	// method, so filtering on it would let a request name the tenant it reads.
-	owner, err := principal.Scope(ctx, in.Owner)
-	if err != nil {
-		return nil, err
-	}
 	q := orm.TypedQuery[schema.Invitation](h.db)
-	if owner != "" {
-		q = q.Filter("owner", owner)
+	if in.Owner != "" {
+		q = q.Filter("owner", in.Owner)
 	}
 	invitations, err := q.Order("-createdTime").GetAll(ctx)
 	if err != nil {
@@ -131,8 +112,7 @@ func (h *Handler) List(ctx context.Context, in *ListInput) (*ListOutput, error) 
 	return &ListOutput{Invitations: invitations, Total: len(invitations)}, nil
 }
 
-// Get returns one invitation: who it is for, what it grants on acceptance, and
-// when it expires.
+// Get returns one invitation addressed by (owner, name).
 func (h *Handler) Get(ctx context.Context, in *Ref) (*schema.Invitation, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
@@ -144,29 +124,10 @@ func (h *Handler) Get(ctx context.Context, in *Ref) (*schema.Invitation, error) 
 	return invitation, nil
 }
 
-// authorizeRefs gates the rows an invitation NAMES: the application whoever
-// redeems it arrives through, and the group they arrive holding. Neither is the
-// invitation's own (Owner, Name), so the seam that authorizes the row authorized
-// where the invitation is FILED and never what it hands out — an invitation naming
-// another organization's application, or the platform's, is an invitation into
-// that organization. A caller may name only what it may write, and an unqualified
-// name is read in the invitation's own organization.
-func authorizeRefs(ctx context.Context, method string, in *Input) error {
-	if err := authz.AuthorizeRef(ctx, method, "applications", in.Owner, in.Application); err != nil {
-		return err
-	}
-	return authz.AuthorizeRef(ctx, method, "groups", in.Owner, in.SignupGroup)
-}
-
-// Create issues an invitation to join your organization — the code or link a new
-// member redeems, with the role they arrive holding and the date it stops
-// working. A name already used in the organization is refused.
+// Create persists a new invitation. It rejects a duplicate (owner, name).
 func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Invitation, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
-	}
-	if err := authorizeRefs(ctx, "POST", in); err != nil {
-		return nil, err
 	}
 	switch _, err := orm.Get[schema.Invitation](h.db, key(in.Owner, in.Name)); {
 	case err == nil:
@@ -191,14 +152,11 @@ func (h *Handler) Create(ctx context.Context, in *Input) (*schema.Invitation, er
 	return invitation, nil
 }
 
-// Update changes an invitation's terms — the role it grants, how many may redeem
-// it, or when it expires. What it is called does not change.
+// Update mutates an existing invitation. Identity and created stamp are
+// immutable; a missing invitation is a 404.
 func (h *Handler) Update(ctx context.Context, in *Input) (*schema.Invitation, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")
-	}
-	if err := authorizeRefs(ctx, "PUT", in); err != nil {
-		return nil, err
 	}
 	invitation, err := orm.Get[schema.Invitation](h.db, key(in.Owner, in.Name))
 	if err != nil {
@@ -211,8 +169,7 @@ func (h *Handler) Update(ctx context.Context, in *Input) (*schema.Invitation, er
 	return invitation, nil
 }
 
-// Delete withdraws an invitation. It stops being redeemable at once; anyone who
-// already joined through it keeps their account.
+// Delete removes one invitation addressed by (owner, name).
 func (h *Handler) Delete(ctx context.Context, in *Ref) (*DeleteOutput, error) {
 	if in.Owner == "" || in.Name == "" {
 		return nil, zip.ErrBadRequest("owner and name are required")

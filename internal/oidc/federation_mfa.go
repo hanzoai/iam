@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -11,7 +10,8 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/httpx"
-	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/internal/mfa/factor"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // The second-factor RESUME for a federated login. When the federation callback
@@ -48,14 +48,12 @@ type fedMfaForm struct {
 	RecoveryCode string `json:"recoveryCode"`
 }
 
-// federationMfaHandler completes a sign-in that came in through another identity
-// provider and still owes a second factor. The person supplies the factor here
-// and the login finishes.
-//
-// The account is fixed when the challenge is issued, not by the request, so no
-// one can redirect a half-finished login onto somebody else's account. A wrong
-// factor uses the challenge up: retrying means starting the sign-in again, the
-// same as a mistyped password.
+// federationMfaHandler finishes a parked federated login: it spends the challenge,
+// loads the PINNED user from its subject (never the request), verifies the second
+// factor through the shared factor seam, and only then mints the code for the
+// pinned authorize request. Fail-closed at every step; taking the challenge spends
+// it, so a wrong factor burns it and a fresh federation is required to retry —
+// exactly as the password gate behaves.
 func federationMfaHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		var f fedMfaForm
@@ -79,12 +77,24 @@ func federationMfaHandler(db orm.DB) zip.Handler {
 			return httpx.Err(c, ErrChallenge.Error())
 		}
 
-		// Verify the factor through the ONE seam, shared with the password gate. It used
-		// to be a second switch here that called itself the shared one while accepting
-		// only TOTP, so an account holding just an emailed or texted factor could answer
-		// a password login and not this one.
-		if err := proveFactor(ctx, db, user, ch, f.MfaType, f.Passcode, f.RecoveryCode); err != nil {
-			return httpx.Err(c, err.Error())
+		// Verify the factor — the ONE factor seam, shared with the password gate.
+		switch {
+		case f.Passcode != "":
+			if f.MfaType != factor.App {
+				return httpx.Err(c, "invalid multi-factor authentication type")
+			}
+			if !factor.Verify(user.TotpSecret, f.Passcode) {
+				return httpx.Err(c, "the multi-factor authentication code is incorrect")
+			}
+		case f.RecoveryCode != "":
+			if !factor.UseRecovery(user, f.RecoveryCode) {
+				return httpx.Err(c, "the recovery code is incorrect")
+			}
+			if err := factor.Save(ctx, db, user); err != nil {
+				return httpx.Err(c, err.Error())
+			}
+		default:
+			return httpx.Err(c, "missing passcode or recovery code")
 		}
 
 		// Resume the ORIGINAL authorize request from the PINNED payload — never from
@@ -101,7 +111,7 @@ func federationMfaHandler(db orm.DB) zip.Handler {
 		if !app.IsRedirectUriValid(p.RedirectUri) {
 			return httpx.Err(c, "invalid redirect_uri")
 		}
-		loc, err := federationMint(c, db, app, user, p, nowFunc())
+		loc, err := federationMint(ctx, db, app, user, p, nowFunc())
 		if err != nil {
 			if err == errPKCERequired {
 				return httpx.Err(c, "PKCE is required for public clients")

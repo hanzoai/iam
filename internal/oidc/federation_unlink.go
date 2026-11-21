@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -10,10 +9,8 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/httpx"
-	"github.com/hanzoai/iam/internal/mfa/factor"
-	"github.com/hanzoai/iam/internal/otp"
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // PathUnlink removes a federated link from an account: POST /v1/iam/unlink. It is
@@ -40,9 +37,7 @@ type unlinkForm struct {
 	} `json:"user"`
 }
 
-// unlink disconnects one sign-in identity from an account, so that provider can
-// no longer be used to sign in as that person. Their account and every other way
-// they sign in are untouched. Two principals may do it, and
+// unlink clears one provider link from one account. Two principals may do it, and
 // only two: the account holder itself, and a SuperAdmin (a member of the reserved
 // admin org, the one predicate). An ORG ADMIN deliberately may NOT — unlinking is
 // not tenant administration, it is unpicking someone's own sign-in method, so the
@@ -64,8 +59,8 @@ func unlink(db orm.DB) zip.Handler {
 			return httpx.Err(c, "Please login first")
 		}
 		self := caller == f.User.Owner && name == f.User.Name
-		super, err := store.IsSuperAdmin(ctx, db, caller, name)
-		if err != nil || (!self && !super) {
+		super := store.IsSuperAdmin(caller)
+		if !self && !super {
 			return httpx.Err(c, "you are not permitted to unlink another user's account")
 		}
 
@@ -88,35 +83,12 @@ func unlink(db orm.DB) zip.Handler {
 		if *b.ref(u) == "" {
 			return httpx.Err(c, "please link first")
 		}
-
-		// The application the account signed up through — resolved by name alone,
-		// because that is all a User row records, and its owner is whoever registered
-		// it. It answers both questions below, so it is read once.
-		app, err := store.GetApplicationNamed(ctx, db, u.SignupApplication)
-		if err != nil {
-			return httpx.Err(c, err.Error())
-		}
-		if self && !super {
-			if !canUnlink(ctx, db, app, f.ProviderType) {
-				return httpx.Err(c, "this provider can't be unlinked")
-			}
-			// A federated account carries no password (users.Create clears the digest
-			// for a row created without one), so for many people this link IS the whole
-			// credential. Removing it would leave nothing to sign in with and no way
-			// back — an account destroyed by a self-service click, which is the exact
-			// opposite of self-service. A SuperAdmin may still force it; that is the
-			// platform's recovery path, carved out above.
-			if only, err := onlyCredential(ctx, db, app, u, b.field); err != nil {
-				return httpx.Err(c, err.Error())
-			} else if only {
-				return httpx.Err(c, "this is the only way you can sign in — add another sign-in method first")
-			}
+		if self && !super && !canUnlink(ctx, db, u, f.ProviderType) {
+			return httpx.Err(c, "this provider can't be unlinked")
 		}
 
-		if _, err := updateUser(ctx, db, f.User.Owner, f.User.Name, func(_ orm.DB, fresh *schema.User) error {
-			*b.ref(fresh) = ""
-			return nil
-		}); err != nil {
+		*b.ref(u) = ""
+		if err := saveUser(ctx, db, u); err != nil {
 			return httpx.Err(c, err.Error())
 		}
 		return httpx.Ok(c, nil)
@@ -124,11 +96,12 @@ func unlink(db orm.DB) zip.Handler {
 }
 
 // canUnlink reports whether the account's own sign-up application permits
-// unlinking this provider. An application that is gone, or that declares no link
-// of that type, cannot be self-unlinked from — the same fail-closed answer v1
+// unlinking this provider. An account whose application is gone, or which has no
+// link of that type declared, cannot self-unlink — the same fail-closed answer v1
 // gives.
-func canUnlink(ctx context.Context, db orm.DB, app *schema.Application, providerType string) bool {
-	if app == nil {
+func canUnlink(ctx context.Context, db orm.DB, u *schema.User, providerType string) bool {
+	app, err := store.GetApplicationByName(ctx, db, "admin", u.SignupApplication)
+	if err != nil || app == nil {
 		return false
 	}
 	store.EnrichProviders(ctx, db, app)
@@ -138,31 +111,4 @@ func canUnlink(ctx context.Context, db orm.DB, app *schema.Application, provider
 		}
 	}
 	return false
-}
-
-// onlyCredential reports whether the connector column field is the ONLY thing this
-// account can be signed in as — so clearing it locks the person out for good.
-//
-// The list is every login endpoint this binary actually serves, asked of the ACCOUNT
-// rather than of a policy flag: another linked provider (the one reflection over
-// the connector columns that linked-accounts already answers with), a password
-// digest, a passkey, a bound wallet, or a delivered one-time code. The code arm
-// carries the two conditions the login descriptor advertises it under — the app
-// allows it and this process can actually send one — because a method nothing can
-// deliver is not a way back in.
-func onlyCredential(ctx context.Context, db orm.DB, app *schema.Application, u *schema.User, field string) (bool, error) {
-	for _, l := range linkedAccountsOf(u) {
-		if l.Provider != field {
-			return false, nil
-		}
-	}
-	if u.PasswordHash != "" || len(u.WebauthnCredentials) > 0 {
-		return false, nil
-	}
-	if app != nil && app.EnableCodeSignin && otp.DeliveryConfigured() &&
-		(factor.Destination(u, factor.Email) != "" || factor.Destination(u, factor.SMS) != "") {
-		return false, nil
-	}
-	held, err := store.HasWallet(ctx, db, u.Owner, u.Name)
-	return !held, err
 }

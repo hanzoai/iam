@@ -1,10 +1,9 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 //go:build migration
 
 // This file is linked only in `go build -tags migration`. It registers the v1
-// the legacy surface database drivers (Postgres via pgx, MySQL) so `iam compare` can
+// Casdoor database drivers (Postgres via pgx, MySQL) so `iam2 compare` can
 // read the legacy store. The default build omits it, keeping the serving
 // binary free of any non-SQLite driver.
 package compare

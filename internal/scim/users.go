@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package scim
 
@@ -13,10 +12,9 @@ import (
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/authz"
-	"github.com/hanzoai/iam/internal/principal"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 	"github.com/hanzoai/iam/internal/users"
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
 )
 
 const (
@@ -47,27 +45,13 @@ type scimUser struct {
 	UserName     string            `json:"userName"`
 	Name         *scimName         `json:"name,omitempty"`
 	DisplayName  string            `json:"displayName,omitempty"`
-	UserType     string            `json:"userType,omitempty"`
-	ProfileURL   string            `json:"profileUrl,omitempty"`
 	Emails       []scimMultiValued `json:"emails,omitempty"`
 	PhoneNumbers []scimMultiValued `json:"phoneNumbers,omitempty"`
 	Photos       []scimMultiValued `json:"photos,omitempty"`
-	Addresses    []scimAddress     `json:"addresses,omitempty"`
 	Active       *bool             `json:"active,omitempty"`
 	Password     string            `json:"password,omitempty"`
 	Hanzo        *hanzoUserExt     `json:"urn:ietf:params:scim:schemas:extension:hanzo:2.0:User,omitempty"`
 	Meta         *scimMeta         `json:"meta,omitempty"`
-}
-
-// scimAddress is the SCIM address sub-attribute set this service persists (RFC
-// 7643 §4.1.2). streetAddress/postalCode have no column on the identity row, so
-// they are not accepted rather than accepted-and-dropped.
-type scimAddress struct {
-	Locality string `json:"locality,omitempty"`
-	Region   string `json:"region,omitempty"`
-	Country  string `json:"country,omitempty"`
-	Type     string `json:"type,omitempty"`
-	Primary  bool   `json:"primary,omitempty"`
 }
 
 type scimName struct {
@@ -103,11 +87,8 @@ func toSCIM(u *schema.User) *scimUser {
 	s := &scimUser{
 		Schemas:     []string{schemaUser, schemaHanzoUserExt},
 		ID:          u.Owner + "/" + u.Name,
-		ExternalID:  u.ExternalId,
 		UserName:    u.Name,
 		DisplayName: u.DisplayName,
-		UserType:    u.Type,
-		ProfileURL:  u.Homepage,
 		Active:      &active,
 		Hanzo:       &hanzoUserExt{Owner: u.Owner, IsAdmin: u.IsAdmin},
 		Meta: &scimMeta{
@@ -129,33 +110,12 @@ func toSCIM(u *schema.User) *scimUser {
 	if u.Avatar != "" {
 		s.Photos = []scimMultiValued{{Value: u.Avatar, Type: "photo"}}
 	}
-	if u.Location != "" || u.Region != "" || u.CountryCode != "" {
-		s.Addresses = []scimAddress{{
-			Locality: u.Location, Region: u.Region, Country: u.CountryCode,
-			Type: "work", Primary: true,
-		}}
-	}
 	return s
-}
-
-// primaryAddress returns the primary address entry, or the first. The identity row
-// holds ONE address, so a multi-valued request collapses to the primary — the same
-// rule primaryValue applies to emails and phones.
-func primaryAddress(vs []scimAddress) (scimAddress, bool) {
-	if len(vs) == 0 {
-		return scimAddress{}, false
-	}
-	for _, v := range vs {
-		if v.Primary {
-			return v, true
-		}
-	}
-	return vs[0], true
 }
 
 // applyToUser overlays a SCIM User's mapped attributes ONTO u — which is the FULL
 // current row on an update (so every unmapped field: MFA enrollment, IsDeleted,
-// Type, Ldap, … is PRESERVED) or a blank record on a create. It never sets
+// Type, Groups, Ldap, … is PRESERVED) or a blank record on a create. It never sets
 // identity (owner/name); the caller binds those. isAdmin is a privileged field:
 // it is applied only when allowAdmin (SuperAdmin) — a non-super can never set or
 // raise it (provision-don't-promote), so an omitted-or-present isAdmin from a
@@ -165,30 +125,10 @@ func applyToUser(in *scimUser, u *schema.User, allowAdmin bool) (password string
 	if in.Name != nil {
 		u.FirstName, u.LastName = in.Name.GivenName, in.Name.FamilyName
 	}
-	// externalId is the PROVISIONING CLIENT's own key for this record — the value an
-	// IdP correlates its directory entry by. It is not identity (owner/name is) and
-	// it is not a credential; carrying it is what makes a repeat sync an update
-	// rather than a duplicate create.
-	u.ExternalId = in.ExternalID
-	u.Homepage = in.ProfileURL
-	// userType is deliberately NOT applied. schema.User.Type is the IDENTITY-CLASS
-	// discriminator, not a profile label: Type == "service-account" is what
-	// serviceaccounts.is() tests (internal/serviceaccounts/serviceaccounts.go:327,
-	// gated at :216) and what oidc/provision.go mints a tenant's pk-/sk- API
-	// credential as. Honouring a client-supplied userType would let anyone who can
-	// provision a user through SCIM mint a row the service-account surface accepts —
-	// an identity-class escalation across a boundary IAM otherwise owns. It is
-	// declared mutability:readOnly in the /Schemas document (RFC 7643 §7: a readOnly
-	// attribute in a write is ignored) and projected on read only.
 	u.Email = primaryValue(in.Emails)
-	u.Phone = store.NormalizePhone(primaryValue(in.PhoneNumbers))
+	u.Phone = primaryValue(in.PhoneNumbers)
 	if v := primaryValue(in.Photos); v != "" {
 		u.Avatar = v
-	}
-	if a, ok := primaryAddress(in.Addresses); ok {
-		u.Location, u.Region, u.CountryCode = a.Locality, a.Region, a.Country
-	} else {
-		u.Location, u.Region, u.CountryCode = "", "", ""
 	}
 	// active defaults to true when omitted (RFC 7643 §4.1.1); active=false
 	// soft-disables (IsForbidden).
@@ -212,15 +152,13 @@ func primaryValue(vs []scimMultiValued) string {
 	return vs[0].Value
 }
 
-// listUsers returns the people in your organization to your identity provider,
-// in the standard SCIM shape, so an IdP can reconcile its directory against
-// ours. Searchable by username or email address, and paged.
-//
-// Reading the whole list takes an administrator; an ordinary person is refused.
+// listUsers serves GET /Users — owner-scoped, filterable by `userName|emails eq
+// "x"`, paginated. Listing is an org-admin (or super) operation: a regular user is
+// refused (authz.Can with an empty name fails the self-read clause).
 func listUsers(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
-		owner, err := principal.Scope(ctx, c.Query("owner"))
+		owner, err := authz.Scope(ctx, c.Query("owner"))
 		if err != nil {
 			return scimError(c, 403, err.Error(), "")
 		}
@@ -236,11 +174,7 @@ func listUsers(db orm.DB) zip.Handler {
 			case "username":
 				q = q.Filter("Name=", value)
 			case "emails", "emails.value":
-				// Normalized, because Create/Update normalize what they STORE. A raw
-				// filter compares the caller's spelling against a canonical column, so
-				// an IdP that sent "Alice@Example.com" found nobody and provisioned a
-				// SECOND account for a person who already had one.
-				q = q.Filter("Email=", store.NormalizeEmail(value))
+				q = q.Filter("Email=", value)
 			default:
 				return scimError(c, 400, "unsupported filter attribute: "+field, "invalidFilter")
 			}
@@ -263,8 +197,8 @@ func listUsers(db orm.DB) zip.Handler {
 	}
 }
 
-// getUser returns one person in the standard SCIM shape. An administrator may
-// read anyone in the organization; everyone else may read only themselves.
+// getUser serves GET /Users/{owner}/{name}. A regular user may read only its own
+// record (authz self-read clause); an org-admin/super may read any in scope.
 func getUser(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
@@ -286,11 +220,9 @@ func getUser(db orm.DB) zip.Handler {
 	}
 }
 
-// createUser provisions a person from your identity provider — how a new hire
-// gets an account here automatically when they are added over there.
-//
-// Takes an administrator. Making someone an administrator takes more than that,
-// so an IdP integration cannot escalate anyone by setting a flag.
+// createUser serves POST /Users. Provisioning a user requires org-admin (or super)
+// — the SAME policy the typed CRUD applies at the op seam, enforced here because a
+// raw handler bypasses that seam. Only a SuperAdmin may set isAdmin.
 func createUser(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
@@ -305,7 +237,7 @@ func createUser(db orm.DB) zip.Handler {
 		if in.Hanzo != nil {
 			reqOwner = in.Hanzo.Owner
 		}
-		owner, err := principal.Scope(ctx, reqOwner)
+		owner, err := authz.Scope(ctx, reqOwner)
 		if err != nil {
 			return scimError(c, 403, err.Error(), "")
 		}
@@ -320,9 +252,7 @@ func createUser(db orm.DB) zip.Handler {
 		password := applyToUser(&in, &u, authz.IsSuper(ctx))
 		u.Owner, u.Name = owner, in.UserName
 
-		// applyToUser set IsAdmin only when the caller is a SuperAdmin; state it
-		// through the in-process field, since the user body no longer carries it.
-		created, err := users.New(db).Create(ctx, &users.CreateInput{User: u, Password: password, Admin: u.IsAdmin})
+		created, err := users.New(db).Create(ctx, &users.CreateInput{User: u, Password: password})
 		if err != nil {
 			return mapErr(c, err)
 		}
@@ -330,13 +260,10 @@ func createUser(db orm.DB) zip.Handler {
 	}
 }
 
-// replaceUser overwrites a person's SCIM attributes with what your identity
-// provider sends — how a change made there lands here.
-//
-// Only the attributes SCIM describes are replaced. Anything the standard does not
-// cover — their multi-factor enrolment above all — survives untouched, so a
-// routine sync from your IdP can never quietly strip someone's second factor or
-// bring a deleted account back.
+// replaceUser serves PUT /Users/{owner}/{name} — a full replace of the mapped
+// attributes, overlaid onto the CURRENT row so every unmapped persisted field (MFA
+// enrollment, IsDeleted, Type, Groups, Ldap) is preserved — never rebuilt from a
+// blank record (which would silently strip MFA and resurrect a deleted account).
 func replaceUser(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
@@ -361,7 +288,7 @@ func replaceUser(db orm.DB) zip.Handler {
 		password := applyToUser(&in, cur, authz.IsSuper(ctx)) // overlay onto the FULL row
 		cur.Owner, cur.Name = owner, name
 
-		updated, err := users.New(db).Update(ctx, &users.UpdateInput{User: *cur, Password: password, Admin: &cur.IsAdmin})
+		updated, err := users.New(db).Update(ctx, &users.UpdateInput{User: *cur, Password: password})
 		if err != nil {
 			return mapErr(c, err)
 		}
@@ -369,11 +296,10 @@ func replaceUser(db orm.DB) zip.Handler {
 	}
 }
 
-// patchUser applies a partial change from your identity provider — one attribute
-// moved, not the whole record resent.
-//
-// The change is applied onto the person as they currently are, so everything you
-// did not mention keeps its value, including the parts SCIM does not describe.
+// patchUser serves PATCH /Users/{owner}/{name} (RFC 7644 §3.5.2). It reads the
+// FULL current row, applies the operations to a SCIM projection, overlays the
+// result back onto that same full row, and writes it — so a partial change never
+// blanks the rest of the record (MFA, IsDeleted, …).
 func patchUser(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
@@ -409,17 +335,12 @@ func patchUser(db orm.DB) zip.Handler {
 		curActive := !cur.IsForbidden && !cur.IsDeleted
 		next := scimUser{
 			UserName:     cur.Name,
-			ExternalID:   cur.ExternalId,
 			DisplayName:  cur.DisplayName,
-			ProfileURL:   cur.Homepage,
 			Active:       &curActive,
 			Name:         &scimName{GivenName: cur.FirstName, FamilyName: cur.LastName},
 			Emails:       []scimMultiValued{{Value: cur.Email, Primary: true}},
 			PhoneNumbers: []scimMultiValued{{Value: cur.Phone, Primary: true}},
-			Addresses: []scimAddress{{
-				Locality: cur.Location, Region: cur.Region, Country: cur.CountryCode, Primary: true,
-			}},
-			Hanzo: &hanzoUserExt{Owner: cur.Owner, IsAdmin: cur.IsAdmin},
+			Hanzo:        &hanzoUserExt{Owner: cur.Owner, IsAdmin: cur.IsAdmin},
 		}
 		password := ""
 		for _, op := range patch.Operations {
@@ -429,12 +350,12 @@ func patchUser(db orm.DB) zip.Handler {
 		}
 
 		// Overlay the patched projection onto the FULL current row (preserving MFA,
-		// IsDeleted, Type, …), then write.
+		// IsDeleted, Type, Groups, …), then write.
 		if pw := applyToUser(&next, cur, authz.IsSuper(ctx)); pw != "" {
 			password = pw
 		}
 		cur.Owner, cur.Name = owner, name
-		updated, err := users.New(db).Update(ctx, &users.UpdateInput{User: *cur, Password: password, Admin: &cur.IsAdmin})
+		updated, err := users.New(db).Update(ctx, &users.UpdateInput{User: *cur, Password: password})
 		if err != nil {
 			return mapErr(c, err)
 		}
@@ -442,9 +363,7 @@ func patchUser(db orm.DB) zip.Handler {
 	}
 }
 
-// deleteUser deprovisions a person — how removing someone in your identity
-// provider removes their access here. Their sessions stop working immediately.
-// Takes an administrator.
+// deleteUser serves DELETE /Users/{owner}/{name}. Requires org-admin (or super).
 func deleteUser(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		ctx := c.Context()
@@ -500,12 +419,6 @@ func setPatchPath(u *scimUser, password *string, path string, value any) error {
 		u.Active = &b
 	case "displayname":
 		u.DisplayName = str(value)
-	case "externalid":
-		u.ExternalID = str(value)
-	case "profileurl":
-		u.ProfileURL = str(value)
-	case "addresses", "addresses.locality", "addresses.region", "addresses.country":
-		patchAddress(u, path, value)
 	case "password":
 		*password = str(value)
 	case "name.givenname":
@@ -520,33 +433,6 @@ func setPatchPath(u *scimUser, password *string, path string, value any) error {
 		return errors.New("unsupported patch path: " + path)
 	}
 	return nil
-}
-
-// patchAddress applies a patch to the single address the identity row holds —
-// either the whole `addresses` value or one sub-attribute path.
-func patchAddress(u *scimUser, path string, value any) {
-	cur, _ := primaryAddress(u.Addresses)
-	cur.Primary = true
-	switch path {
-	case "addresses":
-		var m map[string]any
-		switch v := value.(type) {
-		case map[string]any:
-			m = v
-		case []any:
-			if len(v) > 0 {
-				m, _ = v[0].(map[string]any)
-			}
-		}
-		cur.Locality, cur.Region, cur.Country = str(m["locality"]), str(m["region"]), str(m["country"])
-	case "addresses.locality":
-		cur.Locality = str(value)
-	case "addresses.region":
-		cur.Region = str(value)
-	case "addresses.country":
-		cur.Country = str(value)
-	}
-	u.Addresses = []scimAddress{cur}
 }
 
 func ensureName(u *scimUser) *scimName {
@@ -592,14 +478,14 @@ func truthy(v any) bool {
 }
 
 // scopedTarget resolves the (owner, name) a path-targeted request addresses,
-// re-scoping the path owner through principal.Scope so a non-super can never reach
+// re-scoping the path owner through authz.Scope so a non-super can never reach
 // another tenant's row by spelling its id — the same pin the query-target reads use.
 func scopedTarget(c *zip.Ctx) (owner, name string, err error) {
 	pathOwner, pathName := c.Param("owner"), c.Param("name")
 	if pathName == "" {
 		return "", "", errors.New("a user id (owner/name) is required")
 	}
-	scoped, err := principal.Scope(c.Context(), pathOwner)
+	scoped, err := authz.Scope(c.Context(), pathOwner)
 	if err != nil {
 		return "", "", err
 	}

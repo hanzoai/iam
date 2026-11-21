@@ -1,24 +1,19 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
 import (
 	"crypto/subtle"
-	"strconv"
-	"strings"
-	"time"
 
-	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // RFC 8693 OAuth 2.0 Token Exchange — the standard delegation / act-on-behalf-of
-// flow, and the replacement for the the legacy surface `issue-user-token` verb (HIP-0111).
+// flow, and the replacement for the Casdoor `issue-user-token` verb (HIP-0111).
 // A trusted, allow-listed confidential client presents a `subject_token`
 // identifying the end user it acts for and receives a fresh access token bound to
 // that user and re-scoped (RFC 8707 `resource`/`audience`) to a downstream
@@ -57,7 +52,7 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 		subtle.ConstantTimeCompare([]byte(clientSecret), []byte(clientApp.ClientSecret)) != 1 {
 		return tokenErrorClient(c, "client authentication failed")
 	}
-	if !mintAllowed(clientApp) {
+	if !mintAllowed(clientApp.ClientId) {
 		return tokenError(c, 403, "unauthorized_client", "client is not permitted for token exchange")
 	}
 
@@ -75,34 +70,21 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 	if err != nil {
 		return tokenError(c, 400, "invalid_grant", "subject_token is invalid or expired")
 	}
-	if claims.Subject == "" {
+	owner, name := splitSub(claims.Subject)
+	if owner == "" || name == "" {
 		return tokenError(c, 400, "invalid_grant", "subject_token carries no subject")
 	}
-	// Resolve the acted-for user from the subject_token's `sub` — which is now the
-	// stable UUID for a v2-minted token (store.GetUserBySubject decodes Id-or-name).
-	user, err := store.GetUserBySubject(ctx, db, claims.Subject)
+	user, err := store.GetUserByName(ctx, db, owner, name)
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}
 	if user == nil || user.IsForbidden || user.IsDeleted {
 		return tokenError(c, 400, "invalid_grant", "the subject is unknown or forbidden")
 	}
-	// Every authority claim is the TARGET USER's, read from the resolved row —
-	// never split from the (now-opaque) subject.
-	owner := user.Owner
-	natural := user.Owner + "/" + user.Name
 
-	// 3) A SuperAdmin subject is a cross-tenant identity — gate it behind the
-	//    separate admin-exchange capability. The question is who the subject IS,
-	//    not what the request called them: an operator is usually anchored in a
-	//    brand org because they also do ordinary work there, so reading the owner
-	//    half admits the same authority under its other name. A subject we cannot
-	//    classify is not exchangeable.
-	super, err := store.IsSuperAdmin(ctx, db, owner, user.Name)
-	if err != nil {
-		return tokenError(c, 500, "server_error", "cannot determine the subject")
-	}
-	if (policy.IsSigningOwner(owner) || super) && !adminMintAllowed(clientApp) {
+	// 3) A reserved-org (admin/built-in) subject is a cross-tenant / SuperAdmin
+	//    identity — gate it behind the separate admin-exchange capability.
+	if store.IsSigningCertOwner(owner) && !adminMintAllowed(clientApp.ClientId) {
 		return tokenError(c, 403, "access_denied", "not permitted to act for a reserved-org subject")
 	}
 
@@ -125,18 +107,14 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}
-	// A caller may ask for LESS life than the application declares and never more.
-	// A credential handed to a process that ends — a leased sandbox, one job — should
-	// die no later than the process does, and the client is the only party that knows
-	// when that is. The clamp runs one way, so the request can shorten the token and
-	// nothing about it can lengthen the application's own lifetime.
 	ttl := appTTL(clientApp)
-	if want := seconds(param(c, "lifetime")); want > 0 && want < ttl {
-		ttl = want
-	}
 	scope := param(c, "scope")
-	id := identityOf(ctx, db, user) // the ONE user→claims resolution
-	access, err := signer.SignUserToken(id, owner, aud, clientApp.ClientId, scope, ttl, now)
+	subject := owner + "/" + name
+	display := user.DisplayName
+	if display == "" {
+		display = user.Name
+	}
+	access, err := signer.SignUserToken(subject, owner, aud, clientApp.ClientId, user.Email, display, scope, ttl, now)
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}
@@ -145,7 +123,7 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 		Owner:           owner,
 		Application:     clientApp.Name,
 		Organization:    owner,
-		User:            natural, // the row's User stays the (owner/name) key
+		User:            subject,
 		Scope:           scope,
 		TokenType:       "Bearer",
 		ExpiresIn:       int(ttl.Seconds()),
@@ -155,7 +133,7 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 	if err := store.PersistToken(ctx, db, row); err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}
-	auditMint(ctx, db, c, schema.ActionTokenExchange, clientApp.ClientId, natural)
+	auditMint(ctx, db, c, "token-exchange", clientApp.ClientId, subject)
 
 	// 6) RFC 8693 §2.2 response.
 	return c.JSON(200, map[string]any{
@@ -165,16 +143,4 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 		"expires_in":        int(ttl.Seconds()),
 		"scope":             scope,
 	})
-}
-
-// seconds reads a requested duration in whole seconds. Absent, unparseable or
-// non-positive all mean the caller asked for nothing, which leaves the
-// application's own lifetime standing rather than failing the exchange over a
-// field that only ever narrows what it already grants.
-func seconds(s string) time.Duration {
-	n, err := strconv.Atoi(strings.TrimSpace(s))
-	if err != nil || n <= 0 {
-		return 0
-	}
-	return time.Duration(n) * time.Second
 }

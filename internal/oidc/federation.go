@@ -1,38 +1,37 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
-	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	fiber "github.com/zap-proto/fiber/v3"
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/mfa/factor"
-	"github.com/hanzoai/iam/internal/sessions"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 	"github.com/hanzoai/iam/internal/users"
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
 )
 
-// Identity federation — iam as an OIDC/OAuth2 Relying Party to external IdPs.
+// Identity federation — iam2 as an OIDC/OAuth2 Relying Party to external IdPs.
 //
 // A social sign-in is a DETOUR inside the ordinary authorization-code flow. The
 // authorize endpoint, having already validated the client and its EXACT
 // redirect_uri (so there is a trusted target before anything is trusted), hands
 // a request that names a `provider` to beginFederation, which stashes the whole
 // app-leg request server-side and sends the browser to the IdP. When the IdP
-// returns to the fixed callback, iam verifies the response, LINKS or PROVISIONS
+// returns to the fixed callback, iam2 verifies the response, LINKS or PROVISIONS
 // a local user, and mints ITS OWN authorization code — bound to the original
 // PKCE challenge, redirect_uri, and nonce — exactly as a password login would.
 // The relying party's existing PKCE code→token exchange then completes unchanged.
@@ -43,7 +42,7 @@ import (
 
 // PathFederationCallback is the fixed IdP return endpoint. One callback for every
 // provider — the provider is recovered from the server-side transaction the
-// state keys, never from a spoofable URL segment. It is the redirect_uri iam
+// state keys, never from a spoofable URL segment. It is the redirect_uri iam2
 // registers with each external IdP.
 const PathFederationCallback = "/v1/iam/oauth/callback"
 
@@ -154,7 +153,7 @@ func beginFederation(c *zip.Ctx, db orm.DB, app *schema.Application, q authorize
 // federationCallbackHandler completes the round-trip: it resolves and burns the
 // single-use transaction (checking expiry + browser binding), exchanges and
 // verifies the IdP response, links or provisions the local user, and mints the
-// iam authorization code the relying party expects — then redirects to the
+// iam2 authorization code the relying party expects — then redirects to the
 // original redirect_uri with code + state.
 func federationCallbackHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
@@ -170,23 +169,9 @@ func federationCallbackHandler(db orm.DB) zip.Handler {
 			return authorizeUserError(c, "internal error")
 		}
 		// Until the state resolves there is NO trusted redirect target, so an
-		// unknown/spent/expired state is answered in place, never redirected.
-		//
-		// The three causes are told apart because they ask different things of the
-		// person: a spent link means the sign-in already happened here, an expired
-		// one means they were too slow, and an unknown one means the link never
-		// belonged to this estate. Collapsing them into one sentence leaves both
-		// the reader and the operator guessing, and this handler logs nothing.
-		// Telling them apart discloses nothing a caller cannot already observe: a
-		// live state falls through to the bind-cookie check and answers
-		// differently from a spent one either way.
-		switch {
-		case st == nil:
-			return authorizeUserError(c, "this sign-in link is not one we issued — start again")
-		case st.Used:
-			return authorizeUserError(c, "this sign-in link was already used — start again")
-		case st.ExpireIn != 0 && now.Unix() > st.ExpireIn:
-			return authorizeUserError(c, "this sign-in link expired — start again")
+		// invalid/expired/replayed state is answered in place, never redirected.
+		if st == nil || st.Used || (st.ExpireIn != 0 && now.Unix() > st.ExpireIn) {
+			return authorizeUserError(c, "the federation session is invalid or expired")
 		}
 		// Browser binding: the callback must present the same anti-forgery cookie
 		// the begin leg set in THIS browser (constant-time) — the login-CSRF /
@@ -196,21 +181,12 @@ func federationCallbackHandler(db orm.DB) zip.Handler {
 		if raw == "" || subtle.ConstantTimeCompare([]byte(hashToken(raw)), []byte(st.BindHash)) != 1 {
 			return authorizeUserError(c, "the federation session could not be verified")
 		}
-		// Burn the transaction now (single-use), ATOMICALLY: the find-and-burn runs under
-		// a row lock (GetForUpdate), so two concurrent callbacks on one state cannot both
-		// win — the loser is refused (mirrors the wallet challenge burn / TakeChallenge).
-		// A replay finds it spent. The bind-cookie check above already gated this request,
-		// so a CSRF-failed replay never reaches the burn.
-		if _, err := store.BurnFederationState(ctx, db, state, now); err != nil {
-			if errors.Is(err, store.ErrFederationConsumed) {
-				// The race the row lock settles: a concurrent callback on the same
-				// state won the burn, so this one is the loser and says the same
-				// thing the sequential spent case says.
-				return authorizeUserError(c, "this sign-in link was already used — start again")
-			}
+		// Burn the transaction now (single-use). A concurrent replay reads Used and
+		// loses; a later replay finds nothing.
+		st.Used = true
+		if err := store.SaveFederationState(ctx, db, st); err != nil {
 			return authorizeUserError(c, "internal error")
 		}
-		st.Used = true
 		clearBindCookie(c)
 
 		// Resolve the relying-party app (the trusted redirect target) and re-check
@@ -248,18 +224,9 @@ func federationCallbackHandler(db orm.DB) zip.Handler {
 			return fedErrorRedirect(c, st, "access_denied", "the identity provider could not be verified")
 		}
 
-		// A transaction minted by PathLink names the account it attaches to, and that
-		// is the whole of what it does: a link is not a sign-in, so no code is minted
-		// and no session is opened. The subject was fixed from the caller's proven
-		// identity at begin time, so nothing that happened at the provider can point
-		// it elsewhere.
-		if st.Subject != "" {
-			return fedAttachRedirect(c, db, st, prov, identity)
-		}
-
 		user, err := linkOrProvision(ctx, db, app, prov, identity)
 		if err != nil {
-			return fedResolveErrorRedirect(c, st, err)
+			return fedErrorRedirect(c, st, "server_error", "")
 		}
 		if user.IsForbidden || user.IsDeleted {
 			return fedErrorRedirect(c, st, "access_denied", "the account is not permitted")
@@ -292,12 +259,12 @@ func federationCallbackHandler(db orm.DB) zip.Handler {
 			// a federated login cannot enroll one inline, so it fails closed.
 			return fedErrorRedirect(c, st, "access_denied", "two-factor authentication must be set up before signing in")
 		}
-		if factor.Enabled(user) && !remembered(c, user, now) {
-			return federationChallenge(c, db, st, user, p, org, now)
+		if factor.Enabled(user) && !remembered(user, now) {
+			return federationChallenge(c, db, st, user, p, now)
 		}
 
 		// No second factor owed — complete exactly as before, through the one mint.
-		loc, err := federationMint(c, db, app, user, p, now)
+		loc, err := federationMint(ctx, db, app, user, p, now)
 		if err != nil {
 			return fedMintErrorRedirect(c, st, err)
 		}
@@ -305,7 +272,7 @@ func federationCallbackHandler(db orm.DB) zip.Handler {
 	}
 }
 
-// fedResumeParams is the ORIGINAL iam authorize request, pinned server-side so
+// fedResumeParams is the ORIGINAL iam2 authorize request, pinned server-side so
 // the code minted after a federated login (immediately, or after a second factor)
 // binds to exactly these values — never to anything a later request supplies.
 type fedResumeParams struct {
@@ -323,13 +290,12 @@ type fedResumeParams struct {
 // invalid_request; every other mint failure is an opaque server_error.
 var errPKCERequired = errors.New("federation: PKCE is required for public clients")
 
-// federationMint mints iam's own authorization code — the SAME artifact a
+// federationMint mints iam2's own authorization code — the SAME artifact a
 // password login mints — bound to the pinned app-leg PKCE, redirect_uri and nonce,
 // and returns the RP redirect (redirect_uri?code&state). It is the ONE mint path
 // both the no-factor completion and the post-2FA resume reach, so a federated code
 // can never be minted two different ways.
-func federationMint(c *zip.Ctx, db orm.DB, app *schema.Application, user *schema.User, p fedResumeParams, now time.Time) (string, error) {
-	ctx := c.Context()
+func federationMint(ctx context.Context, db orm.DB, app *schema.Application, user *schema.User, p fedResumeParams, now time.Time) (string, error) {
 	// A public client must have carried a PKCE challenge, re-asserted at the mint so
 	// a minted code is never redeemable without proof.
 	if app.ClientSecret == "" && p.CodeChallenge == "" {
@@ -345,11 +311,6 @@ func federationMint(c *zip.Ctx, db orm.DB, app *schema.Application, user *schema
 	if err := store.PersistToken(ctx, db, codeRow); err != nil {
 		return "", err
 	}
-	// Someone just proved who they are to this IdP through another provider, so the
-	// IdP remembers them — the same tail loginGrant has. Without it a Google or
-	// GitHub sign-in left the person anonymous on hanzo.id itself and re-prompted by
-	// every other app: the relying party got its code and the IdP forgot the human.
-	_ = sessions.Open(ctx, c.Fiber(), db, user.Owner, user.Name, app.Name)
 	v := url.Values{}
 	v.Set("code", codeRow.Code)
 	setIfPresent(v, "state", p.AppState)
@@ -362,21 +323,12 @@ func federationMint(c *zip.Ctx, db orm.DB, app *schema.Application, user *schema
 // challenge concept — carrying the resume params as its payload. The browser is
 // sent to the hosted 2FA page; the challenge id rides the httpOnly cookie, never a
 // URL segment.
-//
-// The offer is computed by the SAME allowList the password gate uses, and a federated
-// login proves none of the offerable factors, so it excludes nothing. Any delivered
-// factor on the offer gets its code sent here for the same reason it does there: the
-// resume page has no destination to name and must not be given one.
-func federationChallenge(c *zip.Ctx, db orm.DB, st *schema.FederationState, user *schema.User, p fedResumeParams, org *schema.Organization, now time.Time) error {
+func federationChallenge(c *zip.Ctx, db orm.DB, st *schema.FederationState, user *schema.User, p fedResumeParams, now time.Time) error {
 	payload, err := json.Marshal(p)
 	if err != nil {
 		return fedErrorRedirect(c, st, "server_error", "")
 	}
-	allow := deliver(c, db, user, allowList(user, org, ""), now)
-	if len(allow) == 0 {
-		return fedErrorRedirect(c, st, "access_denied", "your second factor could not be sent")
-	}
-	id, err := MintChallenge(c.Context(), db, KindFederation, user.Owner+"/"+user.Name, string(payload), offeredTypes(allow), now)
+	id, err := MintChallenge(c.Context(), db, KindFederation, user.Owner+"/"+user.Name, string(payload), now)
 	if err != nil {
 		return fedErrorRedirect(c, st, "server_error", "")
 	}
@@ -392,73 +344,11 @@ func fedMintErrorRedirect(c *zip.Ctx, st *schema.FederationState, err error) err
 	return fedErrorRedirect(c, st, "server_error", "")
 }
 
-// The ways resolving a local identity is REFUSED rather than broken. Each is a
-// decision the person or the tenant can act on, which is why they are named:
-// answering an opaque server_error tells someone to try again forever. None of
-// them reveals whether an account exists.
-var (
-	// errAddressHeld: the address the IdP asserted already names a local account
-	// this federated identity is not entitled to adopt. Sign in with the password
-	// that account already has.
-	errAddressHeld = errors.New("federation: the address already names an account")
-	// errNoFederatedSignup: this application is not open for registration, and the
-	// identity is new. The same refusal the password and wallet endpoints give.
-	errNoFederatedSignup = errors.New("federation: the account does not exist and sign up is disabled")
-	// errNoFederatedEmail: the provider shared no address, so there is nothing to
-	// name the account after and no way to reach the person again.
-	errNoFederatedEmail = errors.New("federation: the provider shared no email address")
-)
-
-// fedResolveErrorRedirect maps a linkOrProvision failure to the RP redirect_uri:
-// a named refusal leaves as access_denied with its reason, everything else as an
-// opaque server_error. One mapper, so a new refusal is stated once and the
-// callback does not accumulate a branch per error.
-func fedResolveErrorRedirect(c *zip.Ctx, st *schema.FederationState, err error) error {
-	switch {
-	case errors.Is(err, errAddressHeld):
-		return fedErrorRedirect(c, st, "access_denied", "an account already uses this email address — sign in with its password")
-	case errors.Is(err, errNoFederatedSignup):
-		return fedErrorRedirect(c, st, "access_denied", "this application is not open for registration")
-	case errors.Is(err, errNoFederatedEmail):
-		return fedErrorRedirect(c, st, "access_denied", "the provider shared no email address for this account")
-	}
-	return fedErrorRedirect(c, st, "server_error", "")
-}
-
-// errSubjectLinked reports that the provider identity just verified is already
-// attached to a DIFFERENT account. One provider identity, one account — the same
-// shape as the wallet's one-wallet-one-identity rule — so it is refused rather than
-// moved, which would quietly unlink somebody else.
-var errSubjectLinked = errors.New("federation: this identity is already connected to another account")
-
-// fedAttachRedirect completes a LINK: attach the verified subject to the pinned
-// account and return the browser to the caller's validated returnUri, saying which
-// provider was connected — or why it was not. It answers in the shape a page can
-// read on arrival, since a link has no code to hand back.
-func fedAttachRedirect(c *zip.Ctx, db orm.DB, st *schema.FederationState, prov *schema.Provider, id federatedIdentity) error {
-	binding, known := connectorFor(prov.Type)
-	if !known {
-		return fedErrorRedirect(c, st, "invalid_request", "provider has no local identity binding")
-	}
-	owner, name, _ := strings.Cut(st.Subject, "/")
-	switch err := attach(c.Context(), db, owner, name, binding, id.subject); {
-	case err == nil:
-	case errors.Is(err, errSubjectLinked):
-		return fedErrorRedirect(c, st, "access_denied", "that account is already connected to someone else")
-	default:
-		return fedErrorRedirect(c, st, "server_error", "")
-	}
-	v := url.Values{}
-	v.Set("linked", prov.Name)
-	return c.Redirect(302, joinQuery(st.RedirectUri, v))
-}
-
 // linkOrProvision resolves the local identity for a verified federated login,
 // PROVISION-DON'T-PROMOTE: (1) an account already linked to this provider
-// subject, else (2) the account that already holds this address — linked when both
-// sides proved the address, refused otherwise — else (3) a freshly provisioned
-// account. It NEVER sets isAdmin and never grants an existing account anything —
-// federation only authenticates.
+// subject, else (2) an existing account matched by a VERIFIED IdP email (linked
+// now), else (3) a freshly provisioned account. It NEVER sets isAdmin and never
+// grants an existing account anything — federation only authenticates.
 func linkOrProvision(ctx context.Context, db orm.DB, app *schema.Application, prov *schema.Provider, id federatedIdentity) (*schema.User, error) {
 	// Innermost guard on the mint itself: never provision/link a federated identity
 	// into a reserved system org (SuperAdmin) or a tenant this app may not serve.
@@ -474,157 +364,65 @@ func linkOrProvision(ctx context.Context, db orm.DB, app *schema.Application, pr
 	}
 
 	// 1. Already linked by the provider's stable subject — the authoritative match
-	// for a returning federated user (immune to email churn/ambiguity). In the
-	// application's org, then among the accounts the application registered, which
-	// is where they are once it has founded each of them an org: the subject is what
-	// says "this is the same person", and a reach that stops at the application's own
-	// org would answer "new" every time and hand them another account.
+	// for a returning federated user (immune to email churn/ambiguity).
 	if u, err := store.GetUserByConnector(ctx, db, org, binding.field, id.subject); err != nil {
 		return nil, err
 	} else if u != nil {
 		return u, nil
 	}
-	if u, err := store.GetSignupByConnector(ctx, db, app.Name, binding.field, id.subject); err != nil {
-		return nil, err
-	} else if u != nil {
-		return u, nil
-	}
 
-	// 2. An account already holds this address. Resolve that FIRST, whether or not
-	// the IdP vouched for the address, because every answer below turns on it — and
-	// because an ambiguous address (ErrEmailAmbiguous) must refuse here too rather
-	// than be walked past into a third row on the same address.
-	if id.email != "" {
-		u, err := store.GetUserByEmail(ctx, db, org, id.email)
-		if err != nil {
+	// 2. Link to an existing account ONLY on a VERIFIED IdP email. An unverified
+	// email never links (it would let an unproven address take over an account).
+	if id.emailVerified && id.email != "" {
+		if u, err := store.GetUserByEmail(ctx, db, org, id.email); err != nil {
 			return nil, err
-		}
-		// And among the accounts this application registered — the same reach as the
-		// subject above. Without it an address held by someone the application founded
-		// an org for reads as free, the branch below never runs, and they are given a
-		// second account on the address they already hold.
-		if u == nil {
-			if u, err = store.GetSignupByEmail(ctx, db, app.Name, id.email); err != nil {
+		} else if u != nil {
+			*binding.ref(u) = id.subject
+			u.EmailVerified = true
+			if err := saveUser(ctx, db, u); err != nil {
 				return nil, err
 			}
-		}
-		if u != nil {
-			// The link requires proof on BOTH sides, and only one side was ever checked.
-			//
-			// The IdP side was: an unverified IdP email never links, "it would let an
-			// unproven address take over an account". The LOCAL side is the side signup
-			// never proves — it writes EmailVerified: false and nothing a password signup
-			// can reach ever sets it — so the sentence was true and half-enforced. An
-			// attacker signed up with a stranger's address and their own passphrase; when
-			// the real owner arrived with a VERIFIED Google identity, this adopted the
-			// attacker's row, flipped EmailVerified to true, and left the digest alone.
-			// Both parties then held the account, silently, for good. 218 live rows are in
-			// that shape today.
-			//
-			// So: link only onto a row that an unproven credential cannot already open —
-			// one whose own address was proven, or one that carries no password at all.
-			// Otherwise refuse, and do NOT fall through to provision: a second row on one
-			// address is the ambiguity the lookup above refuses to resolve.
-			//
-			// Refusing is the whole cure available here. Adopting the row anyway and
-			// clearing its digest would also evict the attacker, but it silently
-			// destroys the credential of every one of those 218 people the first time
-			// they click a social button, and which of the two parties is at the browser
-			// is exactly what this cannot know. The person who has a password signs in
-			// with it; the person who does not was never locked out. Proving the address
-			// AT SIGNUP is what actually drains the pool.
-			if !id.emailVerified || (!u.EmailVerified && u.PasswordHash != "") {
-				return nil, errAddressHeld
-			}
-			linked, err := updateUser(ctx, db, u.Owner, u.Name, func(_ orm.DB, fresh *schema.User) error {
-				*binding.ref(fresh) = id.subject
-				fresh.EmailVerified = true
-				return nil
-			})
-			if err != nil {
-				return nil, err
-			}
-			return linked, nil
+			return u, nil
 		}
 	}
 
-	// 3. Provision a fresh account — but only where the application lets anyone
-	// register, and only for someone who can be named and reached.
-	//
-	// EnableSignUp is the tenant's own registration switch, enforced at the password
-	// endpoint (signup.go) and the wallet endpoint (wallet/verify.go) and not here, so
-	// an app with it OFF still got brand-new accounts from any enabled social provider:
-	// the one endpoint a tenant could not close was the externally-driven one.
-	if !app.EnableSignUp {
-		return nil, errNoFederatedSignup
-	}
-	// An address is what an account is named after and reached at, so a provider
-	// that shares none is refused rather than turned into a row nobody can use. A
-	// GitHub App ignores the requested scope and answers /user/emails with 403 when
-	// its "Email addresses" permission is missing — which used to mint an account
-	// named after the PROVIDER ("github", then "github2") with an empty email, never
-	// matched to the person's real account and with no way back in.
-	if id.email == "" {
-		return nil, errNoFederatedEmail
-	}
-	// No row holds this address, which is now a property of reaching this line rather
-	// than something to re-check. Federated accounts carry NO password (the digest
-	// stays empty, so password login fails closed) and are never admin.
+	// 3. Provision a fresh account. Federated accounts carry NO password (the
+	// digest stays empty, so password login fails closed) and are never admin.
 	return provisionFederatedUser(ctx, db, app, prov, binding, id)
 }
 
 // provisionFederatedUser creates a new federated account through the ONE
 // canonical user-create path (users.Create, no password → no login-able digest),
-// stamping the provider subject on its connector column. The username comes from
-// allocateName — the same derivation a password signup with no username of its own
-// gets — and the address proof is carried straight from the IdP, on the create's
-// own field rather than in the user body, which cannot state it.
-//
-// The display name reaches DisplayName and stops there: only the ADDRESS may
-// become an identity, which is allocateName's rule to keep.
+// stamping the provider subject on its connector column. The username is
+// system-generated and collision-checked; the email's verified flag is carried
+// straight from the IdP.
 func provisionFederatedUser(ctx context.Context, db orm.DB, app *schema.Application, prov *schema.Provider, binding connectorBinding, id federatedIdentity) (*schema.User, error) {
 	org := app.Organization
-	name, err := allocateName(ctx, db, org, id.email, prov.Type)
-	if err != nil {
-		return nil, fmt.Errorf("federation: %w", err)
+	for attempt := 0; attempt < 4; attempt++ {
+		name := federatedUsername(id.email, prov.Type)
+		taken, err := userExists(ctx, db, org, name)
+		if err != nil {
+			return nil, err
+		}
+		if taken {
+			continue
+		}
+		u := schema.User{
+			Owner:             org,
+			Name:              name,
+			Type:              "normal-user",
+			DisplayName:       firstNonEmpty(id.displayName, name),
+			Email:             id.email,
+			EmailVerified:     id.emailVerified,
+			Avatar:            id.avatar,
+			SignupApplication: app.Name,
+			RegisterType:      "Federation",
+			RegisterSource:    org + "/" + prov.Name,
+		}
+		*binding.ref(&u) = id.subject
+		return users.New(db).Create(ctx, &users.CreateInput{User: u})
 	}
-	u := schema.User{
-		Owner:             org,
-		Name:              name,
-		DisplayName:       firstNonEmpty(id.displayName, name),
-		Email:             id.email,
-		Avatar:            id.avatar,
-		SignupApplication: app.Name,
-		RegisterType:      "Federation",
-		RegisterSource:    org + "/" + prov.Name,
-	}
-	*binding.ref(&u) = id.subject
-	// A federated sign-in makes a PERSON, and the provider vouched for the address.
-	// Both are stated by this code rather than by the user body (see CreateInput):
-	// this is the one create path entitled to say an address was proven, because it
-	// is the one that watched a provider prove it.
-	created, err := users.New(db).Create(ctx, &users.CreateInput{
-		User:          u,
-		Type:          "normal-user",
-		EmailVerified: id.emailVerified,
-	})
-	if err != nil || app.OrgChoiceMode != orgChoiceCreate {
-		return created, err
-	}
-	// A founding application registers the account in its own org and the account
-	// WORKS in an org of its own — the same statement the password endpoint makes,
-	// and the same converge, so a person arrives in the same place whichever endpoint
-	// they came through.
-	slug, err := charter(ctx, db, created)
-	if err != nil {
-		return nil, fmt.Errorf("federation: %w", err)
-	}
-	// Re-read rather than patch the row in hand: the converge moved the account and
-	// made it its org's admin, and the caller mints this person's first token from
-	// what comes back. A row carrying the pre-move owner would name an identity that
-	// no longer exists, and one carrying the pre-move role would state the wrong
-	// standing in their own org.
-	return store.GetUserByName(ctx, db, slug, created.Name)
+	return nil, errors.New("federation: could not allocate a unique username")
 }
 
 // federationProvider resolves the app's ProviderItem named name to its shared
@@ -638,7 +436,7 @@ func federationProvider(app *schema.Application, name string) *schema.Provider {
 		if it == nil || it.Name != name || !it.CanSignIn || it.Provider == nil {
 			continue
 		}
-		if !offerable(it.Provider) {
+		if !isConfigured(it.Provider) {
 			continue
 		}
 		return it.Provider
@@ -655,7 +453,7 @@ func providerOwner(p *schema.Provider) string {
 	return "admin"
 }
 
-// federationCallbackURL is the iam callback iam registers with the IdP and
+// federationCallbackURL is the iam2 callback iam2 registers with the IdP and
 // re-presents at the token exchange. It is PINNED from config, never steered by a
 // request header, so an attacker cannot redirect the IdP leg via X-Forwarded-Host.
 func federationCallbackURL(c *zip.Ctx) string {
@@ -663,13 +461,19 @@ func federationCallbackURL(c *zip.Ctx) string {
 }
 
 // federationBaseURL is the pinned public origin the IdP callback is registered
-// under — the SAME per-brand issuer the tokens carry, resolved through the ONE
-// issuer resolver (issuer.go) keyed on the TRUSTED request host (c.Host(), which
-// ignores X-Forwarded-Host). So a brand's federation callback is registered at
-// that brand's pinned origin, header-immune and never steered to an attacker
-// origin. See resolveIssuer for the fail-closed resolution order.
+// under. In production it is the IAM_ISSUER pin (required — HIP-0112) so the
+// value is fixed and header-immune. Where IAM_ISSUER is unset (dev), it falls
+// back to the DIRECT Host header — NEVER httpx.EffectiveHost, which honors the
+// attacker-suppliable X-Forwarded-Host — so even the dev path cannot be steered
+// to an attacker origin.
 func federationBaseURL(c *zip.Ctx) string {
-	return resolveFederationOrigin(c.Host())
+	if iss := strings.TrimSpace(os.Getenv("IAM_ISSUER")); iss != "" {
+		return strings.TrimRight(iss, "/")
+	}
+	if h := strings.TrimSpace(c.Header("Host")); h != "" {
+		return "https://" + h
+	}
+	return "https://hanzo.id"
 }
 
 // federationOrgAllowed reports whether a federated (external) identity may be
@@ -692,16 +496,25 @@ func federationBaseURL(c *zip.Ctx) string {
 // one was bypassed and still refuses the escalation.
 func federationOrgAllowed(app *schema.Application) bool {
 	org := strings.TrimSpace(app.Organization)
-	if org == "" || policy.IsReservedOrg(org) {
+	if org == "" || reservedOrgs[org] {
 		return false
 	}
-	if policy.IsSigningOwner(app.Owner) {
+	if store.IsSigningCertOwner(app.Owner) {
 		return true // platform app — SuperAdmin-configured, may serve any tenant
 	}
-	if app.ServesAnyOrg() {
+	if app.IsShared || app.OrgChoiceMode != "" {
 		return true
 	}
 	return org == app.Owner
+}
+
+// fedSuccessRedirect returns the browser to the relying party's redirect_uri with
+// the iam2 authorization code and the original app state (RFC 6749 §4.1.2).
+func fedSuccessRedirect(c *zip.Ctx, st *schema.FederationState, code string) error {
+	v := url.Values{}
+	v.Set("code", code)
+	setIfPresent(v, "state", st.AppState)
+	return c.Redirect(302, joinQuery(st.RedirectUri, v))
 }
 
 // fedErrorRedirect returns an OAuth error to the relying party's redirect_uri
@@ -758,7 +571,7 @@ type connectorBinding struct {
 // name is the EXACT json/orm name (already lowercase): orm's filter lowercases
 // only the FIRST rune, so a Go field name like "GitHub" would query '$.gitHub'
 // (the tag is 'github') — passing the exact json name is the one correct way, and
-// this registry is its single source of truth. Only the connectors iam can
+// this registry is its single source of truth. Only the connectors iam2 can
 // federate are listed; anything else fails closed.
 var connectorRegistry = map[string]connectorBinding{
 	"google":          {"google", func(u *schema.User) *string { return &u.Google }},
@@ -781,4 +594,49 @@ var connectorRegistry = map[string]connectorBinding{
 func connectorFor(providerType string) (connectorBinding, bool) {
 	b, ok := connectorRegistry[strings.ToLower(strings.TrimSpace(providerType))]
 	return b, ok
+}
+
+// federatedUsername generates a valid, human-friendly, collision-resistant
+// username for a provisioned account: the email local-part (or provider name)
+// sanitized to a handle, guaranteed to start with a letter (so it passes the
+// username policy), plus a random suffix so concurrent provisions never collide.
+func federatedUsername(email, providerType string) string {
+	base := ""
+	if at := strings.IndexByte(email, '@'); at > 0 {
+		base = email[:at]
+	}
+	base = sanitizeHandle(base)
+	if base == "" {
+		base = sanitizeHandle(providerType)
+	}
+	if base == "" {
+		base = "user"
+	}
+	if base[0] < 'a' || base[0] > 'z' {
+		base = "u" + base
+	}
+	return base + "-" + randHex(4)
+}
+
+// randHex returns 2n lowercase hex chars of cryptographic randomness.
+func randHex(n int) string {
+	b := make([]byte, n)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+// sanitizeHandle reduces s to a lowercase [a-z0-9._-] handle, capped at 24 chars.
+func sanitizeHandle(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	out := make([]byte, 0, len(s))
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '.' || ch == '_' || ch == '-' {
+			out = append(out, ch)
+		}
+	}
+	if len(out) > 24 {
+		out = out[:24]
+	}
+	return string(out)
 }

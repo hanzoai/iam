@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 package oidc
 
 import (
@@ -7,14 +6,14 @@ import (
 
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/internal/schema"
 )
 
-// getAccountReq drives GET the account endpoint with an optional bearer,
+// getAccountReq drives GET /v1/iam/get-account with an optional bearer,
 // returning the status code and decoded envelope.
 func getAccountReq(t *testing.T, app *zip.App, bearer string) (int, map[string]any) {
 	t.Helper()
-	req := formReqNoBody("GET", PathAccount)
+	req := formReqNoBody("GET", PathGetAccount)
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
 	}

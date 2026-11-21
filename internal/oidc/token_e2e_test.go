@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -16,10 +15,8 @@ import (
 	"github.com/hanzoai/orm"
 	ormdb "github.com/hanzoai/orm/db"
 
-	"github.com/hanzoai/iam/internal/keyring"
-	"github.com/hanzoai/iam/pkg/pkce"
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // openTestDB opens a fresh SQLite store; the schema init registers the kinds.
@@ -28,7 +25,7 @@ func openTestDB(t *testing.T) orm.DB {
 	_ = schema.Kinds() // force the schema package init() (kind registration)
 	dir := t.TempDir()
 	db, err := orm.OpenSQLite(&ormdb.SQLiteDBConfig{
-		Path:   filepath.Join(dir, "iamtest.db"),
+		Path:   filepath.Join(dir, "iam2test.db"),
 		Config: ormdb.SQLiteConfig{BusyTimeout: 5000, JournalMode: "WAL"},
 	})
 	if err != nil {
@@ -43,12 +40,12 @@ func seedAppWithCert(t *testing.T, db orm.DB, key *rsa.PrivateKey) *schema.Appli
 	t.Helper()
 	ctx := context.Background()
 
-	// Cert row: identity only. The PEM is deployment-supplied, held in memory.
+	// Cert row with a PEM RSA private key.
 	c := orm.New[schema.Cert](db)
 	c.Owner = "admin"
 	c.Name = "cert-hanzo"
 	c.CryptoAlgorithm = "RS256"
-	keyring.Set(c.Name, rsaKeyToPEM(t, key))
+	c.PrivateKey = rsaKeyToPEM(t, key)
 	c.SetId("admin/cert-hanzo")
 	if err := c.CreateCtx(ctx); err != nil {
 		t.Fatalf("seed cert: %v", err)
@@ -80,24 +77,9 @@ func TestTokenExchange_EndToEnd(t *testing.T) {
 	ctx := context.Background()
 	now := time.Unix(1_800_000_000, 0)
 
-	// The code below is minted for hanzo/alice, so hanzo/alice must EXIST. This
-	// fixture used to omit her and still get a signed token, because a subject that
-	// resolved to no user row was minted as a bare `sub` with every other claim
-	// empty. That is the defect userClaims now refuses: nameless is not "unknown
-	// profile", it is a credential account.Payer reads as "not a person" and bills
-	// to the signup org's own balance. Seeding her makes this exercise the real
-	// resolution (identityOf) rather than the fallback that replaced it.
-	alice := orm.New[schema.User](db)
-	alice.Owner = "hanzo"
-	alice.Name = "alice"
-	alice.SetId("hanzo/alice")
-	if err := alice.CreateCtx(ctx); err != nil {
-		t.Fatalf("seed hanzo/alice: %v", err)
-	}
-
 	// --- authorize side: mint a PKCE-bound code and persist it ---
 	verifier := "e2e-verifier-000000000000000000000000000000000000"
-	code, err := MintCode(app, "hanzo/alice", "openid profile", pkce.Challenge(verifier), "S256", "", now)
+	code, err := MintCode(app, "hanzo/alice", "openid profile", ComputeS256Challenge(verifier), "S256", "", now)
 	if err != nil {
 		t.Fatal(err)
 	}

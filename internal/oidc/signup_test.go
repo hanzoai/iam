@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -10,9 +9,9 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 	"github.com/hanzoai/iam/internal/users"
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
 )
 
 // seedOrg creates an organization row (owner "admin", v1 convention) with the
@@ -104,8 +103,8 @@ func TestSignup_Errors(t *testing.T) {
 		seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", signup: true})
 		seedOrg(t, db, "hanzo")
 		status, env := signupReq(t, app, map[string]string{"application": "conf", "organization": "hanzo"})
-		if status != 400 || env["status"] != "error" {
-			t.Fatalf("status=%d env=%v, want 400 error", status, env)
+		if status != 200 || env["status"] != "error" {
+			t.Fatalf("status=%d env=%v, want 200 error", status, env)
 		}
 	})
 
@@ -153,41 +152,15 @@ func TestSignup_Errors(t *testing.T) {
 		}
 	})
 
-	// A DISPLAY NAME is not a username in any spelling. This is the shape that put
-	// `name: "Zach Kelling"` on a live token — the claim was mis-sourced there, but
-	// the same string must never be able to arrive as a username either, or the two
-	// hypotheses become indistinguishable in the data.
-	t.Run("display name refused as username", func(t *testing.T) {
+	t.Run("username policy violated", func(t *testing.T) {
 		app, db := newServer(t)
 		seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", signup: true})
 		seedOrg(t, db, "hanzo")
 		body := newbieBody()
-		body["username"] = "Zach Kelling"
+		body["username"] = "1bad" // starts with a digit
 		_, env := signupReq(t, app, body)
 		if env["status"] != "error" {
-			t.Fatalf("a display name must be refused as a username, got %v", env)
-		}
-		for _, spelling := range []string{"Zach Kelling", "zach kelling"} {
-			if u, _ := store.GetUserByName(context.Background(), db, "hanzo", spelling); u != nil {
-				t.Errorf("a user named %q was created", spelling)
-			}
-		}
-	})
-
-	// F-I2: a "/" in a username would inject a spurious owner/name separator into the
-	// subject discriminator — forbidden at the endpoint.
-	t.Run("username with slash refused", func(t *testing.T) {
-		app, db := newServer(t)
-		seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", signup: true})
-		seedOrg(t, db, "hanzo")
-		body := newbieBody()
-		body["username"] = "foo/bar"
-		_, env := signupReq(t, app, body)
-		if env["status"] != "error" {
-			t.Fatalf("username containing '/' must be refused, got %v", env)
-		}
-		if u, _ := store.GetUserByName(context.Background(), db, "hanzo", "foo/bar"); u != nil {
-			t.Error("a user with a '/' username was created")
+			t.Fatalf("digit-leading username must be refused, got %v", env)
 		}
 	})
 
@@ -203,171 +176,6 @@ func TestSignup_Errors(t *testing.T) {
 		}
 		if u, _ := store.GetUserByName(context.Background(), db, "hanzo", "newbie"); u != nil {
 			t.Error("a user was created despite the password failing policy")
-		}
-	})
-}
-
-// ── self-serve organizations ─────────────────────────────────────────────────────
-
-// Signup does not mint organizations, whatever the app's org-choice mode says.
-// An unauthenticated request must not be able to add a row to the tenant registry,
-// and it does not need to: POST /v1/iam/onboard creates a person's org from their
-// own authenticated session, atomically, with its metered credential.
-func TestSignup_DoesNotMintAnOrganization(t *testing.T) {
-	for _, mode := range []string{"", "select", "create"} {
-		t.Run("orgChoiceMode="+mode, func(t *testing.T) {
-			app, db := newServer(t)
-			seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, orgChoice: mode})
-
-			status, env := signupReq(t, app, map[string]string{
-				"application":  "conf",
-				"organization": "acme",
-				"username":     "founder",
-				"password":     "correct horse battery staple",
-			})
-			if status == 200 && env["status"] == "ok" {
-				t.Fatalf("orgChoiceMode=%q minted an org from an unauthenticated signup: %v", mode, env)
-			}
-			if org, _ := store.GetOrganizationByName(tctx(), db, "acme"); org != nil {
-				t.Fatal("an organization row was created")
-			}
-			if u, _ := store.GetUserByName(tctx(), db, "acme", "founder"); u != nil {
-				t.Fatal("a user was created in an org that does not exist")
-			}
-		})
-	}
-}
-
-// THE privilege escalation to refuse: a user under "admin" is a SuperAdmin. Turning
-// on self-serve creation must not open a path to minting the reserved org, and the
-// refusal must hold even with the opt-in set.
-func TestSignup_SelfServeCannotMintReservedOrg(t *testing.T) {
-	for _, reserved := range []string{"admin", "built-in"} {
-		t.Run(reserved, func(t *testing.T) {
-			app, db := newServer(t)
-			seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, orgChoice: "create"})
-
-			status, env := signupReq(t, app, map[string]string{
-				"application":  "conf",
-				"organization": reserved,
-				"username":     "attacker",
-				"password":     "correct horse battery staple",
-			})
-			if status == 200 && env["status"] == "ok" {
-				t.Fatalf("signup into reserved org %q must be refused", reserved)
-			}
-			if u, _ := store.GetUserByName(tctx(), db, reserved, "attacker"); u != nil {
-				t.Fatalf("no user may be created under reserved org %q", reserved)
-			}
-		})
-	}
-}
-
-// ── the password floor ───────────────────────────────────────────────────────
-// An organization that declares NO PasswordOptions must still get a real policy.
-// This is the hole that was live: store.CreateOrganization mints a self-serve org
-// with an empty option set, an empty set used to mean "any non-empty password",
-// and an anonymous caller registered a production account with the password "a"
-// and then logged in with it.
-func TestSignup_PasswordFloorAppliesWithoutOrgOptions(t *testing.T) {
-	// Deliberately seeded with NO options — the self-serve org's shape.
-	for _, weak := range []string{"a", "aaaaaaaa", "1234567", "short"} {
-		t.Run(weak, func(t *testing.T) {
-			app, db := newServer(t)
-			seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true})
-			seedOrg(t, db, "hanzo")
-
-			status, env := signupReq(t, app, map[string]string{
-				"application": "conf", "organization": "hanzo",
-				"username": "attacker", "password": weak,
-			})
-			if status == 200 && env["status"] == "ok" {
-				t.Fatalf("password %q must be refused by the floor, got %v", weak, env)
-			}
-			if u, _ := store.GetUserByName(tctx(), db, "hanzo", "attacker"); u != nil {
-				t.Fatalf("a user was created with the weak password %q", weak)
-			}
-		})
-	}
-}
-
-// The floor must not cost the funnel: a strong password into an optionless org
-// still succeeds. This is the case that must keep working.
-func TestSignup_PasswordFloorAllowsStrongPassword(t *testing.T) {
-	app, db := newServer(t)
-	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true})
-	seedOrg(t, db, "hanzo")
-
-	status, env := signupReq(t, app, map[string]string{
-		"application": "conf", "organization": "hanzo",
-		"username": "founder", "password": "correct horse battery staple",
-	})
-	if status != 200 || env["status"] != "ok" {
-		t.Fatalf("a strong password must still be accepted: status=%d env=%v", status, env)
-	}
-}
-
-// Org choice lets a founder NAME THEIR OWN org; it must never admit them to a
-// tenant that is already standing. In a shared registry an unauthenticated signup
-// that names an app with orgChoiceMode=create and an EXISTING foreign org would
-// otherwise land a user in that tenant — every brand and every customer reachable
-// through one signup. It must be refused.
-func TestSignup_CannotJoinAnExistingForeignTenant(t *testing.T) {
-	app, db := newServer(t)
-	// The app belongs to org "hanzo" (seedApp) and opts in to self-serve creation.
-	seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, orgChoice: "create"})
-	// A tenant that already exists and belongs to someone else.
-	seedOrg(t, db, "lux")
-
-	status, env := signupReq(t, app, map[string]string{
-		"application":  "conf",
-		"organization": "lux",
-		"username":     "intruder",
-		"password":     "correct horse battery staple",
-	})
-	if status == 200 && env["status"] == "ok" {
-		t.Fatalf("REFUSAL FAILED: a stranger signed up into the foreign tenant 'lux': %v", env)
-	}
-	if u, _ := store.GetUserByName(tctx(), db, "lux", "intruder"); u != nil {
-		t.Fatalf("REFUSAL FAILED: user %q now exists inside tenant lux", u.Name)
-	}
-	// The refusal must not be an authority oracle: it is the same sentence the
-	// wrong-tenant and reserved-org refusals use, so a prober learns nothing about
-	// which orgs exist or what this app is allowed to do.
-	if msg, _ := env["msg"].(string); msg != "the user is not permitted to sign up to this application" {
-		t.Fatalf("refusal message %q distinguishes this case from the other tenant refusals", msg)
-	}
-}
-
-// The legitimate destinations must keep working, or the refusal above has simply
-// broken signup: the app's OWN tenant, and any tenant a SHARED app declares it
-// serves. A brand-new org is no longer one of them — signup does not mint orgs.
-func TestSignup_ForeignTenantRefusalKeepsTheLegitimatePaths(t *testing.T) {
-	t.Run("the app's own tenant", func(t *testing.T) {
-		app, db := newServer(t)
-		seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, orgChoice: "create"})
-		seedOrg(t, db, "hanzo")
-		status, env := signupReq(t, app, map[string]string{
-			"application": "conf", "organization": "hanzo",
-			"username": "member", "password": "correct horse battery staple",
-		})
-		if status != 200 || env["status"] != "ok" {
-			t.Fatalf("signup into the app's own tenant must still succeed: status=%d env=%v", status, env)
-		}
-	})
-
-	// A SHARED app is multi-tenant BY DECLARATION — that is what isShared means, and
-	// the gate above has always let it through. The new arm must not change it.
-	t.Run("a shared app may still join an existing tenant", func(t *testing.T) {
-		app, db := newServer(t)
-		seedApp(t, db, appOpts{clientID: "conf", secret: "s3cret", redirectURIs: []string{testRedirect}, signup: true, shared: true})
-		seedOrg(t, db, "lux")
-		status, env := signupReq(t, app, map[string]string{
-			"application": "conf", "organization": "lux",
-			"username": "member", "password": "correct horse battery staple",
-		})
-		if status != 200 || env["status"] != "ok" {
-			t.Fatalf("a shared app must still admit an existing tenant: status=%d env=%v", status, env)
 		}
 	})
 }

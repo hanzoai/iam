@@ -1,34 +1,20 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package authz
 
-import (
-	"context"
-	"testing"
+import "testing"
 
-	"github.com/hanzoai/iam/internal/principal"
-)
-
-// authorize asks the seam's own decision the way the seam asks it: IAM resolves the
-// principal and folds the path onto an entity noun, policy.Principal.CanEntity
-// decides. Going through Can rather than around it is what makes these tables a
-// test of the live path and not of a paraphrase of it.
-func authorize(p *principal.Principal, method, entity, owner, name string) bool {
-	return Can(principal.Bind(context.Background(), p), method, entity, owner, name)
-}
-
-// The pure policy, tested exhaustively and independent of HTTP. This table is the
-// full truth of the decision the seam applies.
+// The pure policy, tested exhaustively and independent of HTTP. authorize IS the
+// security decision; this table is its full truth.
 func TestAuthorizePolicy(t *testing.T) {
-	super := &principal.Principal{Org: "admin", User: "root", Sudo: true}
-	orgAdmin := &principal.Principal{Org: "hanzo", User: "boss", Admin: true}
-	regular := &principal.Principal{Org: "hanzo", User: "alice"}
-	builtin := &principal.Principal{Org: "built-in", User: "svc", Admin: true} // NOT super
+	super := &Principal{Org: "admin", User: "root", Super: true}
+	orgAdmin := &Principal{Org: "hanzo", User: "boss", Admin: true}
+	regular := &Principal{Org: "hanzo", User: "alice"}
+	builtin := &Principal{Org: "built-in", User: "svc", Admin: true} // NOT super
 
 	cases := []struct {
 		name   string
-		p      *principal.Principal
+		p      *Principal
 		method string
 		entity string
 		owner  string
@@ -72,37 +58,34 @@ func TestAuthorizePolicy(t *testing.T) {
 // SuperAdmin is exactly org=="admin"; built-in is NOT super — the built-in gap
 // the poisoning gate must close depends on this.
 func TestSuperIsAdminOrgOnly(t *testing.T) {
-	if (&principal.Principal{Org: "built-in", Sudo: false}).Sudo {
+	if (&Principal{Org: "built-in", Super: false}).Super {
 		t.Fatal("built-in must not be SuperAdmin")
 	}
 	// A built-in-org principal fails the reserved-owner write even for its own org.
-	if authorize(&principal.Principal{Org: "built-in", Admin: true}, "POST", "certs", "built-in", "k") {
+	if authorize(&Principal{Org: "built-in", Admin: true}, "POST", "certs", "built-in", "k") {
 		t.Fatal("built-in admin must not write built-in signing certs")
 	}
 }
 
 // Public vs gated is no longer a path allow-list this package owns — it is
-// STRUCTURAL, decided by which group a route is registered on in routes.Route
-// (the public group holds no Guard, the authed group holds it). The boundary is
-// therefore proven end-to-end over the real registered router: TestPublicRoutesNeedNoBearer
+// STRUCTURAL, decided by which group a route is registered on in routes.Mount
+// (the public group before the Guard, everything else after it). The boundary is
+// therefore proven end-to-end over the real mounted router: TestPublicRoutesNeedNoBearer
 // (public routes reachable without a bearer), TestUnauthenticatedWriteIs401 /
 // TestCrossOrgWriteIs403 (authed routes gated), and TestFrameworkSideDoorsAreGated
 // (/mcp + /openapi gated) in authz_cases_test.go.
 
 func TestEntityOf(t *testing.T) {
 	cases := map[string]string{
-		"/v1/iam/users":                  "users",
-		"/v1/iam/users/hanzo/alice":      "users",
-		"/v1/iam/certs/admin/cert-hanzo": "certs",
-		// Singular natives fold to the plural the policy is written in. It read
-		// "application" until that split the policy: the legacy verb folded to
-		// "applications" and matched the app self-read clause, while this native
-		// route stayed singular, matched nothing, and 403'd the same caller.
-		"/v1/iam/application": "applications",
-		"/v1/iam/audit-logs":  "audit-logs",
-		"/mcp":                "",
-		"/healthz":            "",
-		"/v1/iam/":            "",
+		"/v1/iam/users":        "users",
+		"/v1/iam/users/get":    "users",
+		"/v1/iam/users/update": "users",
+		"/v1/iam/certs/delete": "certs",
+		"/v1/iam/application":  "application",
+		"/v1/iam/audit-logs":   "audit-logs",
+		"/mcp":                 "",
+		"/healthz":             "",
+		"/v1/iam/":             "",
 	}
 	for path, want := range cases {
 		if got := entityOf(path); got != want {

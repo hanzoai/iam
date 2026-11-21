@@ -1,23 +1,21 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
-// Package featurestore implements feature.Store over the iam orm store, so the
+// Package featurestore implements feature.Store over the iam2 orm store, so the
 // hanzoiam/* enterprise modules read/write the SAME identity data as the core.
-// Internal: the core (server.Route) constructs it and hands the interface to
-// feature.RouteAll — modules never see this package, only the feature.Store seam.
+// Internal: the core (server.Mount) constructs it and hands the interface to
+// feature.MountAll — modules never see this package, only the feature.Store seam.
 package featurestore
 
 import (
 	"context"
-	"time"
 
 	"github.com/hanzoai/orm"
 
 	"github.com/hanzoai/iam/feature"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 	"github.com/hanzoai/iam/internal/users"
 	"github.com/hanzoai/iam/pkg/model"
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
 )
 
 type ormStore struct {
@@ -32,17 +30,12 @@ func (s *ormStore) GetUser(ctx context.Context, owner, name string) (*model.User
 	return store.GetUserByName(ctx, s.db, owner, name)
 }
 
-// GetUserByID resolves the seam's user id — schema.User.Id, the stable opaque
-// UUID the OIDC `sub` carries — through store.GetUserById, the ONE subject
-// resolver, so a module and the core name a user the same way.
-//
-// It must NOT be orm.Get, which keys on the orm STORAGE id: that is a different
-// value (a v2-native row's surrogate, a migrated row's "owner/name"), so the id
-// AddUser assigns would not resolve here, and the "owner/name" shape is both
-// mutable and slash-bearing — unusable as an opaque single-segment resource id.
-// Going through store also keeps the fail-closed check on a duplicated subject.
-func (s *ormStore) GetUserByID(ctx context.Context, id string) (*model.User, error) {
-	return store.GetUserById(ctx, s.db, id)
+func (s *ormStore) GetUserByID(_ context.Context, id string) (*model.User, error) {
+	u, err := orm.Get[schema.User](s.db, id)
+	if err != nil {
+		return nil, err
+	}
+	return u, nil
 }
 
 func (s *ormStore) GetGlobalUsers(ctx context.Context, offset, limit int) ([]*model.User, int, error) {
@@ -119,13 +112,8 @@ func (s *ormStore) SetPassword(ctx context.Context, owner, name, plaintext strin
 	return true, nil
 }
 
-// VerifyPassword authenticates a human credential for the LDAP-bind feature seam. It
-// goes through users.Authenticate — the ONE lockout-enforcing choke point the login
-// form, the ROPC grant, and the registry token endpoint share — so an LDAP bind is
-// rate-limited (argon2id v1 / bcrypt v2, keyed by the org's password type) exactly
-// like every other human-credential path; no hash ever leaves the core. A locked
-// account returns false (the bind fails), folding lockout into the same negative
-// result as a wrong password — LDAP has no distinct "locked" signal.
+// VerifyPassword defers to the core's digest-scheme-aware verifier (argon2id v1 /
+// bcrypt v2), keyed by the org's password type — no hash ever leaves the core.
 func (s *ormStore) VerifyPassword(ctx context.Context, owner, name, plaintext string) (bool, error) {
 	u, err := store.GetUserByName(ctx, s.db, owner, name)
 	if err != nil {
@@ -138,6 +126,5 @@ func (s *ormStore) VerifyPassword(ctx context.Context, owner, name, plaintext st
 	if org, oerr := store.GetOrganizationByName(ctx, s.db, owner); oerr == nil && org != nil {
 		pwType = org.PasswordType
 	}
-	ok, _ := users.Authenticate(ctx, s.db, u, plaintext, pwType, time.Now())
-	return ok, nil
+	return users.VerifyPassword(u, plaintext, pwType), nil
 }

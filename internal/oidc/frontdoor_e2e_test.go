@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 package oidc
 
 import (
@@ -10,14 +9,13 @@ import (
 
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/internal/sessions"
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/internal/schema"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // sessionCookieFor drives a bare (type=login) portal sign-in for hanzo/alice and
 // returns the "name=value" of the session cookie it set — the credential the
-// native session routes resolve the caller from.
+// front-door session routes resolve the caller from.
 func sessionCookieFor(t *testing.T, app *zip.App) string {
 	t.Helper()
 	form := url.Values{
@@ -64,10 +62,10 @@ func TestSignin_CodeExchangeSetsSessionAndReturnsAccount(t *testing.T) {
 	}
 	// It establishes the durable session get-account resolves from.
 	cookie := resp.Header.Get("Set-Cookie")
-	if !strings.HasPrefix(cookie, sessions.CookieName+"=") {
+	if !strings.HasPrefix(cookie, "hanzo_session=") {
 		t.Fatalf("signin did not set the session cookie: %q", cookie)
 	}
-	req := formReqNoBody("GET", PathAccount)
+	req := formReqNoBody("GET", PathGetAccount)
 	req.Header.Set("Cookie", cookieKV(cookie))
 	resp2, body2 := do(t, app, req)
 	if resp2.StatusCode != 200 || decode(t, body2)["status"] != "ok" {
@@ -130,7 +128,7 @@ func TestUpdatePreferences_ShallowMergeRoundTrip(t *testing.T) {
 	cookie := sessionCookieFor(t, app)
 
 	post := func(patch any) map[string]any {
-		req := jsonReq("POST", PathPreferences, patch)
+		req := jsonReq("POST", PathUpdatePreferences, patch)
 		req.Header.Set("Cookie", cookie)
 		resp, body := do(t, app, req)
 		env := decode(t, body)

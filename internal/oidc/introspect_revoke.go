@@ -1,5 +1,4 @@
-// Copyright 2026 Hanzo AI, Inc.
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Hanzo AI, Inc. All rights reserved.
 
 package oidc
 
@@ -10,8 +9,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
-	"github.com/hanzoai/iam/pkg/schema"
-	"github.com/hanzoai/iam/pkg/store"
+	"github.com/hanzoai/iam/internal/store"
 )
 
 // RFC 7662 Token Introspection + RFC 7009 Token Revocation — the two standard
@@ -35,51 +33,34 @@ func routeIntrospectRevoke(r zip.Router, db orm.DB) {
 	r.Post(PathRevoke, revokeHandler(db))
 }
 
-// authTokenClient authenticates the CALLING CLIENT, and only the client:
-// client_id names it, and a client that HOLDS a secret must present it
-// (constant-time). A client that holds none is PUBLIC, and client_id is the whole
-// of what it can present — the same bounded relaxation authorizationCodeGrant and
-// refreshTokenGrant already make for the loopback PKCE clients. It never widens a
-// confidential client: a stored secret is always demanded and always verified,
-// and a nil/unknown app fails closed.
-//
-// It reads NOTHING about the token, so the status code it produces cannot tell an
-// unauthenticated caller whether the token it sent exists (RFC 7009 §2.2). WHAT a
-// caller may then do is a separate question, answered by each handler below.
-func authTokenClient(ctx context.Context, db orm.DB, c *zip.Ctx) (*schema.Application, bool) {
+// authConfidentialClient authenticates the calling client and requires it to be
+// CONFIDENTIAL (holds a verified secret). Introspection and revocation are
+// privileged token-management operations; a public client may not call them.
+// Constant-time secret compare; a nil app or empty stored secret fails closed.
+func authConfidentialClient(ctx context.Context, db orm.DB, c *zip.Ctx) (name string, ok bool) {
 	clientID, clientSecret := clientAuth(c)
 	if clientID == "" {
-		return nil, false
+		return "", false
 	}
 	app, err := store.GetApplicationByClientId(ctx, db, clientID)
-	if err != nil || app == nil {
-		return nil, false
+	if err != nil || app == nil || app.ClientSecret == "" {
+		return "", false
 	}
-	if app.ClientSecret != "" &&
-		subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
-		return nil, false
+	if subtle.ConstantTimeCompare([]byte(clientSecret), []byte(app.ClientSecret)) != 1 {
+		return "", false
 	}
-	return app, true
+	return app.Name, true
 }
 
-// introspectHandler answers whether an access token is still good, and what it
-// is good for — the check a resource server of yours makes before honouring a
-// token it did not mint.
-//
-// A token counts as active only if it verifies AND has not been revoked, so a
-// revoked token reads as dead here immediately rather than until it expires. A
-// token that is unknown, expired or revoked answers simply that it is not
-// active, and nothing more — the endpoint is not a way to learn about tokens you
-// were not given.
+// introspectHandler implements RFC 7662. Active iff the grant row still exists
+// (revocation-aware, the same liveness check userinfo makes) AND the JWT verifies
+// under the trusted keys. The response carries the standard introspection claims;
+// an inactive/absent/unauthenticated-target token returns only `{active:false}`.
 func introspectHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		setTokenCacheHeaders(c)
 		ctx := c.Context()
-		// Introspection reports on tokens the caller did not necessarily issue, so
-		// it stays CONFIDENTIAL-only: RFC 7662 §2.1 addresses it to a protected
-		// resource, and a public client_id is unauthenticated by construction.
-		app, ok := authTokenClient(ctx, db, c)
-		if !ok || app.ClientSecret == "" {
+		if _, ok := authConfidentialClient(ctx, db, c); !ok {
 			return tokenErrorClient(c, "client authentication failed")
 		}
 
@@ -135,36 +116,19 @@ func introspectHandler(db orm.DB) zip.Handler {
 	}
 }
 
-// revokeHandler retires a token before it expires — what you call when someone
-// signs out or a credential may have leaked.
-//
-// Revoking an access token kills that token. Revoking a REFRESH token kills the
-// whole chain it belongs to, so no further access tokens can be minted from it
-// and every token already minted from it dies with it.
-//
-// A token that is not yours, or that never existed, answers success and does
-// nothing — so the endpoint cannot be used to discover which tokens are real.
-//
-// PUBLIC clients revoke too, and must: sign-out is the only control a long-lived
-// refresh token has. A native app or CLI is a public PKCE client and holds no
-// secret, so requiring one here would leave signing out as a local delete —
-// forgetting a credential that stays spendable for the rest of its lifetime.
-//
-// Widening authentication does not widen authority. The caller must still POSSESS
-// the token — and possession already permits USE, of which revocation is the
-// strict opposite — and the row must belong to the client that presents it, so a
-// public client_id buys the ability to destroy exactly what its holder could
-// otherwise spend. RFC 6749 §3.2.1 is the same reading: a client with no
-// credentials identifies itself with client_id.
+// revokeHandler implements RFC 7009. A confidential client revokes a token that
+// was issued to IT (§2.1) — an access token deletes that grant row; a refresh
+// token revokes the whole rotation family so no further access tokens can be
+// minted and every sibling dies. A token belonging to another client, or an
+// unknown token, is a silent 200 (no revocation, no oracle — §2.2).
 func revokeHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		setTokenCacheHeaders(c)
 		ctx := c.Context()
-		app, ok := authTokenClient(ctx, db, c)
+		clientName, ok := authConfidentialClient(ctx, db, c)
 		if !ok {
 			return tokenErrorClient(c, "client authentication failed")
 		}
-		clientName := app.Name
 
 		tokenStr := param(c, "token")
 		if tokenStr == "" {
