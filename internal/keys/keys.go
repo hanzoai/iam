@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
@@ -53,6 +54,10 @@ func Route(app *zip.Group, db orm.DB) {
 // them; principal.Scope turns the two into one answer.
 type ListRequest struct {
 	Owner string `json:"owner,omitempty"`
+	// User narrows the list to the keys that speak for one person: "<org>/<name>",
+	// or a bare name for a person of Owner. Keys that name no one, or name anyone
+	// else, are left out.
+	User string `json:"user,omitempty"`
 }
 
 // ListResponse is the owner-scoped key set, newest first.
@@ -81,9 +86,18 @@ func id(owner, name string) string { return owner + "/" + name }
 // Which organization comes from your credentials, not from the request: you read
 // your own and no one else's. The capability that admits a confidential client to
 // this collection does not itself name a tenant, so the tenant is decided here.
+// A client that mints keys for people may also read back one person's keys in
+// the organization it minted them in, by naming that person as user.
 func list(db orm.DB) zip.TypedHandler[ListRequest, ListResponse] {
 	return func(ctx context.Context, in *ListRequest) (*ListResponse, error) {
-		owner, err := principal.Scope(ctx, in.Owner)
+		holder := ""
+		if in.User != "" {
+			holder = qualify(in.Owner, in.User)
+			if o, n, _ := strings.Cut(holder, "/"); o == "" || n == "" {
+				return nil, zip.ErrBadRequest("user must name a person: <org>/<name>, or a name within owner")
+			}
+		}
+		owner, err := listScope(ctx, in.Owner, holder)
 		if err != nil {
 			return nil, err
 		}
@@ -97,10 +111,38 @@ func list(db orm.DB) zip.TypedHandler[ListRequest, ListResponse] {
 		}
 		out := &ListResponse{Keys: make([]schema.Key, 0, len(items))}
 		for _, k := range items {
+			if holder != "" && (k.User == "" || qualify(k.Owner, k.User) != holder) {
+				continue
+			}
 			out.Keys = append(out.Keys, *k.Mask())
 		}
 		return out, nil
 	}
+}
+
+// listScope is the organization a listing reads. principal.Scope decides it,
+// with one addition: a confidential client may read the keys of the ONE holder it
+// names, in the organization it names.
+//
+// That read is what its write already implies. A client reaches this collection
+// only by holding the key-mint capability (the Guard and the op seam both ask
+// authz.capFor("keys")), and that capability creates, rotates and revokes a
+// holder's keys in any tenant. Refused the read of those same rows, it could
+// replace a key and could not see that one exists: its caller reported "no key",
+// and the next mint destroyed the live one. The service-account surface already
+// reads mint as a superset of read; this is narrower: one holder, never a
+// tenant's whole key set, and never its integrations, which name no holder. A
+// reserved organization stays unreadable, here as at the Guard.
+func listScope(ctx context.Context, owner, holder string) (string, error) {
+	scoped, err := principal.Scope(ctx, owner)
+	if err == nil {
+		return scoped, nil
+	}
+	p, ok := principal.From(ctx)
+	if ok && p != nil && p.App != nil && holder != "" && owner != "" && !policy.IsReservedOrg(owner) {
+		return owner, nil
+	}
+	return "", err
 }
 
 // get returns one API key: what it is called, what it may reach, and when it was

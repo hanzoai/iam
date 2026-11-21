@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/hanzoai/orm"
@@ -759,5 +760,50 @@ func TestScope_ACapabilityNamesACollectionNotATenant(t *testing.T) {
 					collection, unnamed.status, owners, unnamed.body)
 			}
 		})
+	}
+}
+
+// A minter reads back ONE holder's keys in a tenant it does not serve, through
+// the real Guard and handler — the read its mint already implies. The tenant's
+// whole set (TestScope_ACapabilityNamesACollectionNotATenant) and its
+// integrations, which name no holder, stay out of reach.
+func TestScope_AMinterReadsOneHoldersKeysInATenant(t *testing.T) {
+	h := newHarness(t)
+	seedScopeFixture(t, h)
+	t.Setenv("IAM_KEY_MINT_ALLOWED_APPS", "hanzo-console")
+	seedHeldKey(t, h.db, foreignRealOrg, "alice-key", foreignRealOrg+"/lux-alice")
+	seedHeldKey(t, h.db, foreignRealOrg, "bob-key", foreignRealOrg+"/lux-bob")
+	seedKey(t, h.db, foreignRealOrg, "lux-integration")
+
+	auth := asApp("hanzo-console", "s3cret")
+	got := h.send(t, "GET", "/v1/iam/keys?owner="+foreignRealOrg+"&user="+foreignRealOrg+"/lux-alice", auth, nil)
+	if got.status != 200 {
+		t.Fatalf("the minter reading lux-alice's keys = %d, want 200: %s", got.status, got.body)
+	}
+	if !strings.Contains(got.body, "alice-key") {
+		t.Errorf("lux-alice's key is missing from her own read-back: %s", got.body)
+	}
+	for _, other := range []string{"bob-key", "lux-integration"} {
+		if strings.Contains(got.body, other) {
+			t.Errorf("LEAK: reading lux-alice's keys returned %q: %s", other, got.body)
+		}
+	}
+	if empty := h.send(t, "GET", "/v1/iam/keys?owner="+foreignRealOrg+"&user="+foreignRealOrg+"/", auth, nil); empty.status != 400 {
+		t.Errorf("a holder with no name = %d, want 400: %s", empty.status, empty.body)
+	}
+	if reserved := h.send(t, "GET", "/v1/iam/keys?owner="+reservedOrg+"&user="+reservedOrg+"/root", auth, nil); reserved.status != 403 {
+		t.Errorf("the minter reading keys in the reserved org = %d, want 403: %s", reserved.status, reserved.body)
+	}
+}
+
+// seedHeldKey adds one API key under a tenant that speaks for holder.
+func seedHeldKey(t *testing.T, db orm.DB, owner, name, holder string) {
+	t.Helper()
+	k := orm.New[schema.Key](db)
+	k.Owner, k.Name, k.User = owner, name, holder
+	k.AccessKey, k.State = "pk-"+owner+"-"+name, "Active"
+	k.SetId(owner + "/" + name)
+	if err := k.CreateCtx(context.Background()); err != nil {
+		t.Fatalf("seed key %s/%s: %v", owner, name, err)
 	}
 }
