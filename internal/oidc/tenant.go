@@ -202,8 +202,8 @@ func parseIssued(ctx context.Context, db orm.DB, raw string, extra ...jwt.Parser
 }
 
 // verifyIssuedBearer is verifyBearer for the endpoints a tenant's own relying
-// party calls (userinfo): an access token under the platform issuer or the
-// organization's. The platform-authority paths keep verifyBearer, which accepts
+// party calls (userinfo): an access token under an issuer this IAM mints under or accepts,
+// or the organization's. The platform-authority paths keep verifyBearer, which accepts
 // the platform's alone.
 func verifyIssuedBearer(ctx context.Context, db orm.DB, raw string) (*Claims, error) {
 	claims, err := parseIssued(ctx, db, raw)
@@ -211,7 +211,7 @@ func verifyIssuedBearer(ctx context.Context, db orm.DB, raw string) (*Claims, er
 		return nil, err
 	}
 	_, own := tenantOrgOf(claims.Issuer)
-	if claims.TokenType != "access-token" || len(claims.Audience) == 0 || !(own || issues(claims.Issuer)) {
+	if claims.TokenType != "access-token" || len(claims.Audience) == 0 || !(own || accepts(claims.Issuer)) {
 		return nil, errNotBearer
 	}
 	if schema.Confined(claims.Scope) {

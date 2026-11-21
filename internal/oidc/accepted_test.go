@@ -195,6 +195,11 @@ func TestAcceptedIssuers_AnAccessTokenUnderThemVerifies(t *testing.T) {
 		if (err == nil) != want {
 			t.Errorf("verifyBearer under %s: err=%v, want ok=%v", iss, err, want)
 		}
+		// Userinfo is called with tokens minted before an issuer moved: the same set.
+		_, err = verifyIssuedBearer(ctx, db, mint(iss))
+		if (err == nil) != want {
+			t.Errorf("verifyIssuedBearer under %s: err=%v, want ok=%v", iss, err, want)
+		}
 	}
 	// Mutation check: the set is what lets the hanzo.ai token through.
 	if err := bootWith(t, "https://hanzo.id", "", "https://hanzo.ai", ""); err != nil {
