@@ -757,7 +757,12 @@ func TestFederation_ExpiredHandoffIsSwept(t *testing.T) {
 	seedAppleProvider(t, db, "webapp", m)
 	ctx := context.Background()
 	swept.Store(0)
-	t.Cleanup(func() { swept.Store(0) })
+	prevSync := sweepSync
+	sweepSync = true
+	t.Cleanup(func() {
+		swept.Store(0)
+		sweepSync = prevSync
+	})
 
 	q, cookie := beginApple(t, app, m)
 	id := mustQuery(t, handoffOf(t, appleReply(t, app, url.Values{"state": {q.Get("state")}, "code": {"c"}}, cookie))).Get("state")

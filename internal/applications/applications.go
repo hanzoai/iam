@@ -306,6 +306,7 @@ func Create(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 		if err := in.Create(); err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
+		store.InvalidateApplication(ctx, db, in.ClientId)
 		return in.Mask(), nil
 	}
 }
@@ -390,6 +391,7 @@ func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 		if err := in.Update(); err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
+		store.InvalidateApplication(ctx, db, existing.ClientId, in.ClientId)
 		return in.Mask(), nil
 	}
 }
@@ -417,6 +419,7 @@ func deleteApplication(db orm.DB) zip.TypedHandler[ApplicationRef, DeleteResult]
 		if err := app.Delete(); err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
+		store.InvalidateApplication(ctx, db, app.ClientId)
 		return &DeleteResult{Deleted: true}, nil
 	}
 }

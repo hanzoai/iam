@@ -92,6 +92,11 @@ const purgeBatch = 100
 // transactions (sweep).
 var swept atomic.Int64
 
+// sweepSync runs expired-row sweeps synchronously when true (set only by
+// sweep-specific tests). Production always sweeps asynchronously off the
+// authorize hot path so a 100-row DB delete never stalls a user's sign-in click.
+var sweepSync bool
+
 // routeFederation registers the IdP callback on the PUBLIC group r, by both of the
 // ways a provider returns: a top-level GET redirect (Google, GitHub), and a
 // form_post (Apple) — a cross-site POST of application/x-www-form-urlencoded. One
@@ -124,8 +129,7 @@ func beginFederation(c *zip.Ctx, db orm.DB, app *schema.Application, q authorize
 		return authorizeErrorRedirect(c, q, "access_denied", "federation is not permitted for this application")
 	}
 
-	store.EnrichProviders(ctx, db, app)
-	prov := federationProvider(app, q.provider)
+	prov := store.FindLinkedProvider(ctx, db, app, q.provider, offerable)
 	if prov == nil {
 		return authorizeErrorRedirect(c, q, "invalid_request", "unknown or unavailable provider")
 	}
@@ -478,9 +482,21 @@ func sweep(ctx context.Context, db orm.DB, now time.Time) {
 	if now.Unix()-last < int64(handoffTTL/time.Second) || !swept.CompareAndSwap(last, now.Unix()) {
 		return
 	}
-	if _, err := store.PurgeFederationStates(ctx, db, now.Add(-fedStateTTL), purgeBatch); err != nil {
-		log.Printf("federation: sweep: %v", err)
+	cutoff := now.Add(-fedStateTTL)
+	run := func(runCtx context.Context) {
+		if _, err := store.PurgeFederationStates(runCtx, db, cutoff, purgeBatch); err != nil {
+			log.Printf("federation: sweep: %v", err)
+		}
 	}
+	if sweepSync {
+		run(ctx)
+		return
+	}
+	go func() {
+		bgCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		run(bgCtx)
+	}()
 }
 
 // fedResumeParams is the ORIGINAL iam authorize request, pinned server-side so

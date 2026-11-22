@@ -423,3 +423,23 @@ func SetIdentifierAdmit(f func(client string, limit, ceiling int, window time.Du
 // person, so a host can assert on its own wiring. It answers from the bound
 // sender, never from configuration.
 func DeliveryConfigured() bool { return otp.DeliveryConfigured() }
+
+// KV is the optional distributed cache interface (e.g. Hanzo KV / Valkey)
+// shared across IAM replicas for hot application/provider reads, OIDC IdP
+// discovery documents, and JWKS keysets.
+type KV = store.KV
+
+// OpenKV connects to a Hanzo KV / Valkey / Redis endpoint (kv://, redis://,
+// valkey://) and returns a fail-open KV adapter for [EnableCache] / [UseKV].
+func OpenKV(ctx context.Context, rawURL string) (*store.HanzoKV, error) {
+	return store.OpenKV(ctx, rawURL)
+}
+
+// UseKV installs a shared L2 KV backend for OIDC IdP discovery, JWKS, and (when
+// enabled via [EnableCache]) Application and Provider hot reads.
+func UseKV(l2 KV) { store.UseKV(l2) }
+
+// EnableCache activates the L1 in-memory + optional L2 KV cache for hot
+// Application and Provider reads on the OAuth authorize and auth/methods paths.
+// Passing ttl <= 0 disables the store hot-read cache.
+func EnableCache(ttl time.Duration, l2 KV) { store.EnableCache(ttl, l2) }

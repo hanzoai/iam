@@ -23,6 +23,7 @@ import (
 	"github.com/hanzoai/iam/internal/authz"
 	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
+	"github.com/hanzoai/iam/pkg/store"
 )
 
 // providerId renders the (owner, name) pair as the orm row id so Get, Update,
@@ -152,6 +153,7 @@ func addProvider(db orm.DB) zip.TypedHandler[schema.Provider, providerResult] {
 		if err := p.CreateCtx(ctx); err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
+		store.InvalidateProvider(ctx, db, p.Owner, p.Name)
 		return &providerResult{Provider: p.Mask()}, nil
 	}
 }
@@ -189,6 +191,7 @@ func updateProvider(db orm.DB) zip.TypedHandler[schema.Provider, mutationResult]
 		if err := p.UpdateCtx(ctx); err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
+		store.InvalidateProvider(ctx, db, p.Owner, p.Name)
 		return &mutationResult{Affected: true, Provider: p.Mask()}, nil
 	}
 }
@@ -210,6 +213,7 @@ func deleteProvider(db orm.DB) zip.TypedHandler[providerKey, mutationResult] {
 		if err := p.DeleteCtx(ctx); err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
+		store.InvalidateProvider(ctx, db, p.Owner, p.Name)
 		return &mutationResult{Affected: true}, nil
 	}
 }

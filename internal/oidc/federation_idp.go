@@ -213,19 +213,12 @@ type oidcDiscoveryDocument struct {
 	JwksURI               string `json:"jwks_uri"`
 }
 
-// oidcDiscover fetches and validates the issuer's discovery document. The
-// document's own `issuer` MUST equal the configured issuer (OIDC Discovery §4.3)
-// — a mismatch means the origin is impersonating another issuer, so it fails
-// closed.
+// oidcDiscover fetches and validates the issuer's discovery document (through
+// the L1/L2 singleflight cache). The document's own `issuer` MUST equal the
+// configured issuer (OIDC Discovery §4.3) — a mismatch means the origin is
+// impersonating another issuer, so it fails closed.
 func oidcDiscover(ctx context.Context, issuer string) (oidcDiscoveryDocument, error) {
-	var doc oidcDiscoveryDocument
-	if err := getJSON(ctx, issuer+"/.well-known/openid-configuration", &doc); err != nil {
-		return doc, err
-	}
-	if strings.TrimRight(doc.Issuer, "/") != strings.TrimRight(issuer, "/") {
-		return oidcDiscoveryDocument{}, fmt.Errorf("federation: discovery issuer mismatch")
-	}
-	return doc, nil
+	return idpCache.getDiscovery(ctx, issuer)
 }
 
 // oidcAuthorizeURL builds the OIDC authorization request: response_type=code,
@@ -685,31 +678,48 @@ type jwk struct {
 	Y   string `json:"y"`
 }
 
-// jwksKeyfunc returns a jwt.Keyfunc that fetches the issuer's JWKS and selects
-// the verification key by the token's `kid`. When the token carries a kid, an
-// exact match is required; a kid-less token is accepted only against a
-// single-key set. The fetch happens inside the closure so it is bounded by the
-// same hardened client and request context.
+// jwksKeyfunc returns a jwt.Keyfunc that resolves the verification key by the
+// token's `kid` from the L1/L2 cached JWKS. When the token carries a kid, an
+// exact match is required; on a cache hit with an unknown kid, one rate-limited
+// refresh is attempted so IdP key rotations succeed immediately without
+// allowing kid-spam amplification. A kid-less token is accepted only against a
+// single-key set.
 func jwksKeyfunc(ctx context.Context, jwksURL string) jwt.Keyfunc {
 	return func(t *jwt.Token) (any, error) {
-		var set jwkSet
-		if err := getJSON(ctx, jwksURL, &set); err != nil {
+		set, fromCache, err := idpCache.getJWKS(ctx, jwksURL, false)
+		if err != nil {
 			return nil, err
 		}
 		kid, _ := t.Header["kid"].(string)
-		if kid == "" {
-			if len(set.Keys) != 1 {
-				return nil, errors.New("federation: id_token has no kid and JWKS is not single-key")
-			}
-			return set.Keys[0].publicKey()
+		if key, ok, err := selectJWKSKey(set, kid); ok || err != nil {
+			return key, err
 		}
-		for _, k := range set.Keys {
-			if k.Kid == kid {
-				return k.publicKey()
+		if fromCache && kid != "" {
+			if fresh, _, rerr := idpCache.getJWKS(ctx, jwksURL, true); rerr == nil {
+				if key, ok, err := selectJWKSKey(fresh, kid); ok || err != nil {
+					return key, err
+				}
 			}
 		}
 		return nil, errors.New("federation: no JWKS key matches the id_token kid")
 	}
+}
+
+func selectJWKSKey(set jwkSet, kid string) (any, bool, error) {
+	if kid == "" {
+		if len(set.Keys) != 1 {
+			return nil, false, errors.New("federation: id_token has no kid and JWKS is not single-key")
+		}
+		k, err := set.Keys[0].publicKey()
+		return k, true, err
+	}
+	for _, k := range set.Keys {
+		if k.Kid == kid {
+			pub, err := k.publicKey()
+			return pub, true, err
+		}
+	}
+	return nil, false, nil
 }
 
 // publicKey materializes a JWK into a crypto public key (RSA or EC). Only the

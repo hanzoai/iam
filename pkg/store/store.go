@@ -38,11 +38,18 @@ import (
 // and the owner-pin on the mint/capability gates denies a non-signing owner even if
 // it did. Returns (nil, nil) when no application matches.
 func GetApplicationByClientId(ctx context.Context, db orm.DB, clientId string) (*schema.Application, error) {
+	if cached, ok := cachedGetAppByClientId(ctx, db, clientId); ok {
+		return cached, nil
+	}
 	apps, err := ListApplicationsByClientId(ctx, db, clientId)
 	if err != nil {
 		return nil, err
 	}
-	return preferredApp(apps), nil
+	app := preferredApp(apps)
+	if app != nil {
+		cachePutAppByClientId(ctx, db, clientId, app)
+	}
+	return app, nil
 }
 
 // ListApplicationsByClientId returns EVERY application row carrying clientId — the
@@ -1092,11 +1099,17 @@ func DeleteToken(ctx context.Context, db orm.DB, tok *schema.Token) error {
 // GetProvider resolves a provider record by (owner, name) — e.g.
 // ("admin", "provider-github"). Providers are shared org-level records the
 // application's ProviderItem links to by name.
-func GetProvider(_ context.Context, db orm.DB, owner, name string) (*schema.Provider, error) {
+func GetProvider(ctx context.Context, db orm.DB, owner, name string) (*schema.Provider, error) {
+	if cached, ok := cachedGetProvider(ctx, db, owner, name); ok {
+		return cached, nil
+	}
 	p, err := orm.TypedQuery[schema.Provider](db).
 		Filter("Owner=", owner).Filter("Name=", name).First()
 	if err == orm.ErrNotFound {
 		return nil, nil
+	}
+	if err == nil && p != nil {
+		cachePutProvider(ctx, db, owner, name, p)
 	}
 	return p, err
 }
