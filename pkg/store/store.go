@@ -12,6 +12,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -1004,26 +1005,28 @@ func PlatformSigningCert(ctx context.Context, db orm.DB) (*schema.Cert, error) {
 // GetTokenByAccessTokenHash resolves a live token row by the SHA-256 hash of a
 // presented access token — the userinfo bearer lookup. Because the row is the
 // authorization server's memory of the grant, a deleted/rotated row means the
-// bearer is revoked, independent of the JWT's own expiry.
+// bearer is revoked, independent of the JWT's own expiry. Returns (nil, nil)
+// when no row matches, and a non-nil error on store/transport failure.
 func GetTokenByAccessTokenHash(_ context.Context, db orm.DB, hash string) (*schema.Token, error) {
 	if hash == "" {
 		return nil, nil
 	}
 	t, err := orm.TypedQuery[schema.Token](db).Filter("AccessTokenHash=", hash).First()
-	if err == orm.ErrNotFound {
+	if errors.Is(err, orm.ErrNotFound) || errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	return t, err
 }
 
 // GetTokenByRefreshHash resolves a token row by the SHA-256 hash of a presented
-// refresh token — the refresh-grant lookup.
+// refresh token — the refresh-grant lookup. Returns (nil, nil) when no row
+// matches, and a non-nil error on store/transport failure.
 func GetTokenByRefreshHash(_ context.Context, db orm.DB, hash string) (*schema.Token, error) {
 	if hash == "" {
 		return nil, nil
 	}
 	t, err := orm.TypedQuery[schema.Token](db).Filter("RefreshTokenHash=", hash).First()
-	if err == orm.ErrNotFound {
+	if errors.Is(err, orm.ErrNotFound) || errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	return t, err

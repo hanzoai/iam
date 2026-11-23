@@ -5,6 +5,8 @@ package oidc
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"net/http"
 
 	"github.com/hanzoai/orm"
@@ -52,25 +54,34 @@ func routeIntrospectRevoke(r *zip.Group, db orm.DB) {
 // It reads NOTHING about the token, so the status code it produces cannot tell an
 // unauthenticated caller whether the token it sent exists (RFC 7009 §2.2). WHAT a
 // caller may then do is a separate question, answered by each handler below.
-func client(ctx context.Context, db orm.DB, c *zip.Ctx) (app *schema.Application, proved, ok bool) {
+func client(ctx context.Context, db orm.DB, c *zip.Ctx) (app *schema.Application, proved, ok bool, err error) {
 	clientID, clientSecret := clientAuth(c)
 	if clientID == "" {
-		return nil, false, false
+		return nil, false, false, nil
 	}
-	app, err := store.GetApplicationByClientId(ctx, db, clientID)
-	if err != nil || app == nil {
-		return nil, false, false
+	app, err = store.GetApplicationByClientId(ctx, db, clientID)
+	if err != nil {
+		return nil, false, false, err
+	}
+	if app == nil {
+		return nil, false, false, nil
 	}
 	if app.ClientSecret == "" {
-		return app, true, true
+		return app, true, true, nil
 	}
 	if clientSecret == "" && !basicAttempted(c) {
-		return app, false, true
+		return app, false, true, nil
 	}
 	if !app.Proves(clientSecret) {
-		return nil, false, false
+		return nil, false, false, nil
 	}
-	return app, true, true
+	return app, true, true, nil
+}
+
+// isStoreNotFound reports whether err represents a missing row rather than a
+// genuine database/context failure.
+func isStoreNotFound(err error) bool {
+	return errors.Is(err, orm.ErrNotFound) || errors.Is(err, sql.ErrNoRows)
 }
 
 // introspectHandler answers whether an access token is still good, and what it
@@ -82,6 +93,10 @@ func client(ctx context.Context, db orm.DB, c *zip.Ctx) (app *schema.Application
 // token that is unknown, expired or revoked answers simply that it is not
 // active, and nothing more — the endpoint is not a way to learn about tokens you
 // were not given.
+//
+// A genuine store/database error answers HTTP 503 Service Unavailable rather
+// than 200 {"active": false}, so callers (such as cloud verifying delegated run
+// tokens) distinguish a transient store fault from permanent revocation.
 func introspectHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		setTokenCacheHeaders(c)
@@ -89,7 +104,10 @@ func introspectHandler(db orm.DB) zip.Handler {
 		// Introspection reports on tokens the caller did not necessarily issue, so
 		// it stays CONFIDENTIAL-only: RFC 7662 §2.1 addresses it to a protected
 		// resource, and a public client_id is unauthenticated by construction.
-		app, proved, ok := client(ctx, db, c)
+		app, proved, ok, err := client(ctx, db, c)
+		if err != nil {
+			return tokenError(c, http.StatusServiceUnavailable, "temporarily_unavailable", "token store unavailable")
+		}
 		if !ok || !proved || app.ClientSecret == "" {
 			return tokenErrorClient(c, "client authentication failed")
 		}
@@ -100,20 +118,32 @@ func introspectHandler(db orm.DB) zip.Handler {
 		}
 		h := hashToken(tokenStr)
 		// Liveness: the grant row must still exist (a revoked/rotated token has none).
-		row, _ := store.GetTokenByAccessTokenHash(ctx, db, h)
+		row, err := store.GetTokenByAccessTokenHash(ctx, db, h)
+		if err != nil && !isStoreNotFound(err) {
+			return tokenError(c, http.StatusServiceUnavailable, "temporarily_unavailable", "token store unavailable")
+		}
 		if row == nil {
-			row, _ = store.GetTokenByRefreshHash(ctx, db, h)
+			row, err = store.GetTokenByRefreshHash(ctx, db, h)
+			if err != nil && !isStoreNotFound(err) {
+				return tokenError(c, http.StatusServiceUnavailable, "temporarily_unavailable", "token store unavailable")
+			}
 		}
 		if row == nil {
 			return c.JSON(200, inactiveToken())
 		}
 		claims, err := parseIssued(ctx, db, tokenStr)
 		if err != nil {
+			if errors.Is(err, errStoreUnavailable) {
+				return tokenError(c, http.StatusServiceUnavailable, "temporarily_unavailable", "token store unavailable")
+			}
 			return c.JSON(200, inactiveToken())
 		}
 		// An impersonation is live only while its operator may still impersonate.
 		if claims.Imp {
 			if _, err := Operator(ctx, db, claims); err != nil {
+				if !errors.Is(err, ErrImpersonation) {
+					return tokenError(c, http.StatusServiceUnavailable, "temporarily_unavailable", "token store unavailable")
+				}
 				return c.JSON(200, inactiveToken())
 			}
 		}
@@ -121,12 +151,18 @@ func introspectHandler(db orm.DB) zip.Handler {
 		// subject is forbidden/deleted or loses standing in the delegated org.
 		if schema.Confined(claims.Scope) && claims.Act != nil && !claims.Imp {
 			u, err := store.GetUserBySubject(ctx, db, claims.Subject)
-			if err != nil || u == nil || u.IsForbidden || u.IsDeleted || u.Machine() {
+			if err != nil && !isStoreNotFound(err) {
+				return tokenError(c, http.StatusServiceUnavailable, "temporarily_unavailable", "token store unavailable")
+			}
+			if u == nil || u.IsForbidden || u.IsDeleted || u.Machine() {
 				return c.JSON(200, inactiveToken())
 			}
 			if claims.Organization != "" {
 				ref, ok, err := membership(ctx, db, u, claims.Organization)
-				if err != nil || !ok || !store.Acts(claims.Organization, u, ref.Role) {
+				if err != nil && !isStoreNotFound(err) {
+					return tokenError(c, http.StatusServiceUnavailable, "temporarily_unavailable", "token store unavailable")
+				}
+				if !ok || !store.Acts(claims.Organization, u, ref.Role) {
 					return c.JSON(200, inactiveToken())
 				}
 			}
@@ -200,7 +236,10 @@ func revokeHandler(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		setTokenCacheHeaders(c)
 		ctx := c.Context()
-		app, proved, ok := client(ctx, db, c)
+		app, proved, ok, err := client(ctx, db, c)
+		if err != nil {
+			return tokenError(c, http.StatusServiceUnavailable, "temporarily_unavailable", "token store unavailable")
+		}
 		if !ok {
 			return tokenErrorClient(c, "client authentication failed")
 		}
@@ -214,13 +253,21 @@ func revokeHandler(db orm.DB) zip.Handler {
 		}
 		h := hashToken(tokenStr)
 
-		if row, _ := store.GetTokenByAccessTokenHash(ctx, db, h); row != nil {
+		row, err := store.GetTokenByAccessTokenHash(ctx, db, h)
+		if err != nil && !isStoreNotFound(err) {
+			return tokenError(c, http.StatusServiceUnavailable, "temporarily_unavailable", "token store unavailable")
+		}
+		if row != nil {
 			if mayRevoke(row) {
 				_ = store.DeleteToken(ctx, db, row)
 			}
 			return revoked(c)
 		}
-		if row, _ := store.GetTokenByRefreshHash(ctx, db, h); row != nil {
+		row, err = store.GetTokenByRefreshHash(ctx, db, h)
+		if err != nil && !isStoreNotFound(err) {
+			return tokenError(c, http.StatusServiceUnavailable, "temporarily_unavailable", "token store unavailable")
+		}
+		if row != nil {
 			if mayRevoke(row) {
 				family, _ := store.ListTokensByRefreshFamily(ctx, db, row.RefreshFamily)
 				for _, t := range family {

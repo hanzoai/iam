@@ -6,6 +6,7 @@ package oidc
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/hanzoai/orm"
@@ -45,6 +46,11 @@ var errNotBearer = errors.New("verify: not an access token")
 // it names it would be their whole account, keys and sign-in methods included,
 // and IAM resolves authority from the row, so it would be their SuperAdmin too.
 var errConfined = errors.New("verify: a confined token is not a bearer here")
+
+// errStoreUnavailable marks a database/store failure while resolving a signing
+// key during token verification, so callers like introspection can return 503
+// instead of misreporting a valid token as inactive/revoked.
+var errStoreUnavailable = errors.New("verify: signing key store unavailable")
 
 // verifyBearer is the verification of a credential presented to act: verifyToken,
 // then the token must be an access token (tokenType "access-token"), name an
@@ -107,7 +113,7 @@ func parseToken(ctx context.Context, db orm.DB, tokenStr string, extra ...jwt.Pa
 		// signed by a tenant-created cert with a colliding name never verifies.
 		cert, err := store.GetSigningCert(ctx, db, kid)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w: %w", errStoreUnavailable, err)
 		}
 		if cert == nil {
 			return nil, errors.New("verify: unknown signing key")

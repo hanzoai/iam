@@ -381,15 +381,28 @@ func delegationKeysHandler(db orm.DB) zip.Handler {
 }
 
 // membership is the person's standing in org as their own token states it: the
-// home org or a membership row (store.MemberOrgRefs), in an org that exists.
+// home org or a membership row, in an org that exists. Unlike MemberOrgRefs,
+// store errors from the membership lookup are propagated rather than treated as
+// missing membership so callers (delegate, introspect) can distinguish transient
+// DB faults from revoked membership.
 func membership(ctx context.Context, db orm.DB, user *schema.User, org string) (schema.OrgRef, bool, error) {
 	o, err := store.GetOrganizationByName(ctx, db, org)
 	if err != nil || o == nil {
 		return schema.OrgRef{}, false, err
 	}
-	for _, r := range store.MemberOrgRefs(ctx, db, user) {
-		if r.Org == org {
-			return r, true, nil
+	if user == nil || user.Owner == "" {
+		return schema.OrgRef{}, false, nil
+	}
+	if org == user.Owner {
+		return schema.OrgRef{Org: user.Owner, Role: store.HomeRole(user)}, true, nil
+	}
+	rows, err := store.MembershipsByUser(ctx, db, user.Owner+"/"+user.Name)
+	if err != nil {
+		return schema.OrgRef{}, false, err
+	}
+	for _, m := range rows {
+		if m != nil && m.Org == org {
+			return m.AsOrgRef(), true, nil
 		}
 	}
 	return schema.OrgRef{}, false, nil
