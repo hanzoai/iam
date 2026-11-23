@@ -242,7 +242,7 @@ func revokeSiblings(ctx context.Context, db orm.DB, user, application string, ap
 	}
 	seen := map[string]bool{application: true}
 	for _, row := range rows {
-		if row.Application == "" || seen[row.Application] {
+		if isDelegatedGrant(row) || row.Application == "" || seen[row.Application] {
 			continue
 		}
 		seen[row.Application] = true
@@ -252,6 +252,15 @@ func revokeSiblings(ctx context.Context, db orm.DB, user, application string, ap
 		}
 		revokeGrant(ctx, db, user, row.Application)
 	}
+}
+
+// isDelegatedGrant reports whether row is an autonomous run-scoped delegated
+// token ('dl-' / schema.Confined) minted via RFC 8693 actor delegation rather
+// than an interactive user sign-in grant. Browser sign-out retires interactive
+// grants and their refresh families; detached background runs own their own
+// lifecycle via PathRevoke and org-membership checks.
+func isDelegatedGrant(row *schema.Token) bool {
+	return row != nil && (strings.HasPrefix(row.Name, "dl-") || schema.Confined(row.Scope))
 }
 
 // envSignoutApps names, by clientId, the applications that share one sign-out:
@@ -305,6 +314,9 @@ func revokeGrant(ctx context.Context, db orm.DB, user, application string) {
 		return
 	}
 	for _, row := range rows {
+		if isDelegatedGrant(row) {
+			continue
+		}
 		if row.RefreshFamily != "" {
 			family, err := store.ListTokensByRefreshFamily(ctx, db, row.RefreshFamily)
 			if err == nil {

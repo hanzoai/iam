@@ -557,3 +557,137 @@ func TestDelegate_revokedByItsClientIsDead(t *testing.T) {
 		t.Fatal("a revoked delegation still introspects active")
 	}
 }
+
+// Regression for premature 401 across sibling/autonomous coding runs (ml#77, ml#78):
+//  1. Revoking one run's delegated token kills ONLY that run's token, never a sibling/child run's.
+//  2. Browser sign-out (including IAM_SIGNOUT_APPS sharing hanzo-app + hanzo-cloud and everywhere=true)
+//     retires interactive user sessions & refresh grants while leaving active 'dl-' run tokens untouched.
+//  3. Forbidding the user or revoking org membership immediately renders the delegated token inactive.
+func TestDelegate_siblingRevokeAndBrowserLogoutPreserveLiveRuns(t *testing.T) {
+	t.Setenv(envSignoutApps, "hanzo-app,"+cloudID)
+	app, db := delegationServer(t)
+	// Give hanzo-cloud and hanzo-app interactive login + refresh grants alongside delegation.
+	cloudApp, err := store.GetApplicationByClientId(context.Background(), db, cloudID)
+	if err != nil || cloudApp == nil {
+		t.Fatalf("get cloud app: %v", err)
+	}
+	cloudApp.GrantTypes = []string{"authorization_code", "refresh_token", "client_credentials"}
+	cloudApp.RedirectUris = []string{testRedirect}
+	cloudApp.RefreshExpireInHours = 24
+	if err := cloudApp.UpdateCtx(context.Background()); err != nil {
+		t.Fatalf("update cloud app: %v", err)
+	}
+	seedApp(t, db, appOpts{clientID: "hanzo-app", secret: "app-secret", redirectURIs: []string{testRedirect}, refreshHours: 24})
+
+	// Mint two concurrent sibling coding runs for alice under hanzo-cloud.
+	s1, runA := delegated(t, app, url.Values{"run": {"sess-run-a"}})
+	s2, runB := delegated(t, app, url.Values{"run": {"sess-run-b"}})
+	if s1 != 200 || s2 != 200 {
+		t.Fatalf("mint runs: %d %v / %d %v", s1, runA, s2, runB)
+	}
+	tokA := runA["access_token"].(string)
+	tokB := runB["access_token"].(string)
+
+	introspect := func(tok string) bool {
+		_, raw := do(t, app, formReq("POST", PathIntrospect, url.Values{
+			"token": {tok}, "client_id": {cloudID}, "client_secret": {cloudSecret},
+		}))
+		b, _ := decode(t, raw)["active"].(bool)
+		return b
+	}
+
+	// Ending Run A revokes tokA and NEVER revokes sibling Run B.
+	if r, _ := do(t, app, formReq("POST", PathRevoke, url.Values{
+		"token": {tokA}, "client_id": {cloudID}, "client_secret": {cloudSecret},
+	})); r.StatusCode != 200 {
+		t.Fatalf("revoke run A: %d", r.StatusCode)
+	}
+	if introspect(tokA) {
+		t.Fatal("revoked Run A still introspects active")
+	}
+	if !introspect(tokB) {
+		t.Fatal("revoking Run A killed sibling Run B")
+	}
+
+	// Alice signs into hanzo-app and hanzo-cloud interactively and gets refresh grants.
+	heldRefresh := map[string]string{}
+	secrets := map[string]string{"hanzo-app": "app-secret", cloudID: cloudSecret}
+	for _, cid := range []string{"hanzo-app", cloudID} {
+		form := loginParams(cid, "openid offline_access")
+		form["password"] = "correct horse"
+		code, resp, body := loginForCode(t, app, form)
+		if code == "" {
+			t.Fatalf("%s: no code: %d %s", cid, resp.StatusCode, body)
+		}
+		_, out := exchangeCode(t, app, url.Values{
+			"code": {code}, "client_id": {cid}, "client_secret": {secrets[cid]}, "redirect_uri": {testRedirect},
+		})
+		heldRefresh[cid], _ = out["refresh_token"].(string)
+		if heldRefresh[cid] == "" {
+			t.Fatalf("%s: no refresh token: %v", cid, out)
+		}
+	}
+
+	// Alice signs out of hanzo-app (which shares sign-out with hanzo-cloud via IAM_SIGNOUT_APPS, plus everywhere=true).
+	signForm := url.Values{
+		"organization": {"hanzo"}, "application": {"hanzo-app"},
+		"username": {"alice"}, "password": {"correct horse"}, "type": {"login"},
+	}
+	loginResp, loginBody := do(t, app, formReq("POST", PathLogin, signForm))
+	if loginResp.StatusCode != 200 {
+		t.Fatalf("portal login: %d %s", loginResp.StatusCode, loginBody)
+	}
+	cookie := cookieKV(loginResp.Header.Get("Set-Cookie"))
+	q := url.Values{"client_id": {"hanzo-app"}, "everywhere": {"true"}}.Encode()
+	requireSignedOut(t, logout(t, app, cookie, "", q), "hanzo-app")
+
+	// Both interactive refresh tokens must be dead...
+	for _, cid := range []string{"hanzo-app", cloudID} {
+		if st, _ := refresh(t, app, cid, heldRefresh[cid], url.Values{"client_secret": {secrets[cid]}}); st == 200 {
+			t.Fatalf("interactive %s refresh token survived logout", cid)
+		}
+	}
+	// ...while autonomous Run B's delegated token MUST remain live!
+	if !introspect(tokB) {
+		t.Fatal("browser sign-out revoked autonomous coding Run B's delegated token")
+	}
+
+	// Forbidding the subject user still immediately terminates Run B on introspection.
+	u, err := store.GetUserByName(context.Background(), db, "hanzo", "alice")
+	if err != nil || u == nil {
+		t.Fatalf("get alice: %v", err)
+	}
+	u.IsForbidden = true
+	if err := u.UpdateCtx(context.Background()); err != nil {
+		t.Fatalf("forbid alice: %v", err)
+	}
+	if introspect(tokB) {
+		t.Fatal("a forbidden user's delegated token still introspects active")
+	}
+}
+
+func TestDelegate_autonomousScienceScopesRemainConfined(t *testing.T) {
+	app, db := delegationServer(t)
+	status, tok := delegated(t, app, url.Values{"scope": {"workflow:gpu ai:inference research"}})
+	if status != 200 {
+		t.Fatalf("science delegation refused: %d %v", status, tok)
+	}
+	wantScope := "ai:inference research workflow:gpu"
+	if tok["scope"] != wantScope {
+		t.Fatalf("scope = %v, want canonical %q", tok["scope"], wantScope)
+	}
+	raw := tok["access_token"].(string)
+	c, err := verifyToken(context.Background(), db, raw)
+	if err != nil || c.Scope != wantScope || !schema.Confined(c.Scope) {
+		t.Fatalf("verify science delegation: err=%v scope=%q", err, c.Scope)
+	}
+	if _, err := VerifyToken(context.Background(), db, raw); err == nil {
+		t.Fatal("IAM bearer check accepted a confined science token")
+	}
+	// Without ai:inference, or with an unconfined scope beside it, delegation is refused.
+	for _, bad := range []string{"research", "workflow:gpu", "ai:inference kms:read", "ai:inference profile"} {
+		if st, body := delegated(t, app, url.Values{"scope": {bad}}); st != 400 || body["error"] != "invalid_scope" {
+			t.Errorf("scope %q: got %d %v, want 400 invalid_scope", bad, st, body)
+		}
+	}
+}

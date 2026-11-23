@@ -19,12 +19,52 @@ import (
 // its own surface. A scope only ever narrows, so the rule holds for any token that
 // names it, however it was minted: a person who asks for it at sign-in confines
 // their own token and gains nothing.
-const Inference = "ai:inference"
+const (
+	Inference            = "ai:inference"
+	DelegatedResearch    = "research"
+	DelegatedWorkflowGPU = "workflow:gpu"
+)
 
 // Confined reports whether scope — the space-separated OAuth list (RFC 6749
 // §3.3) — names Inference.
 func Confined(scope string) bool {
 	return slices.Contains(strings.Fields(scope), Inference)
+}
+
+// DelegationScope validates and canonicalizes the scope requested on an RFC 8693
+// actor delegation. Every delegation MUST carry Inference (so Confined holds on
+// every token signed by CertDelegation), and may optionally include the bounded
+// autonomous-science sub-scopes (DelegatedResearch, DelegatedWorkflowGPU); any
+// general OAuth/OIDC or unknown scope is rejected.
+func DelegationScope(scope string) (string, bool) {
+	fields := strings.Fields(scope)
+	if len(fields) == 0 {
+		return "", false
+	}
+	var hasInference, hasResearch, hasGPU bool
+	for _, f := range fields {
+		switch f {
+		case Inference:
+			hasInference = true
+		case DelegatedResearch:
+			hasResearch = true
+		case DelegatedWorkflowGPU:
+			hasGPU = true
+		default:
+			return "", false
+		}
+	}
+	if !hasInference {
+		return "", false
+	}
+	out := []string{Inference}
+	if hasResearch {
+		out = append(out, DelegatedResearch)
+	}
+	if hasGPU {
+		out = append(out, DelegatedWorkflowGPU)
+	}
+	return strings.Join(out, " "), true
 }
 
 // Token is an issued OAuth2/OIDC token record (v1 the legacy surface `token`, v2 kind
