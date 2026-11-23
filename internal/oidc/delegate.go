@@ -125,9 +125,9 @@ func delegate(c *zip.Ctx, db orm.DB, client *schema.Application) error {
 	if why != "" {
 		return refuse(400, "invalid_grant", why)
 	}
-	scope := strings.TrimSpace(param(c, "scope"))
-	if scope != schema.Inference {
-		return refuse(400, "invalid_scope", "the one scope a delegation carries is "+schema.Inference)
+	scope, okScope := schema.DelegationScope(param(c, "scope"))
+	if !okScope {
+		return refuse(400, "invalid_scope", "delegation requires "+schema.Inference+" and permits only confined delegation scopes")
 	}
 	aud := resourceOf(c)
 	if !delegationAudience(aud) {

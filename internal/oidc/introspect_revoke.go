@@ -117,6 +117,20 @@ func introspectHandler(db orm.DB) zip.Handler {
 				return c.JSON(200, inactiveToken())
 			}
 		}
+		// A delegated run token survives browser sign-out, but dies as soon as its
+		// subject is forbidden/deleted or loses standing in the delegated org.
+		if schema.Confined(claims.Scope) && claims.Act != nil && !claims.Imp {
+			u, err := store.GetUserBySubject(ctx, db, claims.Subject)
+			if err != nil || u == nil || u.IsForbidden || u.IsDeleted || u.Machine() {
+				return c.JSON(200, inactiveToken())
+			}
+			if claims.Organization != "" {
+				ref, ok, err := membership(ctx, db, u, claims.Organization)
+				if err != nil || !ok || !store.Acts(claims.Organization, u, ref.Role) {
+					return c.JSON(200, inactiveToken())
+				}
+			}
+		}
 
 		resp := map[string]any{
 			"active":     true,
