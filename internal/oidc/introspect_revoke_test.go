@@ -4,11 +4,13 @@
 package oidc
 
 import (
+	"context"
 	"encoding/base64"
 	"net/http"
 	"net/url"
 	"testing"
 
+	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/pkg/pkce"
@@ -356,5 +358,118 @@ func TestIntrospect_publicClientStillRefused(t *testing.T) {
 	resp, _ := postForm(t, app, PathIntrospect, "hanzo-cli", "", url.Values{"token": {"anything"}})
 	if resp.StatusCode != 401 {
 		t.Fatalf("public-client introspect status = %d, want 401", resp.StatusCode)
+	}
+}
+
+// faultKindDB wraps an orm.DB and routes reads for a single kind (or "*" for
+// all kinds) to a closed SQLite DB so handlers see genuine store errors rather
+// than orm.ErrNotFound.
+type faultKindDB struct {
+	orm.DB
+	broken   orm.DB
+	failKind string
+}
+
+func (f *faultKindDB) Query(kind string) orm.Query {
+	if f.failKind == "*" || (f.failKind != "" && kind == f.failKind) {
+		return f.broken.Query(kind)
+	}
+	return f.DB.Query(kind)
+}
+
+func (f *faultKindDB) Get(ctx context.Context, key orm.Key, dst any) error {
+	if f.failKind == "*" || (f.failKind != "" && key != nil && key.Kind() == f.failKind) {
+		return f.broken.Get(ctx, key, dst)
+	}
+	return f.DB.Get(ctx, key, dst)
+}
+
+// Regression: a transient DB error during introspection MUST answer 503
+// Service Unavailable (temporarily_unavailable), never 200 {"active": false},
+// so resource servers like Cloud do not mistake a DB blip for permanent
+// revocation of live delegated coding-run tokens. Genuinely unknown or revoked
+// tokens must still answer 200 {"active": false}.
+func TestIntrospect_storeErrorReturns503(t *testing.T) {
+	t.Setenv("IAM_DELEGATION_APPS", cloudID)
+	t.Setenv("IAM_DELEGATION_AUDIENCES", api)
+
+	realDB := openTestDB(t)
+	brokenDB := openTestDB(t)
+	if err := brokenDB.Close(); err != nil {
+		t.Fatalf("close broken db: %v", err)
+	}
+	fdb := &faultKindDB{DB: realDB, broken: brokenDB}
+
+	app := zip.New(zip.Config{AppName: "iam-test", DisableStartupMessage: true})
+	Route(app.Group(""), fdb)
+
+	seedApp(t, realDB, appOpts{clientID: cloudID, secret: cloudSecret, grants: []string{"client_credentials"}})
+	for _, o := range []string{"hanzo", "acme", "admin"} {
+		seedOrg(t, realDB, o)
+	}
+	seedUser(t, realDB, "alice", "alice@hanzo.ai", "correct horse")
+	seedMembership(t, realDB, "hanzo/alice", "acme", "member")
+	seedDelegationCert(t, realDB)
+
+	status, tok := delegated(t, app, nil)
+	if status != 200 {
+		t.Fatalf("mint delegated token: status=%d body=%v", status, tok)
+	}
+	dlAccess := tok["access_token"].(string)
+
+	// Precondition: healthy DB reports the delegated token active.
+	resp, body := postForm(t, app, PathIntrospect, cloudID, cloudSecret, url.Values{"token": {dlAccess}})
+	if resp.StatusCode != 200 || body["active"] != true {
+		t.Fatalf("precondition introspect = %d %v, want 200 active=true", resp.StatusCode, body)
+	}
+
+	// Inject store faults at every DB lookup stage in introspectHandler.
+	for _, kind := range []string{"tokens", "certs", "users", "organizations", "memberships", "applications"} {
+		t.Run("fault_"+kind, func(t *testing.T) {
+			fdb.failKind = kind
+			t.Cleanup(func() { fdb.failKind = "" })
+
+			resp, body := postForm(t, app, PathIntrospect, cloudID, cloudSecret, url.Values{"token": {dlAccess}})
+			if resp.StatusCode != http.StatusServiceUnavailable {
+				t.Fatalf("kind=%s: status = %d body=%v, want 503", kind, resp.StatusCode, body)
+			}
+			if body["error"] != "temporarily_unavailable" {
+				t.Fatalf("kind=%s: error = %v, want temporarily_unavailable (body=%v)", kind, body["error"], body)
+			}
+			if _, hasActive := body["active"]; hasActive {
+				t.Fatalf("kind=%s: 503 response must not claim active=%v", kind, body["active"])
+			}
+		})
+	}
+
+	// Recovery: once the store is healthy again, the live token is still active,
+	// while an unknown token and a genuinely revoked token still return 200 active=false.
+	fdb.failKind = ""
+	resp, body = postForm(t, app, PathIntrospect, cloudID, cloudSecret, url.Values{"token": {dlAccess}})
+	if resp.StatusCode != 200 || body["active"] != true {
+		t.Fatalf("after recovery introspect = %d %v, want 200 active=true", resp.StatusCode, body)
+	}
+
+	resp, body = postForm(t, app, PathIntrospect, cloudID, cloudSecret, url.Values{"token": {"unknown-token"}})
+	if resp.StatusCode != 200 || body["active"] != false {
+		t.Fatalf("unknown token introspect = %d %v, want 200 active=false", resp.StatusCode, body)
+	}
+
+	// A store error on revoke also answers 503 instead of a misleading 200.
+	fdb.failKind = "tokens"
+	revFault, revFaultBody := postForm(t, app, PathRevoke, cloudID, cloudSecret, url.Values{"token": {dlAccess}})
+	if revFault.StatusCode != http.StatusServiceUnavailable || revFaultBody["error"] != "temporarily_unavailable" {
+		t.Fatalf("revoke with token store fault = %d %v, want 503 temporarily_unavailable", revFault.StatusCode, revFaultBody)
+	}
+	fdb.failKind = ""
+
+	// Genuine revocation succeeds and introspects 200 {"active": false}.
+	revResp, _ := postForm(t, app, PathRevoke, cloudID, cloudSecret, url.Values{"token": {dlAccess}})
+	if revResp.StatusCode != 200 {
+		t.Fatalf("revoke status = %d, want 200", revResp.StatusCode)
+	}
+	resp, body = postForm(t, app, PathIntrospect, cloudID, cloudSecret, url.Values{"token": {dlAccess}})
+	if resp.StatusCode != 200 || body["active"] != false {
+		t.Fatalf("revoked token introspect = %d %v, want 200 active=false", resp.StatusCode, body)
 	}
 }

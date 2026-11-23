@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"slices"
@@ -173,7 +174,7 @@ func parseTenantToken(ctx context.Context, db orm.DB, org, raw string, extra ...
 		}
 		cert, err := store.GetTenantCert(ctx, db, org, kid)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w: %w", errStoreUnavailable, err)
 		}
 		if cert == nil {
 			return nil, errors.New("verify: unknown signing key")
