@@ -56,6 +56,34 @@ curl -sS http://127.0.0.1:8000/v1/iam/.well-known/jwks
 
 [`hanzoai/cloud`](https://github.com/hanzoai/cloud) defaults `CLOUD_IAM_ISSUER=http://127.0.0.1:8000` (with ZAP on `:9653`, which is why the snippet above binds IAM's ZAP port to `19653` when running both on one machine). See the full **[Self-Hosting & Air-Gapped Deployment Guide](https://docs.hanzo.ai/docs/self-hosting)**.
 
+## Debugging with Delve
+
+From the IAM checkout, with Go and OpenSSL available:
+
+```sh
+make debug                   # installs Delve if needed; launches standalone IAM
+make debug-attach PID=12345  # attach to a running local IAM process
+make debug-dap               # optional IDE DAP on 127.0.0.1:38697
+make debug-test PKG=./server # debug package tests
+```
+
+`make debug` creates local signing material and seed data under the gitignored
+`.dev/` directory when absent and uses `.dev/iam-debug.db`. IAM's HTTP and ZAP
+listeners bind loopback only, on 8000 and 19653 respectively. Override
+`DEBUG_HTTP_PORT`, `DEBUG_ZAP_PORT` or `DEBUG_DAP_PORT` for a separate port block.
+Use Delve's `break file.go:123` and `continue` to hit a breakpoint, and `quit` to
+end the debug session. In an IDE, use its Go debugger's attach or remote DAP
+configuration. Never expose the unauthenticated DAP server publicly.
+
+`make debug-tools` installs Delve into `.dev/bin` if absent; `DLV_VERSION` can
+pin a Go-compatible release and `DLV` can select an installed debugger.
+Use only disposable development credentials, never production credentials.
+Normal build and test targets are unchanged.
+
+For IAM inside Cloud, use Cloud's `make debug` and attach to the IAM plugin
+process; a local Go module replacement can point Cloud at this checkout.
+Universe delegates its source-debug commands to Cloud.
+
 ## Stack
 
 | Concern | Component | Notes |
