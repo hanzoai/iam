@@ -58,6 +58,9 @@ func init() {
 			"Organization.platform":          "Platform marks an organization the platform itself declares (init_data.json):\nthe brand orgs and the others the seed creates, never one a customer made. The\nseed stamps it on every declared organization at boot, and no request sets or\nclears it. Only a SuperAdmin may delete an organization that carries it.",
 		},
 	})
+	zip.Describe("github.com/hanzoai/iam/internal/applications POST /v1/iam/applications/:owner/:name/regenerate-client-secret", zip.Doc{
+		Description: "Rotates an existing confidential application's client secret.\nOnly a SuperAdmin may invoke this. The response carries status, not secret material.\nAttempts are recorded in the platform audit trail.",
+	})
 	zip.Describe("github.com/hanzoai/iam/internal/applications PUT /v1/iam/applications/:owner/:name", zip.Doc{
 		Description: "Changes an application's display, its sign-in methods and the redirect\nURIs it may return to — the call that makes login work from a new host. Which\norganization it belongs to and what it is named are fixed when it is created\nand are not editable here. An application that serves other organizations —\nisShared, or any orgChoiceMode but \"\" and \"None\" — is written by a SuperAdmin\nonly, before and after the change.\n\nExported so the legacy update-application alias reuses this exact path — one\nupdate, two spellings.",
 		Fields: map[string]string{
