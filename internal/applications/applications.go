@@ -180,9 +180,7 @@ type RegenerateClientSecretInput struct {
 	Name  string `json:"name" validate:"required"`
 }
 
-// RegenerateClientSecretResult reports the outcome of a client secret regeneration.
-// It intentionally does not include the new secret — the secret is written to KMS
-// and the response carries only status and metadata.
+// RegenerateClientSecretResult reports rotation status without returning the new secret.
 type RegenerateClientSecretResult struct {
 	Regenerated bool   `json:"regenerated"`
 	ClientId    string `json:"clientId"`
@@ -443,22 +441,19 @@ func deleteApplication(db orm.DB) zip.TypedHandler[ApplicationRef, DeleteResult]
 	}
 }
 
-// regenerateClientSecret generates a new client secret for an application.
-// Only a SuperAdmin (reserved admin org identity) may invoke this.
-// The new secret is written to the application record and to KMS (if a vault is
-// installed). The response never includes the secret — only status and metadata.
-// Every attempt (success or failure) writes an audit log with actor, application
-// id, organization, time, and source IP.
+// regenerateClientSecret rotates an existing confidential application's client secret.
+// Only a SuperAdmin may invoke this. The response carries status, not secret material.
+// Attempts are recorded in the platform audit trail.
 func regenerateClientSecret(db orm.DB) zip.TypedHandler[RegenerateClientSecretInput, RegenerateClientSecretResult] {
 	return func(ctx context.Context, in *RegenerateClientSecretInput) (*RegenerateClientSecretResult, error) {
 		if in.Owner == "" || in.Name == "" {
-			writeRegenerateAudit(ctx, db, in.Owner, in.Name, "", false, "missing owner or name", false)
+			writeRegenerateAudit(ctx, db, in.Owner, in.Name, "", false, "missing owner or name", false, 400)
 			return nil, zip.ErrBadRequest("owner and name are required")
 		}
 
 		// Only a SuperAdmin may regenerate a client secret.
 		if !authz.IsSuper(ctx) {
-			writeRegenerateAudit(ctx, db, in.Owner, in.Name, "", false, "forbidden: not a SuperAdmin", false)
+			writeRegenerateAudit(ctx, db, in.Owner, in.Name, "", false, "forbidden: not a SuperAdmin", false, 403)
 			return nil, zip.ErrForbidden("only a SuperAdmin may regenerate an application's client secret")
 		}
 
@@ -466,18 +461,24 @@ func regenerateClientSecret(db orm.DB) zip.TypedHandler[RegenerateClientSecretIn
 
 		app, err := orm.Get[schema.Application](db, id)
 		if errors.Is(err, orm.ErrNotFound) {
-			writeRegenerateAudit(ctx, db, in.Owner, in.Name, "", false, "application not found", false)
+			writeRegenerateAudit(ctx, db, in.Owner, in.Name, "", false, "application not found", false, 404)
 			return nil, zip.ErrNotFound("application not found: " + id)
 		}
 		if err != nil {
-			writeRegenerateAudit(ctx, db, in.Owner, in.Name, "", false, "internal error: "+err.Error(), false)
+			writeRegenerateAudit(ctx, db, in.Owner, in.Name, "", false, "application lookup failed", false, 500)
 			return nil, zip.ErrInternal(err.Error())
+		}
+
+		// A public PKCE client must not silently become a confidential client.
+		if app.ClientSecret == "" {
+			writeRegenerateAudit(ctx, db, in.Owner, in.Name, app.Organization, false, "public client", false, 409)
+			return nil, zip.ErrConflict("a public client has no secret to rotate")
 		}
 
 		// Generate a new client secret
 		newSecret, err := generateClientSecret()
 		if err != nil {
-			writeRegenerateAudit(ctx, db, in.Owner, in.Name, app.Organization, false, "failed to generate client secret", app.ClientSecret != "")
+			writeRegenerateAudit(ctx, db, in.Owner, in.Name, app.Organization, false, "failed to generate client secret", app.ClientSecret != "", 500)
 			return nil, zip.ErrInternal("failed to generate client secret")
 		}
 
@@ -487,7 +488,7 @@ func regenerateClientSecret(db orm.DB) zip.TypedHandler[RegenerateClientSecretIn
 		// Update the application with the new secret
 		app.ClientSecret = newSecret
 		if err := app.Update(); err != nil {
-			writeRegenerateAudit(ctx, db, in.Owner, in.Name, app.Organization, false, "failed to update application: "+err.Error(), hadPreviousSecret)
+			writeRegenerateAudit(ctx, db, in.Owner, in.Name, app.Organization, false, "application update failed", hadPreviousSecret, 500)
 			return nil, zip.ErrInternal(err.Error())
 		}
 
@@ -495,7 +496,7 @@ func regenerateClientSecret(db orm.DB) zip.TypedHandler[RegenerateClientSecretIn
 		store.InvalidateApplication(ctx, db, app.ClientId)
 
 		// Write audit log for successful regeneration
-		writeRegenerateAudit(ctx, db, in.Owner, in.Name, app.Organization, true, "", hadPreviousSecret)
+		writeRegenerateAudit(ctx, db, in.Owner, in.Name, app.Organization, true, "", hadPreviousSecret, 200)
 
 		return &RegenerateClientSecretResult{
 			Regenerated: true,
@@ -515,7 +516,7 @@ func generateClientSecret() (string, error) {
 
 // writeRegenerateAudit writes an audit log entry for a client secret regeneration attempt.
 // It is best-effort: a failed write does not fail the operation.
-func writeRegenerateAudit(ctx context.Context, db orm.DB, actorOrg, appName, appOrg string, success bool, errMsg string, hadPreviousSecret bool) {
+func writeRegenerateAudit(ctx context.Context, db orm.DB, actorOrg, appName, appOrg string, success bool, errMsg string, hadPreviousSecret bool, statusCode int) {
 	// Get the principal to find the actor
 	p, _ := principal.From(ctx)
 	actor := ""
@@ -527,14 +528,10 @@ func writeRegenerateAudit(ctx context.Context, db orm.DB, actorOrg, appName, app
 		}
 	}
 
-	// Get client IP from context (httpx.ClientIP needs *zip.Ctx, so we use a best-effort approach)
-	clientIp := ""
-	// The zip.Ctx is available via context in handlers; we'll use a placeholder
-	// since the typed handler doesn't have direct access to *zip.Ctx
-
 	// Build the object field for the audit log
 	object := map[string]any{
 		"application": appName,
+		"owner":       actorOrg,
 		"hadSecret":   hadPreviousSecret,
 	}
 	if errMsg != "" {
@@ -543,18 +540,9 @@ func writeRegenerateAudit(ctx context.Context, db orm.DB, actorOrg, appName, app
 
 	objectJSON, _ := json.Marshal(object)
 
-	statusCode := 200
-	if !success {
-		statusCode = 403
-		if errMsg != "" && errMsg != "forbidden: not a SuperAdmin" {
-			statusCode = 500
-		}
-	}
-
 	_ = store.Append(ctx, db, &schema.AuditLog{
-		Owner:        actorOrg,
+		Owner:        "admin", // reserved platform trail, never a caller-chosen owner
 		Organization: appOrg,
-		ClientIp:     clientIp,
 		User:         actor,
 		Method:       "POST",
 		RequestUri:   "/v1/iam/applications/" + actorOrg + "/" + appName + "/regenerate-client-secret",
