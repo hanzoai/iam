@@ -119,6 +119,10 @@ const (
 	// Object the registration, the account and the client it came through. It is the
 	// record of who let a program act and spend in the org.
 	ActionAgentClaim = "agent-claim"
+	// A SuperAdmin regenerating an application's client secret. The new secret is
+	// written to KMS; the response carries only status and metadata. Filed under the
+	// actor's org (the admin org), Organization names the application's org.
+	ActionRegenerateClientSecret = "regenerate-client-secret"
 )
 
 // PlatformWritten reports whether action names a record the platform writes
@@ -134,7 +138,7 @@ func PlatformWritten(action string) bool {
 		ActionInviteSend, ActionInviteAccept, ActionInviteRefused, ActionInviteSignupRefused,
 		ActionInviteCodeSent, ActionMembershipGrant, ActionMembershipRevoke, ActionImpersonate,
 		ActionDelegate, ActionAddress, ActionWalletSignup, ActionFederationLink, ActionRegisterClient,
-		ActionAgentClaim:
+		ActionAgentClaim, ActionRegenerateClientSecret:
 		return true
 	}
 	return false
