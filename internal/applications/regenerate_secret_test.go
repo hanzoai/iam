@@ -265,7 +265,7 @@ func TestRegenerateClientSecret_MissingOwnerOrName(t *testing.T) {
 }
 
 // TestRegenerateClientSecret_ApplicationHasNoPreviousSecret tests that
-// regenerating a secret on a public client (no previous secret) works.
+// rotation refuses a public client without changing its authentication mode.
 func TestRegenerateClientSecret_ApplicationHasNoPreviousSecret(t *testing.T) {
 	db := memDB(t)
 	ctx := asSuper()
@@ -282,25 +282,21 @@ func TestRegenerateClientSecret_ApplicationHasNoPreviousSecret(t *testing.T) {
 	}
 
 	regenerate := regenerateClientSecret(db)
-	result, err := regenerate(ctx, &RegenerateClientSecretInput{
+	_, err := regenerate(ctx, &RegenerateClientSecretInput{
 		Owner: "admin",
 		Name:  "public-app",
 	})
-	if err != nil {
-		t.Fatalf("regenerate: %v", err)
+	if err == nil {
+		t.Fatal("public client must not be converted to confidential")
 	}
 
-	if !result.Regenerated {
-		t.Fatal("expected regenerated=true")
-	}
-
-	// Verify the application now has a secret
+	// Verify the application stays public.
 	app, err := orm.Get[schema.Application](db, "admin/public-app")
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if app.ClientSecret == "" {
-		t.Fatal("public client should now have a secret")
+	if app.ClientSecret != "" {
+		t.Fatal("public client unexpectedly has a secret")
 	}
 }
 
