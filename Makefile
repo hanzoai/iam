@@ -5,6 +5,8 @@
 # detector, which is where this repo's store and session defects actually show
 # up. -count=1 defeats the cache; -race is the point.
 
+.DEFAULT_GOAL := generate
+
 .PHONY: test build fmt vet generate debug debug-tools debug-attach debug-dap debug-test
 
 GO ?= go
