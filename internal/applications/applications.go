@@ -543,6 +543,7 @@ func writeRegenerateAudit(ctx context.Context, db orm.DB, actorOrg, appName, app
 	_ = store.Append(ctx, db, &schema.AuditLog{
 		Owner:        "admin", // reserved platform trail, never a caller-chosen owner
 		Organization: appOrg,
+		ClientIp:     zip.CallerOf(ctx).IP,
 		User:         actor,
 		Method:       "POST",
 		RequestUri:   "/v1/iam/applications/" + actorOrg + "/" + appName + "/regenerate-client-secret",
