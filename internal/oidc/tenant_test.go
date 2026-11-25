@@ -479,20 +479,20 @@ func TestTenant_CrossOrgAndMissingKeyRefuse(t *testing.T) {
 	if err := b.CreateCtx(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := signerFor(context.Background(), tn.db, b, "https://hanzo.id"); err == nil {
+	if _, err := signerFor(context.Background(), tn.db, b, "https://hanzo.id", origin{}); err == nil {
 		t.Fatal("an application signed with another organization's cert")
 	}
 
 	// The vault loses the key: fail closed, naming the registration and never a key.
 	_ = tn.vault.Delete(context.Background(), "acme", "acme-signing")
 	keyring.UseVault(tn.vault) // drops the key cache
-	_, err := signerFor(context.Background(), tn.db, tn.appRow, "https://hanzo.id")
+	_, err := signerFor(context.Background(), tn.db, tn.appRow, "https://hanzo.id", origin{})
 	if err == nil || !strings.Contains(err.Error(), "acme/portal") || strings.Contains(err.Error(), "PRIVATE") {
 		t.Fatalf("a missing key: %v", err)
 	}
 	// No vault at all is the same refusal.
 	keyring.UseVault(nil)
-	if _, err := signerFor(context.Background(), tn.db, tn.appRow, "https://hanzo.id"); err == nil {
+	if _, err := signerFor(context.Background(), tn.db, tn.appRow, "https://hanzo.id", origin{}); err == nil {
 		t.Fatal("signed with no vault installed")
 	}
 }
@@ -513,14 +513,14 @@ func TestTenant_NoFallbackAndIneligibleApplications(t *testing.T) {
 	} {
 		a := *tn.appRow
 		mod(&a)
-		s, err := signerFor(ctx, tn.db, &a, "https://hanzo.id")
+		s, err := signerFor(ctx, tn.db, &a, "https://hanzo.id", origin{})
 		if err == nil || s != nil {
 			t.Fatalf("%s: signed under a tenant cert (%v)", name, err)
 		}
 	}
 	a := *tn.appRow
 	a.Cert = ""
-	_, err := signerFor(ctx, tn.db, &a, "https://hanzo.id")
+	_, err := signerFor(ctx, tn.db, &a, "https://hanzo.id", origin{})
 	if d := err.Error(); !strings.Contains(d, `scope \"tenant\"`) && !strings.Contains(d, `scope "tenant"`) {
 		t.Fatalf("the refusal does not name the tenant-cert fix: %v", err)
 	}
@@ -572,7 +572,7 @@ func TestTenantIssuer_UnsetFailsClosedAndIsValidated(t *testing.T) {
 	if _, err := tenantIssuer("acme"); !errors.Is(err, errNoTenantIssuer) {
 		t.Fatalf("tenantIssuer with no origin: %v", err)
 	}
-	_, err := signerFor(context.Background(), tn.db, tn.appRow, "https://hanzo.id")
+	_, err := signerFor(context.Background(), tn.db, tn.appRow, "https://hanzo.id", origin{})
 	if err == nil || !strings.Contains(err.Error(), EnvTenantIssuer) {
 		t.Fatalf("an unset origin must say so: %v", err)
 	}
@@ -752,7 +752,7 @@ func TestTenant_ATenantRowNeverFallsThroughToAPlatformCert(t *testing.T) {
 	} {
 		a := *tn.appRow
 		mod(&a)
-		if s, err := signerFor(context.Background(), tn.db, &a, "https://hanzo.id"); s != nil || err == nil {
+		if s, err := signerFor(context.Background(), tn.db, &a, "https://hanzo.id", origin{}); s != nil || err == nil {
 			t.Errorf("%s: signed under a platform cert named like the tenant's (%v)", name, err)
 		}
 	}

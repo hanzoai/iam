@@ -14,6 +14,7 @@ import (
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
+	"github.com/hanzoai/iam/internal/httpx"
 	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
@@ -67,7 +68,8 @@ type ListOrganizationsInput struct {
 	// The address the request came from, for the trail below. Bound from the
 	// header because zip hands a typed handler no request, and a record that
 	// cannot say where the act came from is half a record.
-	Forwarded string `json:"-" header:"X-Forwarded-For"`
+	Connecting string `json:"-" header:"CF-Connecting-IP"`
+	Forwarded  string `json:"-" header:"X-Forwarded-For"`
 }
 
 // ListOrganizationsOutput is one page. Cursor is empty when the last page has
@@ -139,7 +141,7 @@ func (h *OrganizationAPI) List(ctx context.Context, in *ListOrganizationsInput) 
 		store.Record(ctx, h.DB, &schema.AuditLog{
 			Owner:      p.Org,
 			User:       p.Org + "/" + p.User,
-			ClientIp:   in.Forwarded,
+			ClientIp:   httpx.Visitor(in.Connecting, in.Forwarded),
 			Action:     schema.ActionListOrgs,
 			Object:     in.Query,
 			Method:     "GET",

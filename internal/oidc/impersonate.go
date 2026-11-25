@@ -71,8 +71,9 @@ type impersonateBody struct {
 	ClientId string `json:"clientId"`
 
 	// The operator's own credential, and the address the request came from.
-	Auth      string `json:"-" header:"Authorization"`
-	Forwarded string `json:"-" header:"X-Forwarded-For"`
+	Auth       string `json:"-" header:"Authorization"`
+	Connecting string `json:"-" header:"CF-Connecting-IP"`
+	Forwarded  string `json:"-" header:"X-Forwarded-For"`
 }
 
 // hint is the answer: the value the site's sign-in carries as login_hint.
@@ -116,7 +117,7 @@ func impersonateHandler(db orm.DB) zip.TypedHandler[impersonateBody, httpx.Answe
 			target: clip(strings.TrimSpace(in.Target), 128),
 			reason: clip(strings.TrimSpace(in.Reason), 512),
 			client: clip(in.ClientId, 128),
-			ip:     in.Forwarded,
+			ip:     httpx.Visitor(in.Connecting, in.Forwarded),
 			method: "POST",
 			uri:    PathImpersonate,
 		}

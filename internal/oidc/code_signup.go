@@ -163,8 +163,9 @@ type termsBody struct {
 	Site      string `json:"-" header:"Sec-Fetch-Site"`
 	Origin    string `json:"-" header:"Origin"`
 	Host      string `json:"-" header:"Host"`
-	Type      string `json:"-" header:"Content-Type"`
-	Forwarded string `json:"-" header:"X-Forwarded-For"`
+	Type       string `json:"-" header:"Content-Type"`
+	Connecting string `json:"-" header:"CF-Connecting-IP"`
+	Forwarded  string `json:"-" header:"X-Forwarded-For"`
 }
 
 // putTermsHandler records that the signed-in caller accepted the terms and the
@@ -195,7 +196,7 @@ func putTermsHandler(db orm.DB) zip.TypedHandler[termsBody, httpx.Answer] {
 				AUP:    in.AUP,
 				Time:   nowFunc().UTC().Format("2006-01-02T15:04:05Z07:00"),
 				Method: methodSignedIn,
-				IP:     in.Forwarded,
+				IP:     httpx.Visitor(in.Connecting, in.Forwarded),
 			}
 			u.UpdatedTime = provisionNow()
 			return u.SetTerms(&out)

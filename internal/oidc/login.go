@@ -208,11 +208,10 @@ func loginHandler(db orm.DB) zip.Handler {
 					if err != nil {
 						return httpx.Err(c, err.Error())
 					}
-					// A client that registered itself is never answered from a session,
-					// here or at authorize: this post can be reached without authorize
-					// having run, by a link straight to the sign-in page, so no recorded
-					// demand can be relied on to say so.
-					if app != nil && app.Dynamic() {
+					// A dynamically registered client or an attended application (any
+					// reserved-org app, or one with enableSigninSession off) is never
+					// answered from a session, here or at authorize.
+					if app != nil && (app.Dynamic() || app.Attended()) {
 						return httpx.ErrCode(c, "sign in again to continue", CodeLoginRequired)
 					}
 					// The authorize request's own instructions hold here as they do at
@@ -443,11 +442,10 @@ func grant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm, proved bool) e
 		return httpx.ErrCode(c, "the account is not permitted", CodeAccountNotPermitted)
 	}
 
-	// type=device: approve a pending RFC 8628 device authorization against the
-	// identity now fully proven (device.go). Device approval has its OWN tenant model —
-	// a SuperAdmin may deliberately approve a device across tenants (device.go), a
-	// blessed capability — so the reserved-org confinement MintFor enforces (which
-	// binds a SuperAdmin to its own-org app) does NOT apply to it; it precedes it.
+	// type=device: approve or refuse a pending RFC 8628 device authorization
+	// against the identity now proven (device.go). The approval is judged by the
+	// code's own application under mayApprove — MintFor's tenant rule, with every
+	// reserved org refused — not by the portal app this form names.
 	if f.Type == "device" {
 		if f.Deny {
 			return denyDevice(c, db, user, f.UserCode)
@@ -461,13 +459,14 @@ func grant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm, proved bool) e
 	}
 
 	// Everything between "this is the user" and "here is the grant" — reserved-org
-	// confinement, the tenant rule, the exact redirect_uri match, S256-only PKCE
-	// and the public-client challenge requirement — is MintFor's, not this
-	// handler's. It was restated here once and drifted: the reserved-org gate
-	// existed in this copy and nowhere else, so the wallet endpoint and (now)
-	// silent SSO would each have had to remember it. One mint path, one set of
-	// rules, no endpoint that can forget one.
-	out, err := MintFor(ctx, db, app, user.Owner+"/"+user.Name, f.mint())
+	// confinement, attendance, the tenant rule, the exact redirect_uri match,
+	// S256-only PKCE and the public-client challenge requirement — is MintFor's.
+	m := f.mint()
+	m.Session = !proved
+	out, err := MintFor(ctx, db, app, user.Owner+"/"+user.Name, m)
+	if errors.Is(err, errAttended) {
+		return httpx.ErrCode(c, err.Error(), CodeLoginRequired)
+	}
 	if err != nil {
 		return httpx.Err(c, err.Error())
 	}
@@ -580,7 +579,7 @@ func resolveName(ctx context.Context, db orm.DB, org, name string, members bool)
 // (store.MemberByIdentifier). Any other app searches only the org itself.
 func servesMembers(ctx context.Context, db orm.DB, f loginForm) bool {
 	app, err := ResolveApp(ctx, db, f.ClientId, f.Application)
-	return err == nil && app != nil && app.IsShared && app.Organization == f.Organization
+	return err == nil && app != nil && app.IsShared && app.ServesAnyOrg() && app.Organization == f.Organization
 }
 
 // resolveInOrg resolves the login identifier within one org, resolving NAME FIRST

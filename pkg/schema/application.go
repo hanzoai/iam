@@ -17,6 +17,7 @@ package schema
 
 import (
 	"crypto/subtle"
+	"errors"
 	"fmt"
 	"net/url"
 
@@ -256,8 +257,32 @@ func (a *Application) GetId() string {
 // a SuperAdmin, the seed and the service-token upsert write. A row any other org
 // owns serves that org alone whatever it declares, so a declaration that reached
 // the store past the application write gate still mints nothing across tenants.
+//
+// An application of a reserved org serves that org alone, whatever it declares:
+// a shared admin-org application would sign anybody in through the platform's
+// own client, with the admin org as the token's owner.
 func (a *Application) ServesAnyOrg() bool {
-	return (a.Owner == policy.AdminOrg || a.Owner == "hanzo") && a.Spans()
+	return (a.Owner == policy.AdminOrg || a.Owner == "hanzo") && a.Spans() && !policy.IsReservedOrg(a.Organization)
+}
+
+// ErrUnconfined refuses an application of a reserved org that declares it
+// serves other orgs.
+var ErrUnconfined = errors.New("an application of a reserved organization serves that organization alone: it cannot be shared or offer an org choice")
+
+// BeforeCreate refuses to store an unconfined application of a reserved org.
+// The rule sits on the row, so the applications API, the operator upsert and
+// the seed all meet it.
+func (a *Application) BeforeCreate() error {
+	if a.Spans() && policy.IsReservedOrg(a.Organization) {
+		return ErrUnconfined
+	}
+	return nil
+}
+
+// BeforeUpdate refuses the same on every update, a stored row included: such
+// a row is written again only once it serves its own org alone.
+func (a *Application) BeforeUpdate(*Application) error {
+	return a.BeforeCreate()
 }
 
 // Spans reports whether the application's own fields declare that it serves
@@ -381,6 +406,16 @@ func isLoopbackLiteral(u *url.URL) bool {
 // identified without proof, is the endpoint's question, not this one.
 func (a *Application) Proves(secret string) bool {
 	return a.ClientSecret == "" || subtle.ConstantTimeCompare([]byte(secret), []byte(a.ClientSecret)) == 1
+}
+
+// Attended reports whether every grant through this application needs a person
+// present: a credential proved in the sign-in that asks for it, never a session
+// that already exists.
+//
+// It holds for every application of a reserved org (secret or not) and for any
+// application that keeps no sign-in session (EnableSigninSession off).
+func (a *Application) Attended() bool {
+	return policy.IsReservedOrg(a.Organization) || !a.EnableSigninSession
 }
 
 // IsPasswordEnabled reports whether password sign-in is available: the explicit

@@ -191,7 +191,7 @@ func workloadGrant(c *zip.Ctx, db orm.DB) error {
 
 	// 4) Mint what client_credentials would mint for this application — same
 	//    signer, same claims, azp = the app — and record who obtained it.
-	resp, err := machineToken(ctx, db, app, iss, forgeScoped(app, param(c, "scope")), resourceOf(c), "wl", now)
+	resp, err := machineToken(ctx, db, c, app, iss, forgeScoped(app, param(c, "scope")), resourceOf(c), "wl", now)
 	if err != nil {
 		return mintError(c, err)
 	}

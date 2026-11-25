@@ -44,6 +44,7 @@ func storeApp(t *testing.T, db orm.DB, owner, org, clientID, mode string, shared
 	a.Organization = org
 	a.Cert = "cert-" + clientID
 	a.EnablePassword = true
+	a.EnableSigninSession = true
 	a.ExpireInHours = 1
 	a.RedirectUris = []string{spanRedirect}
 	a.OrgChoiceMode, a.IsShared = mode, shared

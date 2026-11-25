@@ -172,7 +172,7 @@ func TestAcceptedIssuers_AnAccessTokenUnderThemVerifies(t *testing.T) {
 	now := time.Now()
 	mint := func(iss string) string {
 		t.Helper()
-		signer, err := signerFor(ctx, db, app, iss)
+		signer, err := signerFor(ctx, db, app, iss, origin{})
 		if err != nil {
 			t.Fatal(err)
 		}

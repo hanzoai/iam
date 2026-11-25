@@ -125,7 +125,7 @@ func tokenExchangeGrant(c *zip.Ctx, db orm.DB) error {
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}
-	signer, err := signerFor(ctx, db, clientApp, iss)
+	signer, err := signerFor(ctx, db, clientApp, iss, originOf(c))
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}

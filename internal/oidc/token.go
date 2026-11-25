@@ -221,9 +221,10 @@ func authorizationCodeGrant(c *zip.Ctx, db orm.DB) error {
 	// /auth/callback and died on `401 invalid_client`. Deleting those secrets is NOT
 	// the fix (it breaks client_credentials, which requires a registered secret).
 	//
-	// A code with NO PKCE challenge still requires the secret, so this is not a
-	// downgrade path: an attacker cannot skip client auth by omitting PKCE.
-	clientAuthed := app.ClientSecret != "" && (clientSecret != "" || tok.CodeChallenge == "")
+	// A code with NO PKCE challenge, or an application serving a reserved org,
+	// always requires the secret when one is registered: never relax client
+	// authentication on reserved-org applications.
+	clientAuthed := app.ClientSecret != "" && (clientSecret != "" || tok.CodeChallenge == "" || policy.IsReservedOrg(app.Organization))
 	if clientAuthed && !app.Proves(clientSecret) {
 		return tokenErrorClient(c, "client authentication failed")
 	}
@@ -244,23 +245,53 @@ func authorizationCodeGrant(c *zip.Ctx, db orm.DB) error {
 		return tokenError(c, 400, "invalid_grant", "PKCE is required for public clients")
 	}
 
-	// One-shot: burn the code, then mint the grant's tokens onto the same row.
+	// One-shot, atomically in one transaction: lock and re-read the code row,
+	// burn it, mint the grant's tokens (including any fail-closed SuperAdmin
+	// audit row), and update the row. Racing redemptions mint at most once, and
+	// a failed audit rolls back without spending an ordinary code.
+	//
 	// PublicGrant carries the relaxation above FORWARD: refresh must be decided
 	// on how this grant was authenticated, not on whether the registration
 	// happens to hold a secret, or the client that just exchanged a code without
 	// one is refused the moment it tries to refresh.
-	tok.CodeIsUsed, tok.PublicGrant = true, !clientAuthed
-	resp, err := issueTokens(ctx, db, c, app, tok, newFamilyID(tok), now)
+	storageID := tok.Key().Encode()
+	var resp tokenResponse
+	err = db.RunInTransactionWith(ctx, nil, func(tx orm.DB) error {
+		fresh, err := orm.GetForUpdate[schema.Token](tx, storageID)
+		if orm.IsNotFound(err) {
+			return ErrCodeUsed
+		}
+		if err != nil {
+			return err
+		}
+		if fresh.CodeIsUsed {
+			return ErrCodeUsed
+		}
+		if fresh.CodeExpireIn != 0 && now.Unix() > fresh.CodeExpireIn {
+			return ErrCodeExpired
+		}
+		fresh.CodeIsUsed, fresh.PublicGrant = true, !clientAuthed
+		r, err := issueTokens(ctx, tx, c, app, fresh, newFamilyID(fresh), now)
+		if err != nil {
+			return err
+		}
+		if err := fresh.UpdateCtx(ctx); err != nil {
+			return err
+		}
+		resp = r
+		return nil
+	})
+	if errors.Is(err, ErrCodeUsed) || errors.Is(err, ErrCodeExpired) {
+		return redeemErrToResponse(c, err)
+	}
 	if err != nil {
 		if tok.Actor != "" {
 			// A refused impersonation code is spent, not parked until the rule
 			// happens to admit it again.
+			tok.CodeIsUsed = true
 			_ = store.SaveToken(ctx, db, tok)
 		}
 		return mintError(c, err)
-	}
-	if err := store.SaveToken(ctx, db, tok); err != nil {
-		return tokenError(c, 500, "server_error", "")
 	}
 	return c.JSON(200, resp)
 }
@@ -318,7 +349,7 @@ func clientCredentialsGrant(c *zip.Ctx, db orm.DB) error {
 	if err != nil {
 		return tokenError(c, 500, "server_error", "")
 	}
-	resp, err := machineToken(ctx, db, app, iss, forgeScoped(app, param(c, "scope")), resourceOf(c), "cc", now)
+	resp, err := machineToken(ctx, db, c, app, iss, forgeScoped(app, param(c, "scope")), resourceOf(c), "cc", now)
 	if err != nil {
 		return mintError(c, err)
 	}
@@ -339,9 +370,9 @@ func clientCredentialsGrant(c *zip.Ctx, db orm.DB) error {
 // mark names the grant in the token row, which is the only place the proof
 // survives: `cc` for a secret, `wl` for a cluster assertion. Reading it is how an
 // operator finds the services still holding a secret.
-func machineToken(ctx context.Context, db orm.DB, app *schema.Application, issuer, scope, resource, mark string, now time.Time) (tokenResponse, error) {
+func machineToken(ctx context.Context, db orm.DB, c *zip.Ctx, app *schema.Application, issuer, scope, resource, mark string, now time.Time) (tokenResponse, error) {
 	ttl := appTTL(app)
-	signer, err := signerFor(ctx, db, app, issuer)
+	signer, err := signerFor(ctx, db, app, issuer, originOf(c))
 	if err != nil {
 		return tokenResponse{}, err
 	}
@@ -595,18 +626,28 @@ func passwordGrant(c *zip.Ctx, db orm.DB) error {
 // both the code grant and refresh rotation mint through, so the token shape can
 // never drift between them.
 func issueTokens(ctx context.Context, db orm.DB, c *zip.Ctx, app *schema.Application, row *schema.Token, family string, now time.Time) (tokenResponse, error) {
+	// A reserved-org subject is confined to applications of its own reserved org:
+	// no code, refresh, device, or password grant for a tenant application may
+	// mint tokens carrying a reserved-org principal.
+	if owner, _ := splitSub(row.User); policy.IsReservedOrg(owner) && owner != app.Organization {
+		return tokenResponse{}, errReservedConfined
+	}
 	ttl := appTTL(app)
 	iss, err := tokenIssuer(c)
 	if err != nil {
 		return tokenResponse{}, err
 	}
-	signer, err := signerFor(ctx, db, app, iss)
+	signer, err := signerFor(ctx, db, app, iss, originOf(c))
 	if err != nil {
 		return tokenResponse{}, err
 	}
 	id, err := userClaims(ctx, db, row.User)
 	if err != nil {
 		return tokenResponse{}, err
+	}
+	// A device grant never carries reserved-org memberships (nor their groups).
+	if row.Device {
+		id.Orgs = unreserved(id.Orgs)
 	}
 	// An impersonation grant (row.Actor): the operator rides in `act` beside
 	// `imp`, the lifetime is capped, and nothing renews it. Decided here, on the
@@ -830,10 +871,11 @@ func descSafe(s string) string {
 // signing-cert owners and builds a Signer with the given canonical issuer. Using
 // the same trusted resolution as the JWKS and verification keeps the three
 // consistent: a token is signed by a key iam will also publish and verify.
-func signerFor(ctx context.Context, db orm.DB, app *schema.Application, issuer string) (*Signer, error) {
+func signerFor(ctx context.Context, db orm.DB, app *schema.Application, issuer string, at origin) (*Signer, error) {
 	// An organization's application naming the organization's own cert signs with
 	// it, under the organization's own issuer (tenant.go). Naming none, it falls to
-	// the platform resolution below, which says what it can sign with.
+	// the platform resolution below, which says what it can sign with. A tenant
+	// signer intentionally carries no SuperAdmin trail so it can never sign one.
 	if s, err := tenantSigner(ctx, db, app); s != nil || err != nil {
 		return s, err
 	}
@@ -862,8 +904,17 @@ func signerFor(ctx context.Context, db orm.DB, app *schema.Application, issuer s
 	if cert == nil || cert.Delegates() {
 		return nil, unsignable(app, cert)
 	}
-	return NewSignerFromCert(cert, app, issuer)
+	s, err := NewSignerFromCert(cert, app, issuer)
+	if err != nil {
+		return nil, err
+	}
+	s.trail = tokenTrail(ctx, db, at)
+	return s, nil
 }
+
+// errReservedConfined is a grant whose subject lives in a reserved org but
+// whose application serves another org.
+var errReservedConfined = errors.New("oidc: reserved-org subject is confined to reserved-org applications")
 
 // mintError answers a token-minting failure: the opaque `server_error` for
 // anything internal, and a named one for the misconfiguration a client operator
@@ -883,6 +934,9 @@ func mintError(c *zip.Ctx, err error) error {
 	if errors.Is(err, ErrNoSubject) {
 		return tokenError(c, 400, "invalid_grant", "the grant's subject no longer names a user")
 	}
+	if errors.Is(err, errReservedConfined) {
+		return tokenError(c, 400, "invalid_grant", "the grant's subject may not use this application")
+	}
 	if errors.Is(err, ErrImpersonation) {
 		return tokenError(c, 400, "invalid_grant", "the impersonation is no longer permitted")
 	}
@@ -892,7 +946,7 @@ func mintError(c *zip.Ctx, err error) error {
 // signAccessToken signs a bare access token for a token row under the given
 // issuer — the direct sign path the end-to-end test drives.
 func signAccessToken(ctx context.Context, db orm.DB, app *schema.Application, tok *schema.Token, issuer string, ttl time.Duration, now time.Time) (string, error) {
-	signer, err := signerFor(ctx, db, app, issuer)
+	signer, err := signerFor(ctx, db, app, issuer, origin{})
 	if err != nil {
 		return "", err
 	}
@@ -900,7 +954,7 @@ func signAccessToken(ctx context.Context, db orm.DB, app *schema.Application, to
 	if err != nil {
 		return "", err
 	}
-	return signer.Sign(app, Identity{Id: id.Id, Orgs: id.Orgs}, tok.Scope, "", ttl, now)
+	return signer.Sign(app, Identity{Id: id.Id, Name: id.Name, Type: id.Type, Orgs: id.Orgs}, tok.Scope, "", ttl, now)
 }
 
 // tokenIssuer is the canonical OIDC issuer for this request — the value discovery
@@ -964,10 +1018,21 @@ func identityOf(ctx context.Context, db orm.DB, u *schema.User) Identity {
 		Name:          u.Name,
 		Display:       u.DisplayName,
 		Billing:       store.BillingAccount(u, refs),
+		Type:          kindOf(u),
 		Orgs:          refs,
 		Wallets:       store.WalletRefs(ctx, db, u),
 		DID:           schema.DID(sub),
 	}
+}
+
+// kindOf classifies a user row for token claims: a machine account (service
+// account) carries schema.Program on every token-minting boundary so downstream
+// verifiers and authz.Claims.Sudo never mistake a machine for a human SuperAdmin.
+func kindOf(u *schema.User) string {
+	if u != nil && u.Machine() {
+		return schema.Program
+	}
+	return ""
 }
 
 // userClaims resolves the token-facing Identity for a token row's (owner/name)

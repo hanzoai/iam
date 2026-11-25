@@ -94,7 +94,7 @@ func (r *impRig) bearer(t *testing.T, owner, name string) string {
 	if err != nil || a == nil {
 		t.Fatalf("console: %v", err)
 	}
-	signer, err := signerFor(ctx, r.db, a, "https://hanzo.id")
+	signer, err := signerFor(ctx, r.db, a, "https://hanzo.id", origin{})
 	if err != nil {
 		t.Fatalf("signer: %v", err)
 	}
@@ -402,7 +402,7 @@ func TestImpersonate_delegatedBearerRefused(t *testing.T) {
 	r := newImpRig(t)
 	ctx := context.Background()
 	a, _ := store.GetApplicationByClientId(ctx, r.db, "admin-console")
-	signer, err := signerFor(ctx, r.db, a, "https://hanzo.id")
+	signer, err := signerFor(ctx, r.db, a, "https://hanzo.id", origin{})
 	if err != nil {
 		t.Fatal(err)
 	}

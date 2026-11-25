@@ -80,7 +80,7 @@ func keep(t *testing.T, db orm.DB, u *schema.User, f func(*schema.User)) {
 // bearerOf is an access token the application issued to u.
 func bearerOf(t *testing.T, db orm.DB, a *schema.Application, u *schema.User, edit func(*Identity)) string {
 	t.Helper()
-	signer, err := signerFor(tctx(), db, a, "https://hanzo.id")
+	signer, err := signerFor(tctx(), db, a, "https://hanzo.id", origin{})
 	if err != nil {
 		t.Fatalf("signer: %v", err)
 	}

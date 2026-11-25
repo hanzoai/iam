@@ -651,3 +651,27 @@ func TestApply_DeclaredAdminApplicationsAreThePlatforms(t *testing.T) {
 		t.Fatal("the next run did not mark the declared application again")
 	}
 }
+
+// A reserved-org application declared as shared or org-spanning stops the seed
+// at boot rather than silently persisting an unconfined admin app.
+func TestSeed_AReservedOrgAppIsNeverShared(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		app  *schema.Application
+	}{
+		{"admin isShared", &schema.Application{Owner: "admin", Name: "admin-shared", ClientId: "admin-shared", Organization: "admin", IsShared: true}},
+		{"admin create", &schema.Application{Owner: "admin", Name: "admin-create", ClientId: "admin-create", Organization: "admin", OrgChoiceMode: "create"}},
+		{"built-in isShared", &schema.Application{Owner: "admin", Name: "bi-shared", ClientId: "bi-shared", Organization: "built-in", IsShared: true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := openDB(t)
+			ctx := context.Background()
+			if _, err := Apply(ctx, db, &initData{Applications: []*schema.Application{tc.app}}); err == nil {
+				t.Fatalf("seed accepted unconfined reserved-org app %s", tc.name)
+			}
+			if got, _ := orm.Get[schema.Application](db, tc.app.Owner+"/"+tc.app.Name); got != nil {
+				t.Fatalf("refused seed left row %+v", got)
+			}
+		})
+	}
+}

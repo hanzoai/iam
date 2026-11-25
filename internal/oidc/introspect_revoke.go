@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
@@ -244,7 +245,7 @@ func revokeHandler(db orm.DB) zip.Handler {
 			return tokenErrorClient(c, "client authentication failed")
 		}
 		mayRevoke := func(row *schema.Token) bool {
-			return row.Application == app.Name && (proved || row.PublicGrant)
+			return row.Application == app.Name && (proved || (row.PublicGrant && !policy.IsReservedOrg(app.Organization)))
 		}
 
 		tokenStr := param(c, "token")

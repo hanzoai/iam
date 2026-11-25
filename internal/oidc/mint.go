@@ -38,7 +38,14 @@ type Mint struct {
 	// person performs leaves both empty.
 	Actor  string
 	Reason string
+	// Session reports that the person was proved by an existing session cookie
+	// rather than by a credential presented in this sign-in.
+	Session bool
 }
+
+// errAttended refuses a session-answered grant through an application that
+// requires an interactive credential proof (schema.Application.Attended).
+var errAttended = errors.New("this application needs you to sign in again")
 
 // servesOrg reports whether app may mint a grant for an identity in org.
 func servesOrg(app *schema.Application, org string) bool {
@@ -85,6 +92,11 @@ func MintFor(ctx context.Context, db orm.DB, app *schema.Application, userID str
 	// written yet.
 	if policy.IsReservedOrg(org) && (app == nil || org != app.Organization) {
 		return "", errors.New("the user is not permitted to sign in to this application")
+	}
+	// An attended application is never answered from a session, whichever door
+	// the session arrived through.
+	if p.Session && app != nil && app.Attended() {
+		return "", errAttended
 	}
 
 	// A bare sign-in needs no application: report the identity and stop.
