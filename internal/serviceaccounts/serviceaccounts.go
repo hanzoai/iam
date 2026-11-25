@@ -166,6 +166,17 @@ func create(db orm.DB) zip.Handler {
 		if err := sa.CreateCtx(ctx); err != nil {
 			return httpx.Err(c, err.Error())
 		}
+		store.Record(ctx, db, &schema.AuditLog{
+			Owner:        in.Organization,
+			Organization: in.Organization,
+			User:         p.Org + "/" + p.User,
+			ClientIp:     httpx.ClientIP(c),
+			Action:       schema.ActionServiceAccountCreate,
+			Object:       name,
+			Method:       "POST",
+			RequestUri:   "/v1/iam/service-accounts",
+			StatusCode:   200,
+		})
 		return httpx.Ok(c, &minted{
 			Owner: sa.Owner, Name: sa.Name, Type: sa.Type, AgentRef: sa.Tag,
 			AccessKey: key, AccessSecret: secret,
@@ -282,6 +293,21 @@ func rotate(db orm.DB) zip.Handler {
 		if err := sa.UpdateCtx(c.Context()); err != nil {
 			return httpx.Err(c, err.Error())
 		}
+		actor := ""
+		if p, ok := principal.From(c.Context()); ok && p != nil {
+			actor = p.Org + "/" + p.User
+		}
+		store.Record(c.Context(), db, &schema.AuditLog{
+			Owner:        sa.Owner,
+			Organization: sa.Owner,
+			User:         actor,
+			ClientIp:     httpx.ClientIP(c),
+			Action:       schema.ActionServiceAccountUpdate,
+			Object:       sa.Name,
+			Method:       "POST",
+			RequestUri:   "/v1/iam/service-accounts/" + sa.Name + "/keys",
+			StatusCode:   200,
+		})
 		return httpx.Ok(c, &minted{Owner: sa.Owner, Name: sa.Name, AccessKey: key, AccessSecret: secret})
 	}
 }
@@ -304,6 +330,21 @@ func revoke(db orm.DB) zip.Handler {
 		if err := sa.DeleteCtx(c.Context()); err != nil {
 			return httpx.Err(c, err.Error())
 		}
+		actor := ""
+		if p, ok := principal.From(c.Context()); ok && p != nil {
+			actor = p.Org + "/" + p.User
+		}
+		store.Record(c.Context(), db, &schema.AuditLog{
+			Owner:        sa.Owner,
+			Organization: sa.Owner,
+			User:         actor,
+			ClientIp:     httpx.ClientIP(c),
+			Action:       schema.ActionServiceAccountDelete,
+			Object:       sa.Name,
+			Method:       "DELETE",
+			RequestUri:   "/v1/iam/service-accounts/" + sa.Name,
+			StatusCode:   200,
+		})
 		return httpx.Ok(c, true)
 	}
 }

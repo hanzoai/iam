@@ -44,6 +44,22 @@ const (
 	ActionRevokeUserKeys  = "revoke-user-keys"
 	ActionTokenExchange   = "token-exchange"
 
+	// API key lifecycle operations
+	ActionKeyCreate = "key-create"
+	ActionKeyDelete = "key-delete"
+	ActionKeyRevoke = "key-revoke"
+	ActionKeyRotate = "key-rotate"
+
+	// Service account lifecycle operations
+	ActionServiceAccountCreate = "service-account-create"
+	ActionServiceAccountUpdate = "service-account-update"
+	ActionServiceAccountDelete = "service-account-delete"
+
+	// Application lifecycle & client secret rotation operations
+	ActionApplicationCreate       = "application-create"
+	ActionApplicationSecretRotate = "application-secret-rotate"
+	ActionApplicationDelete       = "application-delete"
+
 	// A server key acting FOR a user in its own org — the credential behind as().
 	// It is a privileged mint (one principal obtains a token bound to another), so
 	// every one is recorded: who acted (the org key), for whom (the target
@@ -144,7 +160,10 @@ func PlatformWritten(action string) bool {
 		ActionInviteSend, ActionInviteAccept, ActionInviteRefused, ActionInviteSignupRefused,
 		ActionInviteCodeSent, ActionMembershipGrant, ActionMembershipRevoke, ActionImpersonate,
 		ActionDelegate, ActionAddress, ActionWalletSignup, ActionFederationLink, ActionRegisterClient,
-		ActionAgentClaim, ActionOrgAdmin, ActionInviteRole, ActionUserRemove, ActionVoid:
+		ActionAgentClaim, ActionOrgAdmin, ActionInviteRole, ActionUserRemove, ActionVoid,
+		ActionKeyCreate, ActionKeyDelete, ActionKeyRevoke, ActionKeyRotate,
+		ActionServiceAccountCreate, ActionServiceAccountUpdate, ActionServiceAccountDelete,
+		ActionApplicationCreate, ActionApplicationSecretRotate, ActionApplicationDelete:
 		return true
 	}
 	return false

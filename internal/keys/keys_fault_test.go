@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
 
@@ -231,6 +232,50 @@ func TestDel_RemovesTheKey(t *testing.T) {
 	}
 	if _, err := get(db)(ctx, &Ref{Owner: "acme", Name: "svc"}); status(t, err) != 404 {
 		t.Fatal("key still readable after del")
+	}
+}
+
+// TestDel_WritesAuditRecord verifies that deleting a key writes an audit record.
+func TestDel_WritesAuditRecord(t *testing.T) {
+	db := memDB(t)
+	ctx := principal.Bind(
+		zip.WithCaller(context.Background(), zip.Caller{IP: "192.0.2.1"}),
+		&policy.Principal{Org: "acme", User: "admin", Admin: true},
+	)
+
+	if _, err := create(db)(ctx, &schema.Key{Owner: "acme", Name: "svc", User: "admin"}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := del(db)(ctx, &Ref{Owner: "acme", Name: "svc"}); err != nil {
+		t.Fatalf("del: %v", err)
+	}
+
+	logs, err := orm.TypedQuery[schema.AuditLog](db).Filter("Owner=", "acme").GetAll(ctx)
+	if err != nil {
+		t.Fatalf("list audit logs: %v", err)
+	}
+
+	found := false
+	for _, log := range logs {
+		if log.Action == schema.ActionKeyDelete && log.Object == "svc" {
+			found = true
+			if log.User != "acme/admin" {
+				t.Errorf("audit log User = %q, want %q", log.User, "acme/admin")
+			}
+			if log.ClientIp != "192.0.2.1" {
+				t.Errorf("audit log ClientIp = %q, want %q", log.ClientIp, "192.0.2.1")
+			}
+			if log.Method != "DELETE" {
+				t.Errorf("audit log Method = %q, want %q", log.Method, "DELETE")
+			}
+			if log.RequestUri != "/v1/iam/keys/acme/svc" {
+				t.Errorf("audit log RequestUri = %q, want %q", log.RequestUri, "/v1/iam/keys/acme/svc")
+			}
+			break
+		}
+	}
+	if !found {
+		t.Fatal("audit log for key deletion not found")
 	}
 }
 
