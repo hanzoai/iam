@@ -119,6 +119,11 @@ const (
 	// Object the registration, the account and the client it came through. It is the
 	// record of who let a program act and spend in the org.
 	ActionAgentClaim = "agent-claim"
+	// Admin lifecycle audit records are owned by the platform.
+	ActionOrgAdmin   = "org-admin"
+	ActionInviteRole = "invitation-role"
+	ActionUserRemove = "user-remove"
+	ActionVoid       = "void"
 )
 
 // PlatformWritten reports whether action names a record the platform writes
@@ -134,7 +139,7 @@ func PlatformWritten(action string) bool {
 		ActionInviteSend, ActionInviteAccept, ActionInviteRefused, ActionInviteSignupRefused,
 		ActionInviteCodeSent, ActionMembershipGrant, ActionMembershipRevoke, ActionImpersonate,
 		ActionDelegate, ActionAddress, ActionWalletSignup, ActionFederationLink, ActionRegisterClient,
-		ActionAgentClaim:
+		ActionAgentClaim, ActionOrgAdmin, ActionInviteRole, ActionUserRemove, ActionVoid:
 		return true
 	}
 	return false

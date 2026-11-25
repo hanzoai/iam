@@ -11,6 +11,7 @@ import (
 
 	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
+	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/keys"
 	"github.com/hanzoai/iam/pkg/schema"
@@ -243,6 +244,15 @@ func provision(ctx context.Context, db orm.DB, cl claim) (provisioned, error) {
 			user.IsAdmin = true
 			user.UpdatedTime = provisionNow()
 			if err := user.UpdateCtx(ctx); err != nil {
+				return &fault{500, "server_error"}
+			}
+			// The founder of an org is its first admin, and that is a grant like
+			// any other: recorded under the org it was made in.
+			c := zip.CallerOf(ctx)
+			if err := store.Append(ctx, tx, store.Act{
+				Actor: wasOwner + "/" + user.Name, Org: cl.slug, Reason: "founded " + cl.slug,
+				Request: c.RequestID, IP: c.IP,
+			}.Row(schema.ActionOrgAdmin, map[string]any{"target": holder, "from": false, "to": true})); err != nil {
 				return &fault{500, "server_error"}
 			}
 		}

@@ -84,7 +84,7 @@ type scimMultiValued struct {
 
 type hanzoUserExt struct {
 	Owner   string `json:"owner,omitempty"`
-	IsAdmin bool   `json:"isAdmin,omitempty"`
+	IsAdmin *bool  `json:"isAdmin,omitempty"`
 }
 
 type scimMeta struct {
@@ -99,7 +99,7 @@ type scimMeta struct {
 // extension. No credential material is present (Mask stripped it; password is
 // write-only and never set here).
 func toSCIM(u *schema.User) *scimUser {
-	active := !u.IsForbidden && !u.IsDeleted
+	active, admin := !u.IsForbidden && !u.IsDeleted, u.IsAdmin
 	s := &scimUser{
 		Schemas:     []string{schemaUser, schemaHanzoUserExt},
 		ID:          u.Owner + "/" + u.Name,
@@ -109,7 +109,7 @@ func toSCIM(u *schema.User) *scimUser {
 		UserType:    u.Type,
 		ProfileURL:  u.Homepage,
 		Active:      &active,
-		Hanzo:       &hanzoUserExt{Owner: u.Owner, IsAdmin: u.IsAdmin},
+		Hanzo:       &hanzoUserExt{Owner: u.Owner, IsAdmin: &admin},
 		Meta: &scimMeta{
 			ResourceType: "User",
 			Created:      u.CreatedTime,
@@ -156,11 +156,11 @@ func primaryAddress(vs []scimAddress) (scimAddress, bool) {
 // applyToUser overlays a SCIM User's mapped attributes ONTO u — which is the FULL
 // current row on an update (so every unmapped field: MFA enrollment, IsDeleted,
 // Type, Ldap, … is PRESERVED) or a blank record on a create. It never sets
-// identity (owner/name); the caller binds those. isAdmin is a privileged field:
-// it is applied only when allowAdmin (SuperAdmin) — a non-super can never set or
-// raise it (provision-don't-promote), so an omitted-or-present isAdmin from a
-// non-super is ignored, leaving u's existing value. Returns the write-only password.
-func applyToUser(in *scimUser, u *schema.User, allowAdmin bool) (password string) {
+// identity (owner/name); the caller binds those. isAdmin, when the Hanzo
+// extension states it, is applied as stated and left as stored when it does not:
+// the write then asks users.Admin for any change, so a caller the admin rule does
+// not allow is refused rather than ignored. Returns the write-only password.
+func applyToUser(in *scimUser, u *schema.User) (password string) {
 	u.DisplayName = in.DisplayName
 	if in.Name != nil {
 		u.FirstName, u.LastName = in.Name.GivenName, in.Name.FamilyName
@@ -193,8 +193,8 @@ func applyToUser(in *scimUser, u *schema.User, allowAdmin bool) (password string
 	// active defaults to true when omitted (RFC 7643 §4.1.1); active=false
 	// soft-disables (IsForbidden).
 	u.IsForbidden = !(in.Active == nil || *in.Active)
-	if allowAdmin && in.Hanzo != nil {
-		u.IsAdmin = in.Hanzo.IsAdmin
+	if in.Hanzo != nil && in.Hanzo.IsAdmin != nil {
+		u.IsAdmin = *in.Hanzo.IsAdmin
 	}
 	return in.Password
 }
@@ -317,11 +317,11 @@ func createUser(db orm.DB) zip.Handler {
 		}
 
 		u := schema.User{}
-		password := applyToUser(&in, &u, authz.IsSuper(ctx))
+		password := applyToUser(&in, &u)
 		u.Owner, u.Name = owner, in.UserName
 
-		// applyToUser set IsAdmin only when the caller is a SuperAdmin; state it
-		// through the in-process field, since the user body no longer carries it.
+		// The isAdmin the extension stated rides the in-process field, and the
+		// create grants it only as users.Admin allows: refused, never ignored.
 		created, err := users.New(db).Create(ctx, &users.CreateInput{User: u, Password: password, Admin: u.IsAdmin})
 		if err != nil {
 			return mapErr(c, err)
@@ -358,7 +358,7 @@ func replaceUser(db orm.DB) zip.Handler {
 		if err := decodeSCIM(c, &in); err != nil {
 			return scimError(c, 400, "invalid SCIM body: "+err.Error(), "invalidSyntax")
 		}
-		password := applyToUser(&in, cur, authz.IsSuper(ctx)) // overlay onto the FULL row
+		password := applyToUser(&in, cur) // overlay onto the FULL row
 		cur.Owner, cur.Name = owner, name
 
 		updated, err := users.New(db).Update(ctx, &users.UpdateInput{User: *cur, Password: password, Admin: &cur.IsAdmin})
@@ -406,7 +406,7 @@ func patchUser(db orm.DB) zip.Handler {
 
 		// Start the working projection from the current row so unset attributes are
 		// preserved across the patch.
-		curActive := !cur.IsForbidden && !cur.IsDeleted
+		curActive, admin := !cur.IsForbidden && !cur.IsDeleted, cur.IsAdmin
 		next := scimUser{
 			UserName:     cur.Name,
 			ExternalID:   cur.ExternalId,
@@ -419,7 +419,7 @@ func patchUser(db orm.DB) zip.Handler {
 			Addresses: []scimAddress{{
 				Locality: cur.Location, Region: cur.Region, Country: cur.CountryCode, Primary: true,
 			}},
-			Hanzo: &hanzoUserExt{Owner: cur.Owner, IsAdmin: cur.IsAdmin},
+			Hanzo: &hanzoUserExt{Owner: cur.Owner, IsAdmin: &admin},
 		}
 		password := ""
 		for _, op := range patch.Operations {
@@ -430,7 +430,7 @@ func patchUser(db orm.DB) zip.Handler {
 
 		// Overlay the patched projection onto the FULL current row (preserving MFA,
 		// IsDeleted, Type, …), then write.
-		if pw := applyToUser(&next, cur, authz.IsSuper(ctx)); pw != "" {
+		if pw := applyToUser(&next, cur); pw != "" {
 			password = pw
 		}
 		cur.Owner, cur.Name = owner, name
@@ -467,8 +467,8 @@ func deleteUser(db orm.DB) zip.Handler {
 // Supports the provisioning-practical subset: add/replace/remove on the common
 // top-level paths, plus a path-less replace whose value is a partial resource. A
 // `password` set is captured separately (write-only). An unknown path is rejected;
-// isAdmin is NOT a patchable path (provision-don't-promote — set only via a
-// SuperAdmin create/PUT with the Hanzo extension).
+// isAdmin is NOT a patchable path: it is stated with the Hanzo extension on a
+// create or PUT, where users.Admin decides it.
 func applyPatchOp(u *scimUser, password *string, op, path string, value any) error {
 	switch op {
 	case "add", "replace":

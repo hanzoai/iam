@@ -302,6 +302,8 @@ func TestDevice_ASuperAdminDoesNotCrossIntoATenantsApplication(t *testing.T) {
 // outcome stands: the request is approved or it is refused, never both, and an
 // approval is minted once however many polls ask.
 func TestDevice_ConcurrentApproveRefusePollSettleOnOneOutcome(t *testing.T) {
+	resetDeviceBudgets()
+	t.Cleanup(resetDeviceBudgets)
 	for round := range 6 {
 		app, db := newServer(t)
 		seedApp(t, db, appOpts{clientID: "hanzo-console", secret: "s3cret", redirectURIs: []string{testRedirect}})

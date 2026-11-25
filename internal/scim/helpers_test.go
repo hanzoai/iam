@@ -367,12 +367,12 @@ func TestApplyPatchOp(t *testing.T) {
 
 // TestApplyToUser_overlayRules pins the parts of applyToUser the round-trip HTTP
 // tests do not sample directly: an address cleared when the write carries none,
-// a photo mapped to the avatar, active's default, and provision-don't-promote on
-// isAdmin (a non-super's isAdmin is ignored; a super's is honoured).
+// a photo mapped to the avatar, active's default, and isAdmin applied only when
+// the extension states it.
 func TestApplyToUser_overlayRules(t *testing.T) {
 	t.Run("address cleared when write carries none", func(t *testing.T) {
 		u := &schema.User{Location: "old", Region: "OR", CountryCode: "US"}
-		applyToUser(&scimUser{}, u, false)
+		applyToUser(&scimUser{}, u)
 		if u.Location != "" || u.Region != "" || u.CountryCode != "" {
 			t.Errorf("address not cleared: %q/%q/%q", u.Location, u.Region, u.CountryCode)
 		}
@@ -380,11 +380,11 @@ func TestApplyToUser_overlayRules(t *testing.T) {
 
 	t.Run("photo maps to avatar; empty leaves it", func(t *testing.T) {
 		u := &schema.User{Avatar: "keep"}
-		applyToUser(&scimUser{Photos: nil}, u, false)
+		applyToUser(&scimUser{Photos: nil}, u)
 		if u.Avatar != "keep" {
 			t.Errorf("empty photos overwrote avatar: %q", u.Avatar)
 		}
-		applyToUser(&scimUser{Photos: []scimMultiValued{{Value: "http://img"}}}, u, false)
+		applyToUser(&scimUser{Photos: []scimMultiValued{{Value: "http://img"}}}, u)
 		if u.Avatar != "http://img" {
 			t.Errorf("photo not mapped to avatar: %q", u.Avatar)
 		}
@@ -392,12 +392,12 @@ func TestApplyToUser_overlayRules(t *testing.T) {
 
 	t.Run("active default true; false forbids", func(t *testing.T) {
 		u := &schema.User{}
-		applyToUser(&scimUser{}, u, false) // omitted → active, so not forbidden
+		applyToUser(&scimUser{}, u) // omitted → active, so not forbidden
 		if u.IsForbidden {
 			t.Error("omitted active should default to active (IsForbidden=false)")
 		}
 		no := false
-		applyToUser(&scimUser{Active: &no}, u, false)
+		applyToUser(&scimUser{Active: &no}, u)
 		if !u.IsForbidden {
 			t.Error("active=false should set IsForbidden")
 		}
@@ -405,7 +405,7 @@ func TestApplyToUser_overlayRules(t *testing.T) {
 
 	t.Run("password returned; identity untouched", func(t *testing.T) {
 		u := &schema.User{Owner: "keep", Name: "keep"}
-		pw := applyToUser(&scimUser{Password: "pw"}, u, false)
+		pw := applyToUser(&scimUser{Password: "pw"}, u)
 		if pw != "pw" {
 			t.Errorf("password = %q, want pw", pw)
 		}
@@ -414,15 +414,23 @@ func TestApplyToUser_overlayRules(t *testing.T) {
 		}
 	})
 
-	t.Run("isAdmin honoured only for a super (provision-don't-promote)", func(t *testing.T) {
-		u := &schema.User{}
-		applyToUser(&scimUser{Hanzo: &hanzoUserExt{IsAdmin: true}}, u, false) // non-super
-		if u.IsAdmin {
-			t.Error("a non-super's isAdmin must be ignored")
-		}
-		applyToUser(&scimUser{Hanzo: &hanzoUserExt{IsAdmin: true}}, u, true) // super
+	// The overlay states what the extension stated and keeps what it left out; who
+	// may change it is the write's to decide (users.Admin), pinned over HTTP in
+	// regression_test.go.
+	t.Run("isAdmin applied when stated, kept when not", func(t *testing.T) {
+		yes, no := true, false
+		u := &schema.User{IsAdmin: true}
+		applyToUser(&scimUser{Hanzo: &hanzoUserExt{Owner: "hanzo"}}, u)
 		if !u.IsAdmin {
-			t.Error("a super's isAdmin must be honoured")
+			t.Error("an extension that states no isAdmin must keep the stored one")
+		}
+		applyToUser(&scimUser{Hanzo: &hanzoUserExt{IsAdmin: &no}}, u)
+		if u.IsAdmin {
+			t.Error("a stated false must be applied")
+		}
+		applyToUser(&scimUser{Hanzo: &hanzoUserExt{IsAdmin: &yes}}, u)
+		if !u.IsAdmin {
+			t.Error("a stated true must be applied")
 		}
 	})
 }
