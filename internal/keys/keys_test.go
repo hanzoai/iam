@@ -13,6 +13,7 @@ import (
 	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 	ormdb "github.com/hanzoai/orm/db"
+	"github.com/zap-proto/zip"
 
 	"github.com/hanzoai/iam/internal/principal"
 	"github.com/hanzoai/iam/pkg/schema"
@@ -126,6 +127,61 @@ func TestKeys_PublishableForcesSecretEmpty(t *testing.T) {
 	}
 	if upd.AccessSecret != "" {
 		t.Fatalf("update let a publish key gain a secret %q", upd.AccessSecret)
+	}
+}
+
+// TestCreateAndRevoke_WritesAuditRecords verifies API key create, edit-revoke,
+// MintUserKey, Issue, and RevokeUserKey all emit PlatformWritten audit rows.
+func TestCreateAndRevoke_WritesAuditRecords(t *testing.T) {
+	db := memDB(t)
+	ctx := principal.Bind(
+		zip.WithCaller(context.Background(), zip.Caller{IP: "192.0.2.10"}),
+		&policy.Principal{Org: "hanzo", User: "admin", Admin: true},
+	)
+
+	if _, err := create(db)(ctx, &schema.Key{Owner: "hanzo", Name: "site", User: "admin"}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := update(db)(ctx, &schema.Key{Owner: "hanzo", Name: "site", User: "admin", State: schema.KeyStateRevoked}); err != nil {
+		t.Fatalf("update revoke: %v", err)
+	}
+	if _, err := MintUserKey(ctx, db, "hanzo", "alice", ""); err != nil {
+		t.Fatalf("MintUserKey: %v", err)
+	}
+	if _, _, err := Issue(ctx, db, "hanzo", "hanzo/alice", "cli", "CLI"); err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+	if err := RevokeUserKey(ctx, db, "hanzo", "alice", ""); err != nil {
+		t.Fatalf("RevokeUserKey: %v", err)
+	}
+
+	logs, err := orm.TypedQuery[schema.AuditLog](db).Filter("Owner=", "hanzo").GetAll(ctx)
+	if err != nil {
+		t.Fatalf("list audit logs: %v", err)
+	}
+
+	seen := map[string]bool{}
+	for _, l := range logs {
+		seen[l.Action+":"+l.Object] = true
+		if l.Action == schema.ActionKeyCreate && l.Object == "site" {
+			if l.User != "hanzo/admin" || l.ClientIp != "192.0.2.10" || l.Method != "POST" || l.RequestUri != "/v1/iam/keys" {
+				t.Errorf("unexpected key-create row: %+v", l)
+			}
+		}
+		if l.Action == schema.ActionKeyRevoke && l.Object == "site" {
+			if l.User != "hanzo/admin" || l.ClientIp != "192.0.2.10" || l.Method != "PUT" || l.RequestUri != "/v1/iam/keys/hanzo/site" {
+				t.Errorf("unexpected key-revoke row: %+v", l)
+			}
+		}
+	}
+	for _, want := range []string{
+		schema.ActionKeyCreate + ":site",
+		schema.ActionKeyRevoke + ":site",
+		schema.ActionKeyRotate + ":cli",
+	} {
+		if !seen[want] {
+			t.Errorf("missing expected audit record %q (got keys: %v)", want, seen)
+		}
 	}
 }
 

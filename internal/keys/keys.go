@@ -203,6 +203,19 @@ func create(db orm.DB) zip.TypedHandler[schema.Key, schema.Key] {
 			return nil, zip.ErrInternal(err.Error())
 		}
 		k.AccessSecret = secret
+		if p, ok := principal.From(ctx); ok && p != nil {
+			store.Record(ctx, db, &schema.AuditLog{
+				Owner:        in.Owner,
+				Organization: in.Owner,
+				User:         p.Org + "/" + p.User,
+				ClientIp:     zip.CallerOf(ctx).IP,
+				Action:       schema.ActionKeyCreate,
+				Object:       k.Name,
+				Method:       "POST",
+				RequestUri:   "/v1/iam/keys",
+				StatusCode:   200,
+			})
+		}
 		return k, nil
 	}
 }
@@ -278,6 +291,8 @@ func edit(ctx context.Context, db orm.DB, in *schema.Key) (*schema.Key, error) {
 	if (ClassOf(in.Scope) == schema.KeyScopePublish) != (ClassOf(k.Scope) == schema.KeyScopePublish) {
 		return nil, zip.ErrBadRequest("a key's class is fixed when it is minted; create a new key instead")
 	}
+	wasRevoked := k.State == schema.KeyStateRevoked
+	isRevoking := in.State == schema.KeyStateRevoked
 	apply(k, in)
 	// The reach half of the scope is policy and changes here; the class half is
 	// equal, checked above, so this never turns one kind of key into the other.
@@ -300,6 +315,21 @@ func edit(ctx context.Context, db orm.DB, in *schema.Key) (*schema.Key, error) {
 	if err := k.UpdateCtx(ctx); err != nil {
 		return nil, zip.ErrInternal(err.Error())
 	}
+	if !wasRevoked && isRevoking {
+		if p, ok := principal.From(ctx); ok && p != nil {
+			store.Record(ctx, db, &schema.AuditLog{
+				Owner:        in.Owner,
+				Organization: in.Owner,
+				User:         p.Org + "/" + p.User,
+				ClientIp:     zip.CallerOf(ctx).IP,
+				Action:       schema.ActionKeyRevoke,
+				Object:       k.Name,
+				Method:       "PUT",
+				RequestUri:   "/v1/iam/keys/" + in.Owner + "/" + in.Name,
+				StatusCode:   200,
+			})
+		}
+	}
 	// An edit is not a mint: the secret is revealed ONCE, by create. Echoing it
 	// from every update would turn "rename this key" into "re-read its secret".
 	return k.Mask(), nil
@@ -319,8 +349,22 @@ func del(db orm.DB) zip.TypedHandler[Ref, DeleteResponse] {
 		if err != nil {
 			return nil, zip.ErrInternal(err.Error())
 		}
+		keyName := k.Name
 		if err := k.DeleteCtx(ctx); err != nil {
 			return nil, zip.ErrInternal(err.Error())
+		}
+		if p, ok := principal.From(ctx); ok && p != nil {
+			store.Record(ctx, db, &schema.AuditLog{
+				Owner:        in.Owner,
+				Organization: in.Owner,
+				User:         p.Org + "/" + p.User,
+				ClientIp:     zip.CallerOf(ctx).IP,
+				Action:       schema.ActionKeyDelete,
+				Object:       keyName,
+				Method:       "DELETE",
+				RequestUri:   "/v1/iam/keys/" + in.Owner + "/" + in.Name,
+				StatusCode:   200,
+			})
 		}
 		return &DeleteResponse{Deleted: true}, nil
 	}
@@ -668,6 +712,21 @@ func MintUserKey(ctx context.Context, db orm.DB, owner, user, scope string) (str
 	}); err != nil {
 		return "", err
 	}
+	actor := owner + "/" + user
+	if p, ok := principal.From(ctx); ok && p != nil {
+		actor = p.Org + "/" + p.User
+	}
+	store.Record(ctx, db, &schema.AuditLog{
+		Owner:        owner,
+		Organization: owner,
+		User:         actor,
+		ClientIp:     zip.CallerOf(ctx).IP,
+		Action:       schema.ActionKeyRotate,
+		Object:       name,
+		Method:       "MINT",
+		RequestUri:   "/v1/iam/keys/mint",
+		StatusCode:   200,
+	})
 	return presented, nil
 }
 
@@ -709,6 +768,21 @@ func Issue(ctx context.Context, db orm.DB, owner, user, name, label string) (acc
 	if err != nil {
 		return "", "", err
 	}
+	actor := owner + "/" + user
+	if p, ok := principal.From(ctx); ok && p != nil {
+		actor = p.Org + "/" + p.User
+	}
+	store.Record(ctx, db, &schema.AuditLog{
+		Owner:        owner,
+		Organization: owner,
+		User:         actor,
+		ClientIp:     zip.CallerOf(ctx).IP,
+		Action:       schema.ActionKeyRotate,
+		Object:       name,
+		Method:       "MINT",
+		RequestUri:   "/v1/iam/keys/issue",
+		StatusCode:   200,
+	})
 	return access, secret, nil
 }
 
@@ -773,5 +847,24 @@ func RevokeUserKey(ctx context.Context, db orm.DB, owner, user, scope string) er
 	if err != nil {
 		return err
 	}
-	return k.DeleteCtx(ctx)
+	keyName := k.Name
+	if err := k.DeleteCtx(ctx); err != nil {
+		return err
+	}
+	actor := owner + "/" + user
+	if p, ok := principal.From(ctx); ok && p != nil {
+		actor = p.Org + "/" + p.User
+	}
+	store.Record(ctx, db, &schema.AuditLog{
+		Owner:        owner,
+		Organization: owner,
+		User:         actor,
+		ClientIp:     zip.CallerOf(ctx).IP,
+		Action:       schema.ActionKeyRevoke,
+		Object:       keyName,
+		Method:       "MINT",
+		RequestUri:   "/v1/iam/keys/revoke",
+		StatusCode:   200,
+	})
+	return nil
 }

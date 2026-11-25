@@ -307,6 +307,19 @@ func Create(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 			return nil, written(err)
 		}
 		store.InvalidateApplication(ctx, db, in.ClientId)
+		if p, ok := principal.From(ctx); ok && p != nil {
+			store.Record(ctx, db, &schema.AuditLog{
+				Owner:        in.Owner,
+				Organization: in.Owner,
+				User:         p.Org + "/" + p.User,
+				ClientIp:     zip.CallerOf(ctx).IP,
+				Action:       schema.ActionApplicationCreate,
+				Object:       in.Name,
+				Method:       "POST",
+				RequestUri:   "/v1/iam/applications",
+				StatusCode:   200,
+			})
+		}
 		return in.Mask(), nil
 	}
 }
@@ -380,6 +393,7 @@ func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 		// Clearing a secret on purpose (confidential -> public) is therefore no longer
 		// expressible as an accident. It goes through the operator upsert's explicit
 		// `public: true`, which is the one place that decision is named.
+		secretRotated := in.ClientSecret != "" && in.ClientSecret != existing.ClientSecret
 		if in.ClientSecret == "" {
 			in.ClientSecret = existing.ClientSecret
 		}
@@ -392,6 +406,21 @@ func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 			return nil, written(err)
 		}
 		store.InvalidateApplication(ctx, db, existing.ClientId, in.ClientId)
+		if secretRotated {
+			if p, ok := principal.From(ctx); ok && p != nil {
+				store.Record(ctx, db, &schema.AuditLog{
+					Owner:        in.Owner,
+					Organization: in.Owner,
+					User:         p.Org + "/" + p.User,
+					ClientIp:     zip.CallerOf(ctx).IP,
+					Action:       schema.ActionApplicationSecretRotate,
+					Object:       in.Name,
+					Method:       "PUT",
+					RequestUri:   "/v1/iam/applications/" + in.Owner + "/" + in.Name,
+					StatusCode:   200,
+				})
+			}
+		}
 		return in.Mask(), nil
 	}
 }
@@ -429,6 +458,19 @@ func deleteApplication(db orm.DB) zip.TypedHandler[ApplicationRef, DeleteResult]
 			return nil, zip.ErrInternal(err.Error())
 		}
 		store.InvalidateApplication(ctx, db, app.ClientId)
+		if p, ok := principal.From(ctx); ok && p != nil {
+			store.Record(ctx, db, &schema.AuditLog{
+				Owner:        in.Owner,
+				Organization: in.Owner,
+				User:         p.Org + "/" + p.User,
+				ClientIp:     zip.CallerOf(ctx).IP,
+				Action:       schema.ActionApplicationDelete,
+				Object:       app.Name,
+				Method:       "DELETE",
+				RequestUri:   "/v1/iam/applications/" + in.Owner + "/" + in.Name,
+				StatusCode:   200,
+			})
+		}
 		return &DeleteResult{Deleted: true}, nil
 	}
 }

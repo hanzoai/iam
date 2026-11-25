@@ -63,6 +63,16 @@ func TestCreateRefusesAPlatformAction(t *testing.T) {
 		schema.ActionRevokeUserKeys,
 		schema.ActionTokenExchange,
 		schema.ActionSuperAdminToken,
+		schema.ActionKeyCreate,
+		schema.ActionKeyDelete,
+		schema.ActionKeyRevoke,
+		schema.ActionKeyRotate,
+		schema.ActionServiceAccountCreate,
+		schema.ActionServiceAccountUpdate,
+		schema.ActionServiceAccountDelete,
+		schema.ActionApplicationCreate,
+		schema.ActionApplicationSecretRotate,
+		schema.ActionApplicationDelete,
 	} {
 		t.Run(action, func(t *testing.T) {
 			_, err := h.Create(context.Background(), &Input{
@@ -178,6 +188,9 @@ func TestTheReservedSetIsExact(t *testing.T) {
 		schema.ActionConsentTraining, schema.ActionIssueUserToken,
 		schema.ActionMintUserKeys, schema.ActionRevokeUserKeys, schema.ActionTokenExchange,
 		schema.ActionSuperAdminToken,
+		schema.ActionKeyCreate, schema.ActionKeyDelete, schema.ActionKeyRevoke, schema.ActionKeyRotate,
+		schema.ActionServiceAccountCreate, schema.ActionServiceAccountUpdate, schema.ActionServiceAccountDelete,
+		schema.ActionApplicationCreate, schema.ActionApplicationSecretRotate, schema.ActionApplicationDelete,
 	} {
 		if !schema.PlatformWritten(exact) {
 			t.Fatalf("PlatformWritten(%q) = false — a platform action is not reserved", exact)
