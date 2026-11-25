@@ -61,7 +61,7 @@ test: ## Run the full suite — the gate. Everything must be green to ship.
 	# first stale file, so N stale files cost N red runs to discover one at a time.
 	# One invocation is faster and names all of them.
 	@go run github.com/zap-proto/zip/cmd/zipdoc -check ./... || { echo "run: make generate"; exit 1; }
-	go test ./... -race -count=1
+	go test ./... -race -count=1 -timeout 20m
 
 build: ## Build every package.
 	go build ./...

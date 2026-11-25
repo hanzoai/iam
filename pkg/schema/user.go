@@ -118,10 +118,20 @@ type User struct {
 	BalanceCurrency string  `json:"balanceCurrency,omitempty"`
 
 	// State flags.
-	IsDefaultAvatar   bool   `json:"isDefaultAvatar,omitempty" orm:"default:false"`
-	IsOnline          bool   `json:"isOnline,omitempty" orm:"default:false"`
-	IsAdmin           bool   `json:"isAdmin,omitempty" orm:"default:false"`
-	IsForbidden       bool   `json:"isForbidden,omitempty" orm:"default:false"`
+	IsDefaultAvatar bool `json:"isDefaultAvatar,omitempty" orm:"default:false"`
+	IsOnline        bool `json:"isOnline,omitempty" orm:"default:false"`
+	// IsAdmin is the org-admin flag: this account administers its own org (Owner).
+	// It is NEVER platform authority (that is SuperAdmin, below). It is always
+	// written out, false included, so a reader can tell "not an admin" from "not
+	// said"; who may move it is users.Admin, and every move is an audit row.
+	IsAdmin     bool `json:"isAdmin" orm:"default:false"`
+	IsForbidden bool `json:"isForbidden,omitempty" orm:"default:false"`
+	// Epoch voids every token issued to this account at or before it (Unix
+	// seconds). store.Void sets it when the account loses authority — demoted
+	// from org admin, or removed from an org — so a token that still carries the
+	// old claims stops working at once rather than at its expiry. Voids is the
+	// one predicate; the server owns the value and no request states it.
+	Epoch             int64  `json:"epoch,omitempty"`
 	IsDeleted         bool   `json:"isDeleted,omitempty" orm:"default:false"`
 	SignupApplication string `json:"signupApplication,omitempty"`
 	Hash              string `json:"hash,omitempty"`
@@ -408,6 +418,14 @@ func (u *User) Machine() bool {
 // must keep protecting it while it is suspended.
 func (u *User) SuperAdmin() bool {
 	return u != nil && u.Owner == policy.AdminOrg && !u.Machine()
+}
+
+// Voids reports whether a token this account was issued at iat (Unix seconds,
+// the `iat` claim; 0 when the token states none) was voided by its Epoch. A
+// token minted in the same second as the void is void too: the second is all
+// iat records, and failing closed costs a sign-in made within that second.
+func (u *User) Voids(iat int64) bool {
+	return u != nil && u.Epoch > 0 && iat <= u.Epoch
 }
 
 // Picture is how this person is drawn: the image they set, or else their

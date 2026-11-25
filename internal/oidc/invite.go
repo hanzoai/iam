@@ -136,6 +136,9 @@ func redeem(ctx context.Context, db orm.DB, inv *schema.Invitation, app *schema.
 		if err := fresh.UpdateCtx(ctx); err != nil {
 			return err
 		}
+		// The role the seat was spent under is the locked row's, so an invitation
+		// lowered to member after the signup first read it grants member.
+		inv.Role = fresh.Role
 		spent = true
 		return nil
 	})
@@ -168,7 +171,13 @@ func join(ctx context.Context, db orm.DB, inv *schema.Invitation, f *signupForm,
 		if !admits(fresh, nil, f, user.Owner) {
 			return nil
 		}
-		added, err := store.EnsureMembership(ctx, tx, userID, fresh.Owner, store.RoleMember)
+		// The role the invitation carries is the one its writer was allowed to
+		// grant (invitations.role), so redeeming it applies it.
+		role := store.RoleMember
+		if fresh.Role == store.RoleAdmin {
+			role = store.RoleAdmin
+		}
+		added, err := store.EnsureMembership(ctx, tx, userID, fresh.Owner, role)
 		if err != nil {
 			return err
 		}
@@ -188,7 +197,7 @@ func join(ctx context.Context, db orm.DB, inv *schema.Invitation, f *signupForm,
 		if err := fresh.UpdateCtx(ctx); err != nil {
 			return err
 		}
-		return store.Append(ctx, tx, &schema.AuditLog{
+		if err := store.Append(ctx, tx, &schema.AuditLog{
 			Owner:        fresh.Owner,
 			Organization: fresh.Owner,
 			User:         userID,
@@ -197,7 +206,16 @@ func join(ctx context.Context, db orm.DB, inv *schema.Invitation, f *signupForm,
 			Method:       "POST",
 			RequestUri:   PathInvitationsAccept,
 			StatusCode:   200,
-		})
+		}); err != nil {
+			return err
+		}
+		if role != store.RoleAdmin {
+			return nil
+		}
+		return store.Append(ctx, tx, store.Act{
+			Actor: userID, Org: fresh.Owner, Reason: "invitation " + fresh.Name,
+			Method: "POST", URI: PathInvitationsAccept,
+		}.Row(schema.ActionOrgAdmin, map[string]any{"target": userID, "from": false, "to": true}))
 	})
 	return admitted, err
 }

@@ -50,19 +50,36 @@ func TestReg_orgAdmin_canCreate(t *testing.T) {
 	}
 }
 
-// A non-super (even an org-admin) may NOT set isAdmin — provision-don't-promote.
+// An org admin of a brand (hanzo, which the platform runs) may NOT make an admin
+// there, and is told so: the create is refused, never written with the flag
+// dropped.
 func TestReg_orgAdmin_cannotSetIsAdmin(t *testing.T) {
 	h := newHarness(t)
 	boss := h.token(t, "hanzo/boss")
 	body := `{"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],
 		"userName":"newadmin","active":true,"password":"pw",
 		"urn:ietf:params:scim:schemas:extension:hanzo:2.0:User":{"isAdmin":true}}`
-	if status, resp := h.do(t, "POST", scimUsers, boss, body); status != 201 {
-		t.Fatalf("create status = %d; body=%s", status, resp)
+	if status, resp := h.do(t, "POST", scimUsers, boss, body); status != 403 {
+		t.Fatalf("create status = %d, want 403; body=%s", status, resp)
 	}
-	u, _ := store.GetUserByName(context.Background(), h.db, "hanzo", "newadmin")
-	if u == nil || u.IsAdmin {
-		t.Fatalf("org-admin was able to set isAdmin (got IsAdmin=%v) — provision-don't-promote violated", u.IsAdmin)
+	if u, _ := store.GetUserByName(context.Background(), h.db, "hanzo", "newadmin"); u != nil {
+		t.Fatalf("a refused create wrote %s/%s (isAdmin=%v)", u.Owner, u.Name, u.IsAdmin)
+	}
+}
+
+// An org admin of a customer org makes an admin of it through SCIM as through
+// the user surface: the one rule (users.Admin) answers both.
+func TestReg_customerOrgAdmin_setsIsAdmin(t *testing.T) {
+	h := newHarness(t)
+	bob := h.token(t, "orgb/bob")
+	body := `{"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],
+		"userName":"second","active":true,"password":"pw",
+		"urn:ietf:params:scim:schemas:extension:hanzo:2.0:User":{"isAdmin":true}}`
+	if status, resp := h.do(t, "POST", scimUsers, bob, body); status != 201 {
+		t.Fatalf("create status = %d, want 201; body=%s", status, resp)
+	}
+	if u, _ := store.GetUserByName(context.Background(), h.db, "orgb", "second"); u == nil || !u.IsAdmin {
+		t.Fatalf("orgb's admin could not make an admin of orgb: %+v", u)
 	}
 }
 

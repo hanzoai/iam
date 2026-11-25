@@ -344,6 +344,9 @@ func signupHandler(db orm.DB) zip.Handler {
 			Type:          "normal-user",
 			Application:   app.Name,
 			EmailVerified: proven,
+			// An invitation that carries admin, written by someone allowed to grant
+			// it (invitations.role), makes its redeemer the org's admin.
+			Admin: invite != nil && invite.Role == store.RoleAdmin,
 			User: schema.User{
 				Owner:          f.Organization,
 				Name:           f.Username,
