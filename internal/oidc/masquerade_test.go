@@ -370,7 +370,7 @@ func TestAssume_isRecorded(t *testing.T) {
 // create, alter or remove one — otherwise the org admin whose act it records
 // could trim it.
 func TestAssume_trailIsReserved(t *testing.T) {
-	for _, action := range []string{schema.ActionAssumeOrg, schema.ActionReleaseOrg} {
+	for _, action := range []string{schema.ActionAssumeOrg, schema.ActionReleaseOrg, schema.ActionSuperAdminToken} {
 		if !schema.PlatformWritten(action) {
 			t.Fatalf("%s must be a reserved action, or the trail can be forged", action)
 		}
@@ -460,5 +460,47 @@ func TestAssume_refusesAnIDToken(t *testing.T) {
 	}
 	if resp.StatusCode != 401 {
 		t.Fatalf("assume with an id_token = %d, want 401", resp.StatusCode)
+	}
+}
+
+// Assume/release audit records trust only the verified ingress/proxy edge address
+// (CF-Connecting-IP, else rightmost X-Forwarded-For hop) — never a client-spoofed
+// X-Forwarded-For prefix.
+func TestAssume_AuditUsesVerifiedVisitorIP(t *testing.T) {
+	r := newRig(t)
+
+	req := httptest.NewRequest("POST", assume, strings.NewReader(`{"org":"acme"}`))
+	req.Host = "hanzo.id"
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+r.bearer(t, "admin/z"))
+	req.Header.Set("CF-Connecting-IP", "203.0.113.88")
+	req.Header.Set("X-Forwarded-For", "6.6.6.6, 198.51.100.7")
+	resp, err := testhttp.Do(r.app, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("assume status = %d, want 200", resp.StatusCode)
+	}
+
+	rows, err := orm.TypedQuery[schema.AuditLog](r.db).GetAll(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gotAssume, gotToken bool
+	for _, row := range rows {
+		if row.ClientIp == "6.6.6.6" || row.ClientIp == "6.6.6.6, 198.51.100.7" {
+			t.Fatalf("audit row %s recorded spoofed XFF: %q", row.Action, row.ClientIp)
+		}
+		if row.Action == schema.ActionAssumeOrg && row.ClientIp == "203.0.113.88" {
+			gotAssume = true
+		}
+		if row.Action == schema.ActionSuperAdminToken && row.ClientIp == "203.0.113.88" {
+			gotToken = true
+		}
+	}
+	if !gotAssume || !gotToken {
+		t.Fatalf("missing verified visitor IP rows: assume=%v superadmin-token=%v", gotAssume, gotToken)
 	}
 }

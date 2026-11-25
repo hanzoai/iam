@@ -94,3 +94,69 @@ func TestUpsertApplication_isSharedDoesNotDisturbTheSecret(t *testing.T) {
 		t.Fatalf("isShared did not persist")
 	}
 }
+
+// Operator upsert refuses to create or update a reserved-org application as shared.
+func TestUpsertApplication_aReservedOrgAppIsNeverShared(t *testing.T) {
+	app, db := boot(t)
+	ctx := context.Background()
+	const path = "/v1/iam/admin/applications/upsert"
+
+	if st, _ := post(t, app, path, svcToken, `{"organization":"admin","name":"admin-shared","clientId":"admin-shared","isShared":true}`); st != 400 {
+		t.Fatalf("create shared admin app: status=%d, want 400", st)
+	}
+	if a, _ := store.GetApplicationByName(ctx, db, "admin", "admin-shared"); a != nil {
+		t.Fatalf("refused shared admin upsert created a row: %+v", a)
+	}
+
+	if st, _ := post(t, app, path, svcToken, `{"organization":"admin","name":"admin-console","clientId":"admin-console"}`); st != 200 {
+		t.Fatalf("create confined admin app: status=%d, want 200", st)
+	}
+	if st, _ := post(t, app, path, svcToken, `{"organization":"admin","name":"admin-console","clientId":"admin-console","isShared":true}`); st != 400 {
+		t.Fatalf("update admin app to shared: status=%d, want 400", st)
+	}
+	if a, _ := store.GetApplicationByName(ctx, db, "admin", "admin-console"); a == nil || a.IsShared {
+		t.Fatalf("admin app should stay confined, got %+v", a)
+	}
+}
+
+// enableSigninSession follows the same preserve-when-omitted semantics as isShared:
+// defaults to false on create, preserves on steady-state reconcile when omitted,
+// and flips only when stated explicitly.
+func TestUpsertApplication_enableSigninSessionOmittedPreserves(t *testing.T) {
+	app, db := boot(t)
+	ctx := context.Background()
+	const path = "/v1/iam/admin/applications/upsert"
+	base := `{"organization":"hanzo","name":"hanzo-portal","clientId":"hanzo-portal"`
+
+	if st, m := post(t, app, path, svcToken, base+`}`); st != 200 || m["action"] != "created" {
+		t.Fatalf("create: status=%d body=%v", st, m)
+	}
+	a, _ := store.GetApplicationByName(ctx, db, "admin", "hanzo-portal")
+	if a == nil || a.EnableSigninSession {
+		t.Fatalf("a new app must default enableSigninSession=false, got %+v", a)
+	}
+
+	if st, _ := post(t, app, path, svcToken, base+`,"enableSigninSession":true}`); st != 200 {
+		t.Fatalf("enable: status=%d", st)
+	}
+	a, _ = store.GetApplicationByName(ctx, db, "admin", "hanzo-portal")
+	if !a.EnableSigninSession {
+		t.Fatal("enableSigninSession:true did not persist")
+	}
+
+	if st, _ := post(t, app, path, svcToken, base+`}`); st != 200 {
+		t.Fatalf("reconcile: status=%d", st)
+	}
+	a, _ = store.GetApplicationByName(ctx, db, "admin", "hanzo-portal")
+	if !a.EnableSigninSession {
+		t.Fatal("an omitted enableSigninSession cleared the stored policy")
+	}
+
+	if st, _ := post(t, app, path, svcToken, base+`,"enableSigninSession":false}`); st != 200 {
+		t.Fatalf("disable: status=%d", st)
+	}
+	a, _ = store.GetApplicationByName(ctx, db, "admin", "hanzo-portal")
+	if a.EnableSigninSession {
+		t.Fatal("an explicit enableSigninSession:false did not persist")
+	}
+}

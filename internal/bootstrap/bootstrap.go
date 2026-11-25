@@ -29,6 +29,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -210,6 +211,10 @@ type registration struct {
 	// email code, OAuth federation, wallet) and identifier-first address lookup.
 	// A POINTER so a reconcile that omits it preserves the stored setting.
 	EnableSignUp *bool `json:"enableSignUp"`
+	// EnableSigninSession permits silent single sign-on from an existing IdP
+	// session for ordinary applications (never reserved-org applications). A
+	// POINTER so a reconcile that omits it preserves the stored setting.
+	EnableSigninSession *bool `json:"enableSigninSession"`
 	// SigninUrl is where this application's people sign in, when that is not the
 	// issuer: the origin of the page IAM sends them to for the approval of a
 	// device sign-in, and the hosted login of an authorize request. An absolute
@@ -315,6 +320,9 @@ func upsertApplication(db orm.DB) zip.TypedHandler[registration, reply] {
 			if in.EnableSignUp != nil {
 				existing.EnableSignUp = *in.EnableSignUp
 			}
+			if in.EnableSigninSession != nil {
+				existing.EnableSigninSession = *in.EnableSigninSession
+			}
 			if in.SigninUrl != nil {
 				existing.SigninUrl = *in.SigninUrl
 			}
@@ -322,7 +330,7 @@ func upsertApplication(db orm.DB) zip.TypedHandler[registration, reply] {
 			existing.RefreshExpireInHours = ttl(in.RefreshExpireInHours, existing.RefreshExpireInHours)
 			existing.EnablePassword = true
 			if err := existing.UpdateCtx(ctx); err != nil {
-				return refuse(500, "server_error"), nil
+				return unwritten(err), nil
 			}
 		} else {
 			// A name another owner holds is refused: this row would outrank it wherever
@@ -365,13 +373,14 @@ func upsertApplication(db orm.DB) zip.TypedHandler[registration, reply] {
 			// from a default nobody wrote down.
 			a.EnableCodeSignin = in.EnableCodeSignin != nil && *in.EnableCodeSignin
 			a.EnableSignUp = in.EnableSignUp != nil && *in.EnableSignUp
+			a.EnableSigninSession = in.EnableSigninSession != nil && *in.EnableSigninSession
 			if in.SigninUrl != nil {
 				a.SigninUrl = *in.SigninUrl
 			}
 			a.Model = model
 			a.SetId("admin/" + in.Name)
 			if err := a.CreateCtx(ctx); err != nil {
-				return refuse(500, "server_error"), nil
+				return unwritten(err), nil
 			}
 		}
 		return done(action, &credential{
@@ -379,6 +388,15 @@ func upsertApplication(db orm.DB) zip.TypedHandler[registration, reply] {
 			Name: in.Name, Organization: in.Organization,
 		}), nil
 	}
+}
+
+// unwritten answers an application the store refused: the declaration's own
+// fault by name, anything else as the store's.
+func unwritten(err error) *reply {
+	if errors.Is(err, schema.ErrUnconfined) {
+		return refuse(400, err.Error())
+	}
+	return refuse(500, "server_error")
 }
 
 // person is the user an operator declares, plus the service credential it

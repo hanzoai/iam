@@ -141,7 +141,7 @@ func TestSignerFor_unsignableIsErrNoSigningCert(t *testing.T) {
 	_, db := newServer(t)
 	a := seedApp(t, db, appOpts{clientID: "svc", secret: "svc-secret"})
 	repoint(t, a, "cert-nowhere")
-	_, err := signerFor(context.Background(), db, a, "https://hanzo.id")
+	_, err := signerFor(context.Background(), db, a, "https://hanzo.id", origin{})
 	if !errors.Is(err, ErrNoSigningCert) {
 		t.Fatalf("signerFor = %v, want ErrNoSigningCert", err)
 	}

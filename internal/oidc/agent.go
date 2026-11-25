@@ -606,7 +606,7 @@ func agentClaim(c *zip.Ctx, db orm.DB) error {
 		StatusCode:   http.StatusOK,
 	})
 
-	access, ttl, err := agentAccess(ctx, db, app, sa, row.Scope, iss, now)
+	access, ttl, err := agentAccess(ctx, db, app, sa, row.Scope, iss, originOf(c), now)
 	if err != nil {
 		return mintError(c, err)
 	}
@@ -704,7 +704,7 @@ func agentAssertionGrant(c *zip.Ctx, db orm.DB) error {
 	if sa == nil {
 		return tokenError(c, 400, "invalid_grant", "the agent's service account no longer exists")
 	}
-	access, ttl, err := agentAccess(ctx, db, app, sa, row.Scope, iss, now)
+	access, ttl, err := agentAccess(ctx, db, app, sa, row.Scope, iss, originOf(c), now)
 	if err != nil {
 		return mintError(c, err)
 	}
@@ -758,7 +758,7 @@ type agentAssertionClaims struct {
 // agentAssertionFor signs the identity_assertion for registration regID under iss
 // with app's key, and says when it expires.
 func agentAssertionFor(ctx context.Context, db orm.DB, app *schema.Application, regID, iss string, now time.Time) (string, time.Time, error) {
-	signer, err := signerFor(ctx, db, app, iss)
+	signer, err := signerFor(ctx, db, app, iss, origin{})
 	if err != nil {
 		return "", time.Time{}, err
 	}
@@ -788,8 +788,8 @@ func agentAssertionFor(ctx context.Context, db orm.DB, app *schema.Application, 
 // `billing_account` is the org's pool (store.BillingAccount: a machine spends the
 // org's money, never a personal wallet). `azp` and `aud` are the agent application.
 // Recorded like every mint, by its digest.
-func agentAccess(ctx context.Context, db orm.DB, app *schema.Application, sa *schema.User, scope, iss string, now time.Time) (string, time.Duration, error) {
-	signer, err := signerFor(ctx, db, app, iss)
+func agentAccess(ctx context.Context, db orm.DB, app *schema.Application, sa *schema.User, scope, iss string, at origin, now time.Time) (string, time.Duration, error) {
+	signer, err := signerFor(ctx, db, app, iss, at)
 	if err != nil {
 		return "", 0, err
 	}

@@ -57,8 +57,9 @@ type assumeBody struct {
 	// The credential being re-scoped, and the address it arrived from. Bound from
 	// headers because zip hands a typed handler no request — and an audit row that
 	// cannot say where the act came from is half a record.
-	Auth      string `json:"-" header:"Authorization"`
-	Forwarded string `json:"-" header:"X-Forwarded-For"`
+	Auth       string `json:"-" header:"Authorization"`
+	Connecting string `json:"-" header:"CF-Connecting-IP"`
+	Forwarded  string `json:"-" header:"X-Forwarded-For"`
 }
 
 // assumed is the answer both endpoints give: the re-scoped credential, and the
@@ -108,10 +109,11 @@ func rescope(ctx context.Context, db orm.DB, in *assumeBody, org string) (*httpx
 	if err != nil {
 		return httpx.Bad(401, "the access token is not valid", CodeLoginRequired), nil
 	}
+	ip := httpx.Visitor(in.Connecting, in.Forwarded)
 	// An impersonated session is the person it names, who steps into nothing; the
 	// refusal names the operator holding it, not that person.
 	if claims.Imp {
-		record(ctx, db, actionFor(org), actorKey(claims.Act), "", in.Forwarded, 403)
+		record(ctx, db, actionFor(org), actorKey(claims.Act), "", ip, 403)
 		return httpx.Bad(403, "an impersonated session cannot step into an organization", ""), nil
 	}
 	user, err := store.GetUserBySubject(ctx, db, claims.Subject)
@@ -125,7 +127,7 @@ func rescope(ctx context.Context, db orm.DB, in *assumeBody, org string) (*httpx
 
 	// The gate, asked of the row the presented token resolves to.
 	if !user.SuperAdmin() {
-		record(ctx, db, actionFor(org), actor, org, in.Forwarded, 403)
+		record(ctx, db, actionFor(org), actor, org, ip, 403)
 		return httpx.Bad(403, "only a platform operator may step into an organization", ""), nil
 	}
 
@@ -158,7 +160,11 @@ func rescope(ctx context.Context, db orm.DB, in *assumeBody, org string) (*httpx
 	if err != nil {
 		return httpx.Bad(500, "server_error", ""), nil
 	}
-	signer, err := signerFor(ctx, db, app, iss)
+	uri := PathAssume
+	if org == "" {
+		uri = PathRelease
+	}
+	signer, err := signerFor(ctx, db, app, iss, origin{ip: ip, method: "POST", path: uri})
 	if err != nil {
 		return httpx.Bad(500, "server_error", ""), nil
 	}
@@ -189,7 +195,7 @@ func rescope(ctx context.Context, db orm.DB, in *assumeBody, org string) (*httpx
 		return httpx.Bad(500, "server_error", ""), nil
 	}
 
-	record(ctx, db, actionFor(org), actor, org, in.Forwarded, 200)
+	record(ctx, db, actionFor(org), actor, org, ip, 200)
 
 	return httpx.Good(assumed{
 		AccessToken: access,

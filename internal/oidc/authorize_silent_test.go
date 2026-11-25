@@ -106,6 +106,7 @@ func seedTenantApp(t *testing.T, db orm.DB, owner, clientID, redirect string) {
 	a.Organization = owner
 	a.Cert = "cert-" + clientID
 	a.EnablePassword = true
+	a.EnableSigninSession = true
 	a.ExpireInHours = 1
 	a.RedirectUris = []string{redirect}
 	a.SetId(owner + "/" + clientID)

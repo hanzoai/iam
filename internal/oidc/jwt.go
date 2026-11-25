@@ -145,11 +145,11 @@ type Claims struct {
 	// disagree about who belongs where — a second list assembled from a second
 	// query is how a consumer comes to grant on stale membership.
 	//
-	// It lists MEMBERSHIP, so "admin" among a person's groups says they belong to
-	// the reserved org, not that they are a SuperAdmin: a brand org's person added
-	// to it appears here too. SuperAdmin is the person's own org being "admin",
-	// which is the FIRST entry of `orgs` (authz.Claims.Sudo). A relying party that
-	// grants platform authority on `groups` grants it by membership.
+	// It lists verified tenant/operator membership (excluding directories, plain
+	// members of platform orgs, and reserved orgs on machine/device tokens).
+	// Reserved privilege still requires explicit authorization: SuperAdmin is
+	// strictly the person's home org being "admin" (the first entry of `orgs`,
+	// checked by authz.Claims.Sudo) and never implicit from a group string.
 	Groups []string `json:"groups,omitempty"`
 	// Wallets is the chain-qualified addresses this person has PROVED control
 	// of — each one the result of a CAIP-122 challenge IAM minted, bound to its
@@ -229,6 +229,9 @@ type Signer struct {
 	kid    string // JWKS key id — the Cert name
 	alg    string // JOSE alg — "RS256" | "ES256" | … | "MLDSA65"
 	issuer string
+	// trail records a token carrying SuperAdmin authority (superadmin_trail.go).
+	// A Signer without one refuses to sign such a token.
+	trail func(Claims) error
 }
 
 // NewSignerFromCert builds a Signer from a Cert, selecting the algorithm from
@@ -338,20 +341,32 @@ func emailVerified(id Identity) *bool {
 // relying party maps a group onto access, so a membership that makes no one a
 // tenant is no group: a brand's directory, and an org the platform runs held as a
 // plain member (authz Claims.Tenancy says the same of both). A machine's set is
-// its explicit grants and is carried whole. The admin org is carried as it is
-// held, which is how a federated app sees the operator. Nil in, nil out, so a
-// machine token omits the claim exactly as it omits orgs.
+// its explicit grants, never a reserved org. A verified admin/owner membership of
+// the admin org (or a SuperAdmin) keeps "admin" so legitimate federated operators
+// continue working while reserved privilege still requires explicit authorization
+// and never grants implicit SuperAdmin equivalence (authz.Claims.Sudo). Nil in,
+// nil out, so a machine token omits the claim exactly as it omits orgs.
 func groupsOf(orgs []schema.OrgRef, typ string) []string {
 	if len(orgs) == 0 {
 		return nil
 	}
-	out := make([]string, 0, len(orgs))
+	sudo := Claims{Type: typ, Orgs: orgs}.sudo()
+	var out []string
 	for _, o := range orgs {
 		if o.Org == "" {
 			continue
 		}
-		if typ != schema.Program && (policy.IsDirectory(o.Org) ||
-			(policy.IsPlatformOrg(o.Org) && !policy.Role(o.Role).Admits(policy.Write))) {
+		if typ == schema.Program {
+			if policy.IsReservedOrg(o.Org) {
+				continue
+			}
+			out = append(out, o.Org)
+			continue
+		}
+		if policy.IsDirectory(o.Org) {
+			continue
+		}
+		if policy.IsPlatformOrg(o.Org) && !(sudo && o.Org == policy.AdminOrg) && !policy.Role(o.Role).Admits(policy.Write) {
 			continue
 		}
 		out = append(out, o.Org)
@@ -437,8 +452,41 @@ func (s *Signer) SignID(app *schema.Application, id Identity, scope, nonce strin
 
 // signClaims is the single choke point that turns a claim set into a signed
 // compact JWS under this signer's fixed (method, key, kid).
+//
+// A token carrying SuperAdmin authority is released only once its audit record
+// is persisted: a signer with no trail, or a record write that fails, returns
+// no token.
 func (s *Signer) signClaims(claims Claims) (string, error) {
-	return s.signTyped(claims, "")
+	if s == nil {
+		return "", errors.New("jwt: nil signer")
+	}
+	sudo := claims.sudo()
+	if sudo && s.trail == nil {
+		return "", errNoTrail
+	}
+	signed, err := s.signTyped(claims, "")
+	if err != nil {
+		return "", err
+	}
+	if sudo {
+		if err := s.trail(claims); err != nil {
+			return "", err
+		}
+	}
+	return signed, nil
+}
+
+// errNoTrail refuses a SuperAdmin token from a signer that cannot record it.
+var errNoTrail = errors.New("jwt: a SuperAdmin token is signed only where its record is written")
+
+// sudo reports whether a resource server reading these claims grants SuperAdmin
+// authority: authz.Claims.Sudo, asked of the same membership set and class.
+func (c Claims) sudo() bool {
+	p := policy.Claims{Type: c.Type}
+	for _, o := range c.Orgs {
+		p.Orgs = append(p.Orgs, policy.Membership{Org: o.Org, Role: policy.Role(o.Role)})
+	}
+	return p.Sudo()
 }
 
 // signTyped signs claims under this signer's fixed (method, key, kid), with the

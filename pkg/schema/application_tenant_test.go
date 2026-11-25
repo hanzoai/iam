@@ -69,6 +69,13 @@ func TestServesAnyOrg(t *testing.T) {
 		{"tenant serving admin", Application{Owner: "acme", Organization: "admin", OrgChoiceMode: "create"}, false},
 		{"built-in shared", Application{Owner: "built-in", Organization: "hanzo", IsShared: true}, false},
 		{"no owner shared", Application{Organization: "hanzo", IsShared: true}, false},
+
+		// Reserved-org apps are always confined, even when platform-owned and flagged.
+		{"admin shared", Application{Owner: "admin", Organization: "admin", IsShared: true}, false},
+		{"admin create", Application{Owner: "admin", Organization: "admin", OrgChoiceMode: "create"}, false},
+		{"admin select", Application{Owner: "admin", Organization: "admin", OrgChoiceMode: "Select"}, false},
+		{"built-in org shared", Application{Owner: "admin", Organization: "built-in", IsShared: true}, false},
+		{"app org shared", Application{Owner: "admin", Organization: "app", IsShared: true}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := tc.app.ServesAnyOrg(); got != tc.expect {
@@ -92,5 +99,69 @@ func TestNoneConfinesToItsOwnOrg(t *testing.T) {
 	// drifts away from the predicate.
 	if foreign := "hanzo"; !(foreign != zooConsole.Organization && !zooConsole.ServesAnyOrg()) {
 		t.Fatal("a foreign-org principal must be refused by an unconfigured app")
+	}
+}
+
+// Attended requires interactive authentication: reserved-org apps are always
+// attended regardless of EnableSigninSession, while ordinary apps follow the
+// explicit EnableSigninSession policy.
+func TestAttended(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		app  Application
+		want bool
+	}{
+		{"admin with session enabled", Application{Organization: "admin", EnableSigninSession: true}, true},
+		{"admin with session disabled", Application{Organization: "admin", EnableSigninSession: false}, true},
+		{"built-in with session enabled", Application{Organization: "built-in", EnableSigninSession: true}, true},
+		{"app org with session enabled", Application{Organization: "app", EnableSigninSession: true}, true},
+		{"hanzo with session enabled", Application{Organization: "hanzo", EnableSigninSession: true}, false},
+		{"hanzo with session disabled", Application{Organization: "hanzo", EnableSigninSession: false}, true},
+		{"acme with session enabled", Application{Organization: "acme", EnableSigninSession: true}, false},
+		{"acme with session disabled", Application{Organization: "acme", EnableSigninSession: false}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.app.Attended(); got != tc.want {
+				t.Fatalf("Attended() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// A reserved-org application row refuses to persist unconfined on both create
+// and update hooks.
+func TestUnconfinedIsRefusedAtTheRow(t *testing.T) {
+	for _, org := range []string{"admin", "built-in", "app"} {
+		for _, tc := range []struct {
+			name   string
+			shared bool
+			mode   string
+		}{
+			{"isShared", true, ""},
+			{"create", false, "create"},
+			{"Select", false, "Select"},
+			{"Input", false, "Input"},
+		} {
+			t.Run(org+"/"+tc.name, func(t *testing.T) {
+				a := &Application{Owner: "admin", Name: "x", Organization: org, IsShared: tc.shared, OrgChoiceMode: tc.mode}
+				if err := a.BeforeCreate(); err != ErrUnconfined {
+					t.Fatalf("BeforeCreate = %v, want ErrUnconfined", err)
+				}
+				if err := a.BeforeUpdate(nil); err != ErrUnconfined {
+					t.Fatalf("BeforeUpdate = %v, want ErrUnconfined", err)
+				}
+			})
+		}
+		confined := &Application{Owner: "admin", Name: "ok", Organization: org, OrgChoiceMode: "None"}
+		if err := confined.BeforeCreate(); err != nil {
+			t.Fatalf("confined %s BeforeCreate = %v, want nil", org, err)
+		}
+		if err := confined.BeforeUpdate(nil); err != nil {
+			t.Fatalf("confined %s BeforeUpdate = %v, want nil", org, err)
+		}
+	}
+	shared := &Application{Owner: "admin", Name: "hanzo-id", Organization: "hanzo", IsShared: true, OrgChoiceMode: "create"}
+	if err := shared.BeforeCreate(); err != nil {
+		t.Fatalf("ordinary shared app BeforeCreate = %v, want nil", err)
 	}
 }

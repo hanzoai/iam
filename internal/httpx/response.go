@@ -175,14 +175,24 @@ func ErrCode(c *zip.Ctx, msg, code string) error {
 // which is a change to the authz surface and not to this envelope. Until then the
 // machine-readable `code` carries the distinction, which is what it is for.
 
-// ClientIP is the address an audit row records for a request: X-Forwarded-For as
-// the edge delivered it, which is what the typed handlers bind for their rows,
-// else the peer the connection came from.
+// ClientIP is the address an audit row records for a request: the verified
+// visitor named by the trusted edge/proxy chain (Visitor), else the peer the
+// connection came from. Client-written X-Forwarded-For prefixes are never read.
 func ClientIP(c *zip.Ctx) string {
-	if f := c.Header("X-Forwarded-For"); f != "" {
-		return f
+	if ip := Visitor(c.Header("CF-Connecting-IP"), c.Header("X-Forwarded-For")); ip != "" {
+		return ip
 	}
 	return c.Fiber().IP()
+}
+
+// Visitor returns the verified client IP string from the edge/proxy headers
+// (CF-Connecting-IP, else the last X-Forwarded-For hop written by the nearest
+// trusted proxy), or "" when neither carries a valid IP address.
+func Visitor(connecting, forwarded string) string {
+	if a := Client(connecting, forwarded); a.IsValid() {
+		return a.String()
+	}
+	return ""
 }
 
 // Client is who is asking, for a decision that counts requests by it: the

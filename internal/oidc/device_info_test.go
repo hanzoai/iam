@@ -7,7 +7,10 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/hanzoai/orm"
 	"github.com/zap-proto/zip"
+
+	"github.com/hanzoai/iam/pkg/schema"
 )
 
 // The approval page exists to tell a human WHICH application they are authorizing.
@@ -184,5 +187,49 @@ func TestLogin_DeviceWithoutSessionSaysSignIn(t *testing.T) {
 	}
 	if env["code"] != CodeLoginRequired {
 		t.Fatalf("code = %v, want %q so the page can redirect to sign-in and return with the user_code", env["code"], CodeLoginRequired)
+	}
+}
+
+// A SuperAdmin browser session cannot inspect or approve a device code for any
+// application: device authorization never carries SuperAdmin authority.
+func TestDeviceInfo_SuperAdminSessionApprovesNothing(t *testing.T) {
+	app, db := newServer(t)
+	seedApp(t, db, appOpts{clientID: "hanzo-cli", platform: true, grants: deviceGrants, orgChoice: "create"})
+	seedUserInOrg(t, db, "admin", "root", "root@admin.example", "pw")
+
+	// Seed an admin-org app so admin/root can establish a real browser session.
+	seedRSACert(t, db, "cert-admin-console")
+	adminApp := orm.New[schema.Application](db)
+	adminApp.Owner, adminApp.Name, adminApp.ClientId = "admin", "admin-console", "admin-console"
+	adminApp.Organization, adminApp.Cert, adminApp.EnablePassword = "admin", "cert-admin-console", true
+	adminApp.ExpireInHours = 1
+	adminApp.SetId("admin/admin-console")
+	if err := adminApp.CreateCtx(tctx()); err != nil {
+		t.Fatal(err)
+	}
+
+	resp, body := do(t, app, jsonReq("POST", PathLogin, map[string]string{
+		"organization": "admin", "application": "admin-console",
+		"username": "root", "password": "pw", "type": "login",
+	}))
+	if resp.StatusCode != 200 || decode(t, body)["status"] != "ok" {
+		t.Fatalf("admin login failed: %d %s", resp.StatusCode, body)
+	}
+	adminCookie := cookieKV(resp.Header.Get("Set-Cookie"))
+	if adminCookie == "" {
+		t.Fatal("admin login set no session cookie")
+	}
+
+	_, da := requestDevice(t, app, "hanzo-cli", "openid")
+	deviceCode, userCode := da["device_code"].(string), da["user_code"].(string)
+
+	if env := deviceInfoGet(t, app, userCode, adminCookie); env["status"] != "error" {
+		t.Fatalf("SuperAdmin session inspected a device code: %v", env)
+	}
+	if m := approveWithSessionOnly(t, app, adminCookie, userCode); m["status"] != "error" {
+		t.Fatalf("SuperAdmin session approved a device code: %v", m)
+	}
+	if _, p := pollDevice(t, app, "hanzo-cli", deviceCode); p["error"] != "authorization_pending" {
+		t.Fatalf("device should remain pending after refused SuperAdmin approval: %v", p)
 	}
 }

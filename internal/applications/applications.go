@@ -304,7 +304,7 @@ func Create(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 		in.Init(db)
 		in.SetId(id)
 		if err := in.Create(); err != nil {
-			return nil, zip.ErrInternal(err.Error())
+			return nil, written(err)
 		}
 		store.InvalidateApplication(ctx, db, in.ClientId)
 		return in.Mask(), nil
@@ -389,11 +389,20 @@ func Update(db orm.DB) zip.TypedHandler[schema.Application, schema.Application] 
 		in.CreatedTime = existing.CreatedTime
 		in.CreatedAt = existing.CreatedAt
 		if err := in.Update(); err != nil {
-			return nil, zip.ErrInternal(err.Error())
+			return nil, written(err)
 		}
 		store.InvalidateApplication(ctx, db, existing.ClientId, in.ClientId)
 		return in.Mask(), nil
 	}
+}
+
+// written answers a refused write: the row's own refusal is the caller's to fix,
+// anything else is the store's.
+func written(err error) error {
+	if errors.Is(err, schema.ErrUnconfined) {
+		return zip.ErrBadRequest(err.Error())
+	}
+	return zip.ErrInternal(err.Error())
 }
 
 // deleteApplication removes an application. Anyone mid-sign-in through it is

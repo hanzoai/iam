@@ -273,6 +273,9 @@ func deviceHandler(db orm.DB) zip.Handler {
 		if !appGrants(app, deviceGrant) {
 			return tokenError(c, 400, "unsupported_grant_type", "the application does not permit the device grant")
 		}
+		if policy.IsReservedOrg(app.Organization) {
+			return tokenError(c, 400, "unauthorized_client", "an application of a reserved organization does not issue device codes")
+		}
 		// The approval page lives at the application's sign-in origin, which is the
 		// issuer unless the operator says otherwise; with no issuer there is nowhere
 		// to send the person, so nothing is minted.
@@ -392,6 +395,9 @@ func deviceCodeGrant(c *zip.Ctx, db orm.DB) error {
 	if !appGrants(app, deviceGrant) {
 		return tokenError(c, 400, "unsupported_grant_type", "the application does not permit the device grant")
 	}
+	if policy.IsReservedOrg(app.Organization) {
+		return tokenError(c, 400, "unauthorized_client", "an application of a reserved organization does not issue device codes")
+	}
 
 	// What state the row is in, and what this poll does to it, is decided on the row
 	// as the lock holder reads it (store.WithToken), never on the copy read above: an
@@ -420,7 +426,7 @@ func deviceCodeGrant(c *zip.Ctx, db orm.DB) error {
 			t.Polled, verdict = at, "pending"
 			return true, nil
 		default:
-			t.CodeIsUsed, verdict = true, "mint"
+			t.CodeIsUsed, t.Device, verdict = true, true, "mint"
 			return true, nil
 		}
 	})
@@ -436,6 +442,19 @@ func deviceCodeGrant(c *zip.Ctx, db orm.DB) error {
 		return tokenError(c, 400, "slow_down", "poll no faster than the interval")
 	case "pending":
 		return tokenError(c, 400, "authorization_pending", "the device authorization is pending approval")
+	}
+
+	// Re-judge the stored approver under the current rule: an approval stored
+	// under an older rule, or by an account since moved/disabled, mints nothing,
+	// and the code is deleted/spent either way.
+	owner, name := splitSub(row.User)
+	approver, err := store.GetUserByName(ctx, db, owner, name)
+	if err != nil {
+		return tokenError(c, 500, "server_error", "")
+	}
+	if approver == nil || approver.IsForbidden || approver.IsDeleted || !mayApprove(approver, row, app) {
+		_ = store.DeleteToken(ctx, db, row)
+		return tokenError(c, 400, "access_denied", "the device authorization was not approved inside the application's organization")
 	}
 
 	// Minted exactly once: the row was burned under the lock above, so any later poll
@@ -465,7 +484,7 @@ func approveDevice(c *zip.Ctx, db orm.DB, user *schema.User, userCode string) er
 	const refuse = "the user code is invalid or expired"
 
 	ctx := c.Context()
-	row, app := lookDevice(ctx, db, user, userCode)
+	row, _ := lookDevice(ctx, db, user, userCode)
 	if row == nil {
 		return httpx.Err(c, refuse)
 	}
@@ -480,21 +499,6 @@ func approveDevice(c *zip.Ctx, db orm.DB, user *schema.User, userCode string) er
 		return true, nil
 	}); err != nil {
 		return httpx.Err(c, refuse)
-	}
-	// A SuperAdmin approving a sign-in to another organization's application is
-	// platform authority crossing a tenant, so it goes on the SuperAdmin trail.
-	if user.SuperAdmin() && user.Owner != row.Organization {
-		store.Record(ctx, db, &schema.AuditLog{
-			Owner:        user.Owner,
-			Organization: row.Organization,
-			User:         who,
-			ClientIp:     httpx.ClientIP(c),
-			Method:       c.Method(),
-			RequestUri:   c.Path(),
-			Action:       schema.ActionSuperAdmin,
-			Object:       app.ClientId,
-			StatusCode:   200,
-		})
 	}
 	return httpx.Ok(c, who)
 }
@@ -680,20 +684,28 @@ func configuredSignin(origin, iss string) bool {
 // mayApprove reports whether user may look at and approve the pending device
 // authorization row, which the application app issued.
 //
-// A user in org A must not approve a device sign-in bound to an app confined to
-// org B (a confused deputy — brands seed same-named superusers). The org compared
-// is the DEVICE row's, captured when the code was issued. An app that serves any
-// org admits any org that is not reserved — the same rule its authorization code
-// is minted under (MintFor), so a self-service account in an org of its own
-// approves `hanzo auth login` exactly as it signs in to the console. A SuperAdmin
-// (schema.User.SuperAdmin) crosses tenants for the platform's own applications and
-// for those alone: that is the identity an operator signs a CLI into any brand's app
-// with, and approveDevice records it. A tenant's application is its tenant's.
+// It enforces MintFor's tenant rule — a person of the org the code was issued
+// in, or any non-reserved org through an app that serves any org — and refuses
+// machines and reserved orgs on both sides. Approving needs only a session and
+// a user_code anybody can start, so a reserved org neither issues nor approves
+// a device code; a SuperAdmin signs a CLI in through admin-cli's PKCE flow.
 func mayApprove(user *schema.User, row *schema.Token, app *schema.Application) bool {
-	if user.Owner == row.Organization || (user.SuperAdmin() && app.Platform) {
-		return true
+	if user == nil || user.Machine() || policy.IsReservedOrg(user.Owner) || policy.IsReservedOrg(row.Organization) {
+		return false
 	}
-	return app.ServesAnyOrg() && !policy.IsReservedOrg(user.Owner)
+	return user.Owner == row.Organization || app.ServesAnyOrg()
+}
+
+// unreserved returns a membership set without any reserved organizations: the
+// tenancy a device grant's tokens and userinfo responses carry.
+func unreserved(orgs []schema.OrgRef) []schema.OrgRef {
+	out := make([]schema.OrgRef, 0, len(orgs))
+	for _, o := range orgs {
+		if !policy.IsReservedOrg(o.Org) {
+			out = append(out, o)
+		}
+	}
+	return out
 }
 
 // deviceDead is the one answer for a device_code that cannot be redeemed —

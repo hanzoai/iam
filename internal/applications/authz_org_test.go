@@ -380,3 +380,37 @@ func TestPlatform_RowIsWrittenBySuperAdminOnly(t *testing.T) {
 		t.Fatal("a SuperAdmin's write that omitted the flag unmade a platform app")
 	}
 }
+
+// Even a SuperAdmin cannot configure a reserved-org application to span other
+// organizations: both create and update fail with 400 and leave the store clean.
+func TestSharing_AReservedOrgAppIsNeverShared(t *testing.T) {
+	h := newOrgHarness(t)
+	root := h.token(t, "admin/root")
+
+	for _, org := range []string{"admin", "built-in", "app"} {
+		for _, sp := range spans {
+			name := org + "-" + strings.ToLower(sp.name)
+			body := `{"owner":"admin","name":"` + name + `","organization":"` + org + `","clientId":"` + name + `",` + sp.body + `}`
+			if st := h.do(t, "POST", "/v1/iam/applications", root, body); st != 400 {
+				t.Fatalf("create %s with %s: status=%d, want 400", org, sp.name, st)
+			}
+			if app, _ := orm.Get[schema.Application](h.db, "admin/"+name); app != nil {
+				t.Fatalf("refused reserved-org create left a row: %s", name)
+			}
+		}
+	}
+
+	// Confined admin app creates cleanly, then rejects any update that unconfines it.
+	const base = `"owner":"admin","name":"admin-console","organization":"admin","clientId":"admin-console"`
+	if st := h.do(t, "POST", "/v1/iam/applications", root, `{`+base+`}`); st != 200 {
+		t.Fatalf("confined admin create: status=%d, want 200", st)
+	}
+	for _, sp := range spans {
+		if st := h.do(t, "PUT", "/v1/iam/applications/admin/admin-console", root, `{`+base+`,`+sp.body+`}`); st != 400 {
+			t.Fatalf("update admin app with %s: status=%d, want 400", sp.name, st)
+		}
+		if got := h.stored(t, "admin/admin-console"); got.Spans() {
+			t.Fatalf("refused update with %s unconfined the stored row", sp.name)
+		}
+	}
+}

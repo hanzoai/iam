@@ -92,7 +92,7 @@ func issueUserTokenHandler(db orm.DB) zip.Handler {
 		}
 
 		access, ttl, err := mintActedToken(ctx, db, clientApp, user,
-			strings.TrimSpace(c.Query("aud")), c.Host(), c.Path())
+			strings.TrimSpace(c.Query("aud")), c.Host(), originOf(c))
 		if err != nil {
 			return mintErr(c, 500, "server_error")
 		}
@@ -129,7 +129,7 @@ func MintUserToken(ctx context.Context, db orm.DB, clientApp *schema.Application
 	if err != nil {
 		return "", 0, err
 	}
-	signer, err := signerFor(ctx, db, clientApp, iss)
+	signer, err := signerFor(ctx, db, clientApp, iss, origin{path: path})
 	if err != nil {
 		return "", 0, err
 	}
@@ -179,7 +179,7 @@ func ownUser(ctx context.Context, db orm.DB, app *schema.Application, user *sche
 // the person's identity with the client named in `act`, at most an hour, written
 // to the token store and the audit trail as every mint is. It is MintUserToken
 // with the actor stated, because the client proved itself and not the person.
-func mintActedToken(ctx context.Context, db orm.DB, clientApp *schema.Application, user *schema.User, aud, host, path string) (string, time.Duration, error) {
+func mintActedToken(ctx context.Context, db orm.DB, clientApp *schema.Application, user *schema.User, aud, host string, at origin) (string, time.Duration, error) {
 	now := nowFunc()
 	if aud == "" {
 		aud = defaultUserAudience(ctx, db, user, clientApp)
@@ -188,7 +188,7 @@ func mintActedToken(ctx context.Context, db orm.DB, clientApp *schema.Applicatio
 	if err != nil {
 		return "", 0, err
 	}
-	signer, err := signerFor(ctx, db, clientApp, iss)
+	signer, err := signerFor(ctx, db, clientApp, iss, at)
 	if err != nil {
 		return "", 0, err
 	}
@@ -215,7 +215,7 @@ func mintActedToken(ctx context.Context, db orm.DB, clientApp *schema.Applicatio
 	if err := store.PersistToken(ctx, db, row); err != nil {
 		return "", 0, err
 	}
-	recordMint(ctx, db, schema.ActionIssueUserToken, clientApp.ClientId, natural, path)
+	recordMint(ctx, db, schema.ActionIssueUserToken, clientApp.ClientId, natural, at.path)
 	return access, ttl, nil
 }
 
@@ -548,7 +548,7 @@ func mintAsToken(ctx context.Context, db orm.DB, c *zip.Ctx, key *schema.Key) er
 	if err != nil {
 		return mintErr(c, 500, "server_error")
 	}
-	signer, err := signerFor(ctx, db, userApp, iss)
+	signer, err := signerFor(ctx, db, userApp, iss, originOf(c))
 	if err != nil {
 		return mintErr(c, 500, "server_error")
 	}

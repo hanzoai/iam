@@ -63,6 +63,7 @@ type appOpts struct {
 	signin       string   // SigninUrl → where the application says its people sign in
 	platform     bool     // one the platform itself declares, not a tenant's registration
 	scopes       []string // Scopes the application holds: what a forge scope in a request is held to
+	noSession    bool     // disables EnableSigninSession (apps keep silent session by default in tests)
 }
 
 // tctx is the background context used by the test seed helpers.
@@ -106,6 +107,7 @@ func seedApp(t *testing.T, db orm.DB, o appOpts) *schema.Application {
 	a.Organization = "hanzo"
 	a.Cert = "cert-" + o.clientID
 	a.EnablePassword = true
+	a.EnableSigninSession = !o.noSession
 	a.EnableSignUp = o.signup
 	a.EnableCodeSignin = o.codeSignin
 	a.ExpireInHours = 1

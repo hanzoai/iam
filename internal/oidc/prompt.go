@@ -217,7 +217,13 @@ func silentGrant(c *zip.Ctx, db orm.DB, app *schema.Application, q authorizeRequ
 		CodeChallenge:       q.codeChallenge,
 		CodeChallengeMethod: q.codeChallengeMethod,
 		Resource:            q.resource,
+		Session:             true,
 	})
+	if errors.Is(err, errAttended) {
+		// The application requires an interactive sign-in: the page asks for a
+		// credential, and a prompt=none client is told interaction_required.
+		return "", errInteractionRequired
+	}
 	if err != nil {
 		// A policy refusal, not a missing session. Re-asking for the password
 		// would fail the same way, so the client is told it was denied rather
