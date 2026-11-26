@@ -76,6 +76,12 @@ const CodeAccountSelectionRequired = "account_selection_required"
 // archived rather than reading it as a wrong password or a failed exchange.
 const CodeAccountNotPermitted = "account_not_permitted"
 
+// CodeAccessDenied is the `code` beside a sign-in refused because the site is in
+// beta and this account is not on the list. The hosted login page routes on it;
+// the prompt=none path sends the same word as an OIDC error to the registered
+// redirect (prompt.go errAccessDenied).
+const CodeAccessDenied = "access_denied"
+
 // PathRefreshToken is the spelling signed-in clients POST their refresh to. It is
 // the SAME handler as PathToken at a second address — grant_type=refresh_token
 // travels in the body, so this is a second spelling of the endpoint, never a
