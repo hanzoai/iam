@@ -119,6 +119,18 @@ func MintFor(ctx context.Context, db orm.DB, app *schema.Application, userID str
 	if app.ClientSecret == "" && p.CodeChallenge == "" {
 		return "", errors.New("PKCE is required for public clients")
 	}
+
+	// BETA SITE GATE. The redirect has been validated above (and at authorize.go
+	// before the request ever reached a login), so the host here is one the client
+	// registered, not one it chose. A code to a beta site is refused BEFORE it is
+	// minted or persisted unless the person is staff or the matching flag is on.
+	// This is the ONE mint path, so prompt=none and interactive login share it.
+	if key := betaKeyForRedirect(p.RedirectUri); key != "" {
+		if err := betaAdmit(ctx, db, key, userID); err != nil {
+			return "", err
+		}
+	}
+
 	code, err := MintCode(app, userID, p.Scope, p.CodeChallenge, method, p.Resource, nowFunc())
 	if err != nil {
 		return "", err

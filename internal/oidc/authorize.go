@@ -120,6 +120,15 @@ func authorizeHandler(db orm.DB) zip.Handler {
 			return authorizeUserError(c, "invalid redirect_uri")
 		}
 
+		// The redirect host is now a trusted fact, so this is where a beta site is
+		// identified — by HOST, never by client_id (hanzo-app serves many hosts, and
+		// team/team2/team-native all serve hanzo.team). The admission check itself
+		// waits for a signed-in principal and lives in the ONE code-mint path,
+		// MintFor (beta.go), which derives the same key from this validated URI and
+		// sends access_denied back to it. prompt=none therefore cannot leak a code:
+		// silentGrant mints through MintFor too. An unauthenticated prompt=none is
+		// still answered login_required below, before any principal exists.
+
 		// The redirect target is now trusted: protocol errors redirect back to it
 		// with error+state (RFC 6749 §4.1.2.1).
 		if q.responseType != "code" {

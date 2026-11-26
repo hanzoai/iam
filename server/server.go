@@ -410,6 +410,19 @@ type Sender = otp.Sender
 // screen keeps offering only the methods that work.
 func BindSender(s Sender) { otp.BindSender(s) }
 
+// BetaGate is the beta-flag source a host installs into IAM. The gate lives in
+// IAM (authorize/MintFor) but the flags live in the cloud flags app, which IAM
+// cannot import — cloud imports IAM. So the host that composes both binds it,
+// exactly as it binds Sender. A host that binds nothing fails closed: nobody but
+// staff gets a code for a beta-gated site. See BETA_GATE.md.
+type BetaGate = oidc.BetaGate
+
+// BindBetaGate installs the beta-flag source. Call it at boot, before serving.
+func BindBetaGate(g BetaGate) { oidc.BindBetaGate(g) }
+
+// BetaGateBound reports whether this deployment supplied a flag source.
+func BetaGateBound() bool { return oidc.BetaGateBound() }
+
 // SetIdentifierAdmit installs the count the identifier lookup spends its questions
 // on, in place of each process's own: a host running several replicas installs one
 // they share, so a client is held to one limit between them. f is handed the client
