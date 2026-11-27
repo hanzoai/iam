@@ -126,7 +126,7 @@ func MintFor(ctx context.Context, db orm.DB, app *schema.Application, userID str
 	// minted or persisted unless the person is staff or the matching flag is on.
 	// This is the ONE mint path, so prompt=none and interactive login share it.
 	if key := betaKeyForRedirect(p.RedirectUri); key != "" {
-		if err := betaAdmit(ctx, db, key, userID); err != nil {
+		if err := betaAdmit(ctx, db, app, key, userID); err != nil {
 			return "", err
 		}
 	}

@@ -9,8 +9,10 @@ import (
 	"net/url"
 	"strings"
 
+	policy "github.com/hanzoai/authz"
 	"github.com/hanzoai/orm"
 
+	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
 
@@ -80,7 +82,7 @@ var errBetaDenied = errors.New("this site is in beta and is not available to thi
 // betaAdmit is the gate inside the ONE code-mint path. It runs for every grant
 // shape — typed password, session SSO (prompt=none), federation, wallet — so no
 // door can skip it. It is called only for a gated redirect host.
-func betaAdmit(ctx context.Context, db orm.DB, key, userID string) error {
+func betaAdmit(ctx context.Context, db orm.DB, app *schema.Application, key, userID string) error {
 	org, name, _ := strings.Cut(userID, "/")
 
 	// The account is re-read, like every other mint rule: a forbidden, deleted or
@@ -89,11 +91,19 @@ func betaAdmit(ctx context.Context, db orm.DB, key, userID string) error {
 	if err != nil || user == nil {
 		return errBetaDenied
 	}
-	// Staff pass automatically. This is the SAME predicate IAM uses everywhere
-	// (schema.User.SuperAdmin): an account IN the reserved admin org, not a member
-	// of it and not an org admin. Cloud's staffed() already gives them every
-	// beta.* switch, so nothing is duplicated on either side.
-	if user.SuperAdmin() {
+	// Staff pass automatically:
+	//   1. SuperAdmins (accounts IN the reserved admin org), and
+	//   2. Human org admins of the platform application's own brand org
+	//      (app.Owner == "admin", user.Owner == app.Organization, user.IsAdmin).
+	//
+	// Both are required because MintFor enforces reserved-org confinement ahead
+	// of this check: an admin/* SuperAdmin cannot sign in to a hanzo-org app
+	// (hanzo-app, hanzo-team-native), so platform owners sign in to hanzo.bot
+	// and hanzo.team as their hanzo org admin account. Requiring app.Owner ==
+	// "admin" AND user.Owner == app.Organization guarantees that customer-founded
+	// personal orgs (where every signup has IsAdmin=true in their own org) and
+	// non-admin members of the brand org are never exempted.
+	if user.SuperAdmin() || isBrandOrgAdmin(app, user) {
 		return nil
 	}
 	g := betaGate
@@ -108,4 +118,17 @@ func betaAdmit(ctx context.Context, db orm.DB, key, userID string) error {
 		return errBetaDenied
 	}
 	return nil
+}
+
+// isBrandOrgAdmin reports whether user is a human org admin of the owning brand
+// org of a platform-registered application (e.g., a hanzo org admin signing in
+// through hanzo-app or hanzo-team-native). Customer-founded orgs have
+// user.Owner != app.Organization, non-admin members have IsAdmin == false,
+// machines have user.Machine() == true, and tenant-owned apps have
+// app.Owner != policy.AdminOrg.
+func isBrandOrgAdmin(app *schema.Application, user *schema.User) bool {
+	if app == nil || user == nil || user.Machine() {
+		return false
+	}
+	return app.Owner == policy.AdminOrg && app.Organization != "" && user.Owner == app.Organization && user.IsAdmin
 }
