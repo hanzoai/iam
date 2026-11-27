@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,8 +27,8 @@ import (
 // zip.Ctx, so it is directly unit-testable and "what the login does" stays
 // separate from "how HTTP delivers it".
 
-// ttl is how long a minted challenge stays valid.
-const ttl = 10 * time.Minute
+// ttl is how long a minted challenge stays valid (5 minutes, per EIP-4361 / CAIP-122).
+const ttl = 5 * time.Minute
 
 // statement is the human line the wallet renders in its signing prompt. It is
 // part of the SIGNED message, so changing it changes what wallets display.
@@ -147,7 +148,7 @@ func verify(ctx context.Context, db orm.DB, in login, now time.Time) (signin, er
 	})
 	if !res.OK {
 		// res.Reason is a stable machine code (bad-signature, expired, …).
-		return signin{}, fmt.Errorf("web3: verification failed: %s", res.Reason)
+		return signin{}, &verifyError{reason: res.Reason}
 	}
 
 	// 5. Identity is the VERIFIED address, canonicalized.
@@ -181,6 +182,25 @@ func resolve(ctx context.Context, db orm.DB, in login, address string, now time.
 
 	if user == nil {
 		if err := db.RunInTransaction(ctx, func(tx orm.DB) error {
+			// If a concurrent verify for the SAME wallet and application org just
+			// committed its link while we waited for the transaction lock, resolve
+			// idempotently to that identity instead of failing with errLinked or
+			// creating a second org.
+			mine, err := link(ctx, tx, in.App.Organization, chain, address)
+			if err != nil {
+				return err
+			}
+			if mine != nil {
+				u, err := store.GetUserByName(ctx, tx, mine.Owner, mine.User)
+				if err != nil {
+					return err
+				}
+				if u != nil && (in.Session == nil || (in.Session.Owner == u.Owner && in.Session.Name == u.Name)) {
+					user = u
+					return nil
+				}
+			}
+
 			// One wallet, one identity — globally. orm has no UNIQUE constraint,
 			// so this probe and the bind below MUST share one transaction or a
 			// concurrent double-link slips through. It runs BEFORE provisioning
@@ -275,11 +295,11 @@ type signin struct {
 // application that founds each new account an org of its own, the wallet's gets
 // one too, and the link is then bound where the account lives.
 func provision(ctx context.Context, db orm.DB, in login, address string, now time.Time) (*schema.User, error) {
-	// Machine-generated, but still checked against THE username rule: a generated
-	// name is only conformant while whatever generates it stays conformant, and this
-	// path writes through orm directly rather than users.Create, so nothing else
-	// would notice if a new chain's identifier stopped fitting.
-	uname, err := schema.Username(name(in.Proof.Chain, address))
+	// Machine-generated, checked against THE username rule AND checked against
+	// pre-existing accounts in the registrar org so a password/email account
+	// squatting `wallet_<chain>_<hash>` can NEVER capture or merge onto a
+	// first-seen wallet sign-in.
+	uname, err := allocateWalletUsername(ctx, db, in.App.Organization, name(in.Proof.Chain, address))
 	if err != nil {
 		return nil, err
 	}
@@ -305,6 +325,35 @@ func provision(ctx context.Context, db orm.DB, in login, address string, now tim
 		return nil, err
 	}
 	return oidc.Charter(ctx, db, in.App, u)
+}
+
+// allocateWalletUsername returns base when unused in org (and among accounts
+// registered in org), or the first unused `base_<n>` variant so a squatted
+// password/email username never merges with a wallet identity.
+func allocateWalletUsername(ctx context.Context, db orm.DB, org, base string) (string, error) {
+	const maxAttempts = 32
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		candidate := base
+		if attempt > 1 {
+			candidate = base + "_" + strconv.Itoa(attempt)
+		}
+		uname, err := schema.Username(candidate)
+		if err != nil {
+			return "", err
+		}
+		if existing, err := store.GetUserByName(ctx, db, org, uname); err != nil {
+			return "", err
+		} else if existing != nil {
+			continue
+		}
+		if _, held, err := store.SignupByName(ctx, db, org, uname); err != nil {
+			return "", err
+		} else if held > 0 {
+			continue
+		}
+		return uname, nil
+	}
+	return "", errors.New("web3: could not allocate a unique wallet username")
 }
 
 // name is the bounded, stable, collision-resistant username of a wallet user.

@@ -100,8 +100,9 @@ func burn(ctx context.Context, db orm.DB, nonce string, now time.Time) (*schema.
 		if ch.Used {
 			return errChallenge
 		}
-		// An unparseable expiry is treated as no constraint, matching v1.
-		if exp, e := time.Parse(time.RFC3339, ch.ExpireTime); e == nil && now.After(exp) {
+		// Fail closed when ExpireTime is missing, malformed, or in the past.
+		exp, e := time.Parse(time.RFC3339, ch.ExpireTime)
+		if e != nil || now.After(exp) {
 			return errChallenge
 		}
 		ch.Used = true
@@ -169,8 +170,21 @@ func anywhere(ctx context.Context, db orm.DB, chain, address string) (*schema.Wa
 	if chain == "" || address == "" {
 		return nil, nil
 	}
-	return first(orm.TypedQuery[schema.Wallet](db).
+	w, err := first(orm.TypedQuery[schema.Wallet](db).
 		Filter("Chain=", chain).Filter("Address=", address))
+	if err != nil || w != nil {
+		return w, err
+	}
+	// Legacy migrated EVM rows may hold ERC-55 mixed-case spelling before
+	// `iam normalize --apply` runs. Probe that exact indexed spelling on miss so
+	// returning wallets never fork a second identity or personal organization.
+	if chain == "evm" {
+		if csum := EIP55(address); csum != address {
+			return first(orm.TypedQuery[schema.Wallet](db).
+				Filter("Chain=", chain).Filter("Address=", csum))
+		}
+	}
+	return nil, nil
 }
 
 // bind persists a new wallet link.

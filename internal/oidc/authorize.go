@@ -54,9 +54,22 @@ type authorizeRequest struct {
 	resource            string
 	responseMode        string
 	provider            string
+	providerHint        string
 	prompt              string
 	loginHint           string
+	screenHint          string
 	signup              bool
+
+	// Checkout context parameters preserved across the hosted login hop so
+	// checkout flows (hanzo.ai/pay, pay.hanzo.ai, hanzo.app) never lose plan,
+	// amount, network, asset, or post-auth return context during sign-in or
+	// account creation. Never used by IAM as a redirect target.
+	amount    string
+	plan      string
+	network   string
+	asset     string
+	returnTo  string
+	returnURL string
 }
 
 // authorizeHandler starts a sign-in — the address you send a browser to, and the
@@ -239,7 +252,12 @@ func authorizeHandler(db orm.DB) zip.Handler {
 		if err != nil {
 			return authorizeUserError(c, "internal error")
 		}
-		return c.Redirect(302, hostedLoginTarget(app, iss)+"?"+authorizeForwardQuery(q, method))
+		target := hostedLoginTarget(app, iss)
+		sep := "?"
+		if strings.Contains(target, "?") {
+			sep = "&"
+		}
+		return c.Redirect(302, target+sep+authorizeForwardQuery(q, method))
 	}
 }
 
@@ -300,9 +318,17 @@ func authorizeParams(c *zip.Ctx) authorizeRequest {
 		resource:            param(c, "resource"),
 		responseMode:        param(c, "response_mode"),
 		provider:            param(c, "provider"),
+		providerHint:        param(c, "provider_hint"),
 		prompt:              param(c, "prompt"),
 		loginHint:           param(c, "login_hint"),
+		screenHint:          param(c, "screen_hint"),
 		signup:              param(c, "signup") == "true",
+		amount:              param(c, "amount"),
+		plan:                param(c, "plan"),
+		network:             param(c, "network"),
+		asset:               param(c, "asset"),
+		returnTo:            param(c, "return_to"),
+		returnURL:           param(c, "returnUrl"),
 	}
 }
 
@@ -314,8 +340,11 @@ func authorizeParams(c *zip.Ctx) authorizeRequest {
 var paramLimits = map[string]int{
 	"response_type": 64, "client_id": 256, "redirect_uri": 2048, "scope": 2048,
 	"state": 1024, "nonce": 512, "code_challenge": 128, "code_challenge_method": 64,
-	"resource": 2048, "response_mode": 64, "provider": 256, "prompt": 256,
-	"login_hint": 512, "signup": 64, "id_token_hint": 2048, "idp_nonce": 512,
+	"resource": 2048, "response_mode": 64, "provider": 256, "provider_hint": 256,
+	"prompt": 256, "login_hint": 512, "screen_hint": 64, "signup": 64,
+	"id_token_hint": 2048, "idp_nonce": 512,
+	"amount": 64, "plan": 128, "network": 64, "asset": 64,
+	"return_to": 2048, "returnUrl": 2048,
 }
 
 // oversize names an authorize parameter longer than its bound, or "".
@@ -375,6 +404,8 @@ func authorizeForwardQuery(q authorizeRequest, method string) string {
 	// The person the client asked for, so the page can offer them by name: the
 	// credential form starts with this identifier in it.
 	setIfPresent(v, "login_hint", q.loginHint)
+	setIfPresent(v, "provider_hint", q.providerHint)
+	setIfPresent(v, "screen_hint", q.screenHint)
 	// Which of the two screens to open. Like `prompt`, the page is what acts on
 	// it: an application sending someone to create an account wants the
 	// registration form, not the credential form with a link to it. Re-encoded
@@ -384,6 +415,12 @@ func authorizeForwardQuery(q authorizeRequest, method string) string {
 	if q.signup {
 		v.Set("signup", "true")
 	}
+	setIfPresent(v, "amount", q.amount)
+	setIfPresent(v, "plan", q.plan)
+	setIfPresent(v, "network", q.network)
+	setIfPresent(v, "asset", q.asset)
+	setIfPresent(v, "return_to", q.returnTo)
+	setIfPresent(v, "returnUrl", q.returnURL)
 	return v.Encode()
 }
 

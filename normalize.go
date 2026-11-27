@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/hanzoai/orm"
 	"github.com/spf13/cobra"
@@ -107,16 +108,46 @@ func normalizeIdentifiers(ctx context.Context, cmd *cobra.Command, db orm.DB, ap
 		}
 	}
 
+	wallets, err := orm.TypedQuery[schema.Wallet](db).GetAll(ctx)
+	if err != nil {
+		return fmt.Errorf("read wallets: %w", err)
+	}
+	var walletChanged int
+	for _, w := range wallets {
+		if w == nil {
+			continue
+		}
+		addr := strings.TrimSpace(w.Address)
+		if w.Chain == "evm" {
+			addr = strings.ToLower(addr)
+		}
+		if addr == "" || addr == w.Address {
+			continue
+		}
+		fmt.Fprintf(out, "  %s/%s  wallet(%s) %q -> %q\n", w.Owner, w.User, w.Chain, w.Address, addr)
+		walletChanged++
+		if !apply {
+			continue
+		}
+		w.Address = addr
+		if err := w.UpdateCtx(ctx); err != nil {
+			return fmt.Errorf("update wallet %s/%s/%s: %w", w.Owner, w.User, w.Chain, err)
+		}
+	}
+
 	verb := "would convert"
 	if apply {
 		verb = "converted"
 	}
 	fmt.Fprintf(out, "normalize: %s %d of %d rows", verb, changed, len(users))
+	if walletChanged > 0 {
+		fmt.Fprintf(out, " (%d of %d wallet links)", walletChanged, len(wallets))
+	}
 	if unusable > 0 {
 		fmt.Fprintf(out, "; %d numbers carry no digits and were left alone", unusable)
 	}
 	fmt.Fprintln(out)
-	if !apply && changed > 0 {
+	if !apply && (changed > 0 || walletChanged > 0) {
 		fmt.Fprintln(out, "normalize: re-run with --apply to write")
 	}
 	return nil

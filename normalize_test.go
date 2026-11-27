@@ -161,3 +161,38 @@ func TestBackfillLeavesUnusableValuesIntact(t *testing.T) {
 		t.Errorf("empty phone became %q", got)
 	}
 }
+
+// Mixed-case EVM wallet links are normalized to lowercase 0x-hex while base58
+// Solana wallet links keep their exact case.
+func TestBackfillCanonicalizesEVMWalletsOnly(t *testing.T) {
+	db := backfillDB(t)
+	ctx := context.Background()
+
+	evm := orm.New[schema.Wallet](db)
+	evm.Owner, evm.User, evm.Chain, evm.Address = "hanzo", "ada", "evm", "  0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed  "
+	evm.SetId("hanzo/ada/evm/0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed")
+	if err := evm.CreateCtx(ctx); err != nil {
+		t.Fatalf("seed evm wallet: %v", err)
+	}
+	sol := orm.New[schema.Wallet](db)
+	sol.Owner, sol.User, sol.Chain, sol.Address = "hanzo", "ada", "solana", "7EqQdEULxWcraVx3mXKFjc84LhCkMGZCkRuDpvcMwJeK"
+	sol.SetId("hanzo/ada/solana/7EqQdEULxWcraVx3mXKFjc84LhCkMGZCkRuDpvcMwJeK")
+	if err := sol.CreateCtx(ctx); err != nil {
+		t.Fatalf("seed solana wallet: %v", err)
+	}
+
+	dry := run(t, db, false)
+	if !strings.Contains(dry, "1 of 2 wallet links") {
+		t.Fatalf("dry run report missing wallet count:\n%s", dry)
+	}
+
+	run(t, db, true)
+	gotEVM, err := orm.Get[schema.Wallet](db, evm.Id())
+	if err != nil || gotEVM.Address != "0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed" {
+		t.Fatalf("evm wallet = %+v (%v), want canonical lowercase", gotEVM, err)
+	}
+	gotSol, err := orm.Get[schema.Wallet](db, sol.Id())
+	if err != nil || gotSol.Address != "7EqQdEULxWcraVx3mXKFjc84LhCkMGZCkRuDpvcMwJeK" {
+		t.Fatalf("solana wallet = %+v (%v), want case preserved", gotSol, err)
+	}
+}

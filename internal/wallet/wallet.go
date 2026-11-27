@@ -93,25 +93,25 @@ func nonce(db orm.DB) zip.Handler {
 	return func(c *zip.Ctx) error {
 		chain := wc.Chain(trim(c.Query("chain")))
 		if !supported(chain) {
-			return httpx.Err(c, "web3: unsupported chain: "+string(chain))
+			return httpx.ErrCode(c, "web3: unsupported chain: "+string(chain), CodeUnsupportedChain)
 		}
 		address := c.Query("address")
 		if len(address) > maxAddress {
-			return httpx.Err(c, "web3: oversized address")
+			return httpx.ErrCode(c, "web3: oversized address", CodeInvalidRequest)
 		}
 		ctx := c.Context()
 		app, err := store.GetApplicationByClientId(ctx, db, trim(c.Query("clientId")))
 		if err != nil {
-			return httpx.Err(c, err.Error())
+			return httpx.ErrCode(c, err.Error(), CodeInvalidRequest)
 		}
 		domain, uri := site(c, app)
 		if domain == "" {
-			return httpx.Err(c, "web3: empty domain")
+			return httpx.ErrCode(c, "web3: empty domain", CodeInvalidRequest)
 		}
 
 		n, err := random()
 		if err != nil {
-			return httpx.Err(c, err.Error())
+			return httpx.ErrCode(c, err.Error(), CodeInvalidRequest)
 		}
 		now := time.Now().UTC()
 		expire := now.Add(ttl)
@@ -119,12 +119,12 @@ func nonce(db orm.DB) zip.Handler {
 			Owner:       owner,
 			Name:        n,
 			Chain:       string(chain),
-			Address:     trim(address),
+			Address:     canonical(chain, address),
 			Domain:      domain,
 			CreatedTime: stamp(now),
 			ExpireTime:  stamp(expire),
 		}); err != nil {
-			return httpx.Err(c, err.Error())
+			return httpx.ErrCode(c, err.Error(), CodeInvalidRequest)
 		}
 		return httpx.Ok(c, challenge{
 			Domain:         domain,
@@ -162,6 +162,9 @@ type proof struct {
 	Nonce               string `json:"nonce"`
 	CodeChallenge       string `json:"codeChallenge"`
 	CodeChallengeMethod string `json:"codeChallengeMethod"`
+	Resource            string `json:"resource"`
+	Prompt              string `json:"prompt"`
+	LoginHint           string `json:"loginHint"`
 }
 
 // Field bounds, enforced before any per-chain parser reaches the input. A real
@@ -190,37 +193,38 @@ func check(db orm.DB, limit Cap) zip.Handler {
 	return func(c *zip.Ctx) error {
 		var f proof
 		if err := c.Bind(&f); err != nil {
-			return httpx.Err(c, "invalid request body")
+			return httpx.ErrCode(c, "invalid request body", CodeInvalidRequest)
 		}
+		adoptProofQuery(c, &f)
 		if len(f.Signature) > maxField || len(f.Message) > maxField ||
 			len(f.PublicKey) > maxKey || len(f.Address) > maxAddress {
-			return httpx.Err(c, "web3: oversized proof field")
+			return httpx.ErrCode(c, "web3: oversized proof field", CodeInvalidRequest)
 		}
 		chain := wc.Chain(trim(f.Chain))
 		if !supported(chain) {
-			return httpx.Err(c, "web3: unsupported chain: "+string(chain))
+			return httpx.ErrCode(c, "web3: unsupported chain: "+string(chain), CodeUnsupportedChain)
 		}
 
 		ctx := c.Context()
 		app, err := oidc.ResolveApp(ctx, db, f.ClientId, f.Application)
 		if err != nil {
-			return httpx.Err(c, err.Error())
+			return verifyFail(c, err)
 		}
 		if app == nil {
-			return httpx.Err(c, "application not found")
+			return httpx.ErrCode(c, "application not found", CodeInvalidRequest)
 		}
 		// A wallet signs a message for the page that asks, and a client that
 		// registered itself chose which pages those are. Its people sign in with a
 		// password or a provider.
 		if app.Dynamic() {
-			return httpx.Err(c, "web3: this client signs in with a password or a provider")
+			return httpx.ErrCode(c, "web3: this client signs in with a password or a provider", CodeInvalidRequest)
 		}
 		org, err := store.GetOrganizationByName(ctx, db, app.Organization)
 		if err != nil {
-			return httpx.Err(c, err.Error())
+			return verifyFail(c, err)
 		}
 		if org == nil {
-			return httpx.Err(c, "web3: organization not found")
+			return httpx.ErrCode(c, "web3: organization not found", CodeInvalidRequest)
 		}
 
 		// The same site() as the mint, re-derived here and re-checked against the
@@ -241,7 +245,7 @@ func check(db orm.DB, limit Cap) zip.Handler {
 			Method:  f.Method,
 			App:     app,
 			Org:     org,
-			Session: session(c, db),
+			Session: session(c, db, app, f.Prompt),
 			Client:  httpx.Client(c.Header("CF-Connecting-IP"), c.Header("X-Forwarded-For")),
 			Cap:     limit,
 		}, time.Now().UTC())
@@ -250,7 +254,7 @@ func check(db orm.DB, limit Cap) zip.Handler {
 			return refuse(c, refused)
 		}
 		if err != nil {
-			return httpx.Err(c, err.Error())
+			return verifyFail(c, err)
 		}
 		user := in.user
 
@@ -258,14 +262,23 @@ func check(db orm.DB, limit Cap) zip.Handler {
 		// identity, before any session or code is minted. It is oidc's ONE gate,
 		// called rather than copied: a wallet is attachable to any existing
 		// identity, so a second factor a password login demands must not be
-		// skippable by signing in with the wallet on the same account. A signature
-		// proves none of the offerable factors, so the gate is told "" and may ask
-		// for any of them; it answers the request itself (NextMfa) and the person
-		// finishes at /v1/iam/login with the challenge it set, exactly as the
-		// password path does.
-		gated, err := oidc.Gate(c, db, user, org, "")
+		// skippable by signing in with the wallet on the same account.
+		//
+		// Crucially, the gate reads the USER'S OWN organization (`user.Owner`),
+		// matching internal/oidc/login.go (`afterFirstFactor`): a wallet account
+		// founded into its own personal org (`wallet-evm-<hash>`) is governed by
+		// its own org's policy, never by the registrar org (`hanzo`), so email is
+		// never required unless the account's own organization policy requires it.
+		userOrg := org
+		if user.Owner != "" && user.Owner != app.Organization {
+			userOrg, err = store.GetOrganizationByName(ctx, db, user.Owner)
+			if err != nil {
+				return verifyFail(c, err)
+			}
+		}
+		gated, err := oidc.Gate(c, db, user, userOrg, "")
 		if err != nil {
-			return httpx.Err(c, err.Error())
+			return verifyFail(c, err)
 		}
 		if gated {
 			return nil
@@ -279,9 +292,10 @@ func check(db orm.DB, limit Cap) zip.Handler {
 			Nonce:               f.Nonce,
 			CodeChallenge:       f.CodeChallenge,
 			CodeChallengeMethod: f.CodeChallengeMethod,
+			Resource:            f.Resource,
 		})
 		if err != nil {
-			return httpx.Err(c, err.Error())
+			return verifyFail(c, err)
 		}
 		// The wallet holder is now signed in to the IDENTITY PROVIDER, so the IdP
 		// remembers them — the same tail every interactive sign-in has. Without
@@ -326,59 +340,73 @@ var registry = sync.OnceValue(func() *did.Registry {
 // session resolves the authenticated caller, but ONLY on a same-site request.
 //
 // This is the sole branch of the flow carrying ambient authority (the caller's
-// bearer), and the only one that attaches a verified wallet to an EXISTING
-// identity. A cross-site forged POST must not be able to attach an attacker's
-// wallet to a victim's account, so a cross-site caller is treated as anonymous
-// and falls through to the login/signup branches, which have no ambient
-// authority to abuse.
-func session(c *zip.Ctx, db orm.DB) *schema.User {
+// same-origin session cookie or bearer), and the only one that attaches a
+// verified wallet to an EXISTING identity. A cross-site forged POST must not be
+// able to attach an attacker's wallet to a victim's account, so a cross-site
+// caller is treated as anonymous and falls through to the login/signup branches,
+// which have no ambient authority to abuse. Likewise, an authorize request that
+// explicitly asked for account selection or re-authentication (`select_account` /
+// `login`) never auto-links an unlinked wallet onto the prior browser session.
+func session(c *zip.Ctx, db orm.DB, app *schema.Application, prompt string) *schema.User {
 	if !same(c) {
 		return nil
+	}
+	for _, tok := range strings.Fields(prompt) {
+		if tok == "select_account" || tok == "login" {
+			return nil
+		}
+	}
+	ctx := c.Context()
+	if sc, err := sessions.Writer(ctx, c.Fiber(), db); err == nil && sc != nil {
+		if user, err := store.GetUserByName(ctx, db, sc.Owner, sc.Name); err == nil && oidc.SessionServesApp(ctx, db, app, user) {
+			return user
+		}
 	}
 	p := authz.Optional(c, db)
 	if p == nil || p.User == "" {
 		return nil // anonymous, unverifiable, or a machine token with no identity
 	}
-	user, err := store.GetUserByName(c.Context(), db, p.Org, p.User)
-	if err != nil {
+	user, err := store.GetUserByName(ctx, db, p.Org, p.User)
+	if err != nil || !oidc.SessionServesApp(ctx, db, app, user) {
 		return nil
 	}
 	return user
 }
 
-// site is the domain and URI a wallet challenge names for this request, and the
-// one rule both legs read: the nonce mints with it and verify expects it.
-//
-// It is the origin of the page that asked when that origin is one of app's own
-// (oidc.Landing: the scheme, host and port of a registered redirect URI, matched
-// exactly), so a person signing in on hanzo.ai through IAM at api.hanzo.ai signs
-// for hanzo.ai, and a wallet that compares the EIP-4361 domain with the page
-// finds them equal. With no application, or an Origin it does not register, it
-// is the host the request arrived on, read through the header-immune c.Host()
-// (zip has no trusted-proxy knob, so X-Forwarded-Host is ignored). Referer is
-// never read.
-//
-// Origin decides it only among app's registered origins. A browser sets Origin
-// and page script cannot change it. A client outside a browser can send any
-// Origin, but the only values that move the answer are origins the application
-// already registers, so a forger obtains a challenge naming a site the
-// application owns: what every browser on that site obtains, and nothing a
-// direct call to that host's IAM would not give. What keeps a captured signature
-// from signing anyone in is unchanged: the single-use burn, the burned row's
-// domain re-checked at verify, and the wallet's own comparison of the domain with
-// the page asking. The same-site check that gates linking a wallet to a
-// signed-in caller (same) still compares Origin with c.Host() and never reads
-// this.
-func site(c *zip.Ctx, app *schema.Application) (domain, uri string) {
-	if app != nil {
-		origin := c.Header("Origin")
-		if oidc.Landing(app, origin) != "" {
-			_, host, _ := strings.Cut(origin, "://")
-			return host, origin + "/login"
+// adoptProofQuery adopts OAuth2 / OIDC authorize parameters from the query string
+// when omitted from the JSON body, mirroring internal/oidc adoptQuery so both
+// `/v1/iam/login?...` and `/v1/iam/web3/verify?...` honor the forwarded request.
+func adoptProofQuery(c *zip.Ctx, f *proof) {
+	adopt := func(dst *string, keys ...string) {
+		if *dst == "" {
+			for _, k := range keys {
+				if v := c.Query(k); v != "" {
+					*dst = v
+					return
+				}
+			}
 		}
 	}
-	host := trim(c.Host())
-	return host, "https://" + host + "/login"
+	adopt(&f.Type, "type")
+	if f.Type == "" && (c.Query("response_type") == "code" || c.Query("responseType") == "code") {
+		f.Type = "code"
+	}
+	adopt(&f.ClientId, "client_id", "clientId")
+	adopt(&f.RedirectUri, "redirect_uri", "redirectUri")
+	adopt(&f.Scope, "scope")
+	adopt(&f.State, "state")
+	adopt(&f.Nonce, "nonce")
+	adopt(&f.Resource, "resource")
+	adopt(&f.CodeChallenge, "code_challenge", "codeChallenge")
+	adopt(&f.CodeChallengeMethod, "code_challenge_method", "codeChallengeMethod")
+	adopt(&f.Prompt, "prompt")
+	adopt(&f.LoginHint, "login_hint", "loginHint")
+}
+
+// site is the domain and URI a wallet challenge names for this request, and the
+// one rule both legs read: the nonce mints with it and verify expects it.
+func site(c *zip.Ctx, app *schema.Application) (domain, uri string) {
+	return oidc.WalletOrigin(trim(c.Host()), app, c.Header("Origin"))
 }
 
 // same reports whether the request is same-site: the Origin (else Referer) host
