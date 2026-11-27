@@ -449,13 +449,17 @@ func TestCertify_StructuredErrorCodes(t *testing.T) {
 	s, m = post(t, app, PathVerify, body(a, wc.ChainEVM, otherAddr, msgSw, sigSw), nil)
 	expectCode("switched wallet address", s, m, CodeAddressMismatch)
 
-	// 8. Tampered cryptographic signature.
+	// 8. Tampered cryptographic signature (flip r[0] so recovery never matches
+	// addr; note that setting v=0x00 would equal v=27 under EIP-191).
 	chBadSig := mintFor(t, app, "evm")
 	msgBad, sigBad := signWith(t, signer(t), chBadSig, wc.ChainEVM, addr)
-	flipped := sigBad[:len(sigBad)-2] + "00"
-	if flipped == sigBad {
-		flipped = sigBad[:len(sigBad)-2] + "ff"
+	rawSig, err := hex.DecodeString(strings.TrimPrefix(sigBad, "0x"))
+	if err != nil || len(rawSig) != 65 {
+		t.Fatalf("decode signature: len=%d err=%v", len(rawSig), err)
 	}
+	rawSig[0] ^= 0xff
+	rawSig[64] = 0xff // out-of-range recovery id
+	flipped := "0x" + hex.EncodeToString(rawSig)
 	s, m = post(t, app, PathVerify, body(a, wc.ChainEVM, addr, msgBad, flipped), nil)
 	expectCode("tampered signature", s, m, CodeInvalidSignature)
 }
