@@ -8,9 +8,16 @@ not by org confinement:
 | `hanzo.bot`, `bot.hanzo.ai` | `beta.bot` |
 | `hanzo.team`, `www.hanzo.team` | `beta.team` |
 
-Staff (a SuperAdmin — `schema.User.SuperAdmin`, an account **in** the `admin`
-org) pass without a flag read. Everyone else needs the matching switch on for
-their OIDC `sub` in the cloud flags app. A lookalike host is not in a group.
+Staff pass without a flag read: SuperAdmins (`schema.User.SuperAdmin`, an
+account **in** the `admin` org) and human org admins of a platform-registered
+application's own brand org (`app.Owner == "admin" && user.Owner ==
+app.Organization && user.IsAdmin && !user.Machine()`). Both are required
+because `MintFor` confines `admin/*` accounts to `admin`-org apps, so platform
+owners sign in to `hanzo.bot` and `hanzo.team` with their `hanzo` org admin
+account. Everyone else — including customer-founded personal orgs (where
+`user.Owner != app.Organization`) and non-admin brand-org members — needs the
+matching switch on for their OIDC `sub` in the cloud flags app. A lookalike
+host is not in a group.
 
 ## Why the host, not the client id
 
@@ -32,9 +39,10 @@ is minted. A client cannot choose this value.
   `prompt=none` cannot leak a code. A refusal is mapped to OIDC
   `access_denied` on the registered redirect. An unauthenticated `prompt=none`
   is still `login_required`, decided before any principal exists.
-- `internal/oidc/login.go` — interactive login also mints through `MintFor`;
-  `errBetaDenied` becomes `access_denied` on the same registered redirect (or
-  the `access_denied` machine code on the page-facing shape).
+- `internal/oidc/login.go` — interactive `POST /v1/iam/login` also mints
+  through `MintFor`; `errBetaDenied` returns a structured JSON error
+  (`code: "access_denied"`) so the login UI's `fetch()` never chases a
+  cross-origin 302 into CSP/CORS failures.
 - `server/server.go` — re-exports `BetaGate`, `BindBetaGate`,
   `BetaGateBound` so a composing host can install the source.
 

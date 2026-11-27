@@ -468,13 +468,13 @@ func grant(c *zip.Ctx, db orm.DB, user *schema.User, f loginForm, proved bool) e
 		return httpx.ErrCode(c, err.Error(), CodeLoginRequired)
 	}
 	if errors.Is(err, errBetaDenied) {
-		// No code was minted. Send the OIDC error to the SAME registered redirect
-		// the code would have gone to, so the client gets a machine-readable refusal
-		// instead of a login screen it cannot win. The page-facing shape carries the
-		// same word for flows that have no redirect to return to.
-		if f.Type == "code" && f.RedirectUri != "" {
-			return authorizeErrorRedirect(c, authorizeRequest{redirectURI: f.RedirectUri, state: f.State}, CodeAccessDenied, err.Error())
-		}
+		// No code was minted. POST /v1/iam/login is a JSON API called via fetch()
+		// by the hosted login page — NEVER a top-level browser navigation. Returning
+		// a 302 to an external redirectUri causes fetch() to follow the redirect
+		// cross-origin and fail with CSP/CORS "Failed to fetch". Return the
+		// structured JSON error with CodeAccessDenied so the login page displays
+		// the refusal cleanly (while GET /v1/iam/oauth/authorize prompt=none keeps
+		// its OIDC 302 redirect in prompt.go).
 		return httpx.ErrCode(c, err.Error(), CodeAccessDenied)
 	}
 	if err != nil {

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/hanzoai/iam/pkg/pkce"
+	"github.com/hanzoai/iam/pkg/schema"
 	"github.com/hanzoai/iam/pkg/store"
 )
 
@@ -101,6 +102,74 @@ func TestBetaGate_MintFor(t *testing.T) {
 		}
 		if len(f.calls) != 0 {
 			t.Fatalf("the flag source was asked about staff: %v", f.calls)
+		}
+	})
+
+	t.Run("brand org admin allowed on platform app without flag; personal org founder and machines still denied", func(t *testing.T) {
+		_, db := newServer(t)
+		a := seedApp(t, db, appOpts{clientID: "teamnative", redirectURIs: []string{botRedirect, teamRedirect}, shared: true, orgChoice: "create"})
+
+		// Human admin of the platform app's own brand org (hanzo): admitted
+		// even with no gate bound and with the flag off, for both hanzo.bot
+		// and hanzo.team.
+		seedUserInOrg(t, db, "hanzo", "owner", "owner@hanzo.ai", "pw")
+		owner, err := store.GetUserByName(tctx(), db, "hanzo", "owner")
+		if err != nil || owner == nil {
+			t.Fatalf("load hanzo/owner: %v", err)
+		}
+		owner.IsAdmin = true
+		if err := owner.UpdateCtx(tctx()); err != nil {
+			t.Fatalf("promote hanzo/owner: %v", err)
+		}
+
+		teamMint := mint
+		teamMint.RedirectUri = teamRedirect
+		for _, m := range []Mint{mint, teamMint} {
+			if code, err := MintFor(tctx(), db, a, "hanzo/owner", m); err != nil || code == "" {
+				t.Fatalf("brand org admin with no gate bound (%s): code=%q err=%v, want a code", m.RedirectUri, code, err)
+			}
+		}
+
+		f := &fakeBetaGate{on: map[string]bool{}}
+		bindFake(t, f)
+		for _, m := range []Mint{mint, teamMint} {
+			if code, err := MintFor(tctx(), db, a, "hanzo/owner", m); err != nil || code == "" {
+				t.Fatalf("brand org admin with flag off (%s): code=%q err=%v, want a code", m.RedirectUri, code, err)
+			}
+		}
+		if len(f.calls) != 0 {
+			t.Fatalf("the flag source was asked about brand org admin: %v", f.calls)
+		}
+
+		// Personal-org founder (IsAdmin=true in their own org, NOT hanzo):
+		// must NOT bypass the beta gate on a shared hanzo app.
+		seedUserInOrg(t, db, "alice-org", "alice", "alice@example.com", "pw")
+		founder, _ := store.GetUserByName(tctx(), db, "alice-org", "alice")
+		founder.IsAdmin = true
+		if err := founder.UpdateCtx(tctx()); err != nil {
+			t.Fatalf("promote alice-org/alice: %v", err)
+		}
+		if code, err := MintFor(tctx(), db, a, "alice-org/alice", teamMint); !errors.Is(err, errBetaDenied) || code != "" {
+			t.Fatalf("personal-org founder: code=%q err=%v, want errBetaDenied", code, err)
+		}
+
+		// Machine / service account in hanzo with IsAdmin=true: must NOT bypass.
+		seedUserInOrg(t, db, "hanzo", "svc", "svc@hanzo.ai", "pw")
+		svc, _ := store.GetUserByName(tctx(), db, "hanzo", "svc")
+		svc.IsAdmin = true
+		svc.Type = schema.ServiceAccount
+		if err := svc.UpdateCtx(tctx()); err != nil {
+			t.Fatalf("update hanzo/svc: %v", err)
+		}
+		if code, err := MintFor(tctx(), db, a, "hanzo/svc", teamMint); !errors.Is(err, errBetaDenied) || code != "" {
+			t.Fatalf("service account: code=%q err=%v, want errBetaDenied", code, err)
+		}
+
+		// Tenant-owned app (app.Owner != "admin"): its org admin must NOT bypass.
+		tenantOwned := *a
+		tenantOwned.Owner = "hanzo"
+		if code, err := MintFor(tctx(), db, &tenantOwned, "hanzo/owner", teamMint); !errors.Is(err, errBetaDenied) || code != "" {
+			t.Fatalf("tenant-owned app admin: code=%q err=%v, want errBetaDenied", code, err)
 		}
 	})
 
@@ -221,9 +290,11 @@ func TestBetaGate_PromptNoneDeniedForNonBeta(t *testing.T) {
 	}
 }
 
-// The check also applies AFTER an interactive login: a person who types valid
-// credentials still leaves with access_denied on the registered redirect and no
-// code. Granting the switch makes the same sign-in return a code.
+// The check also applies AFTER an interactive login: POST /v1/iam/login is a
+// JSON API called via fetch() by the hosted login page, so a refusal returns a
+// structured JSON error with code=access_denied and NO 302 redirect (a 302 to an
+// external redirectUri makes fetch() chase cross-origin and fail with CSP/CORS
+// "Failed to fetch"). Granting the switch makes the same sign-in return a code.
 func TestBetaGate_InteractiveLoginDenied(t *testing.T) {
 	app, db := newServer(t)
 	seedAppFull(t, db, fullApp{clientID: "botlogin", secret: "s3cret", org: "hanzo", redirects: []string{botRedirect}})
@@ -236,18 +307,24 @@ func TestBetaGate_InteractiveLoginDenied(t *testing.T) {
 		"clientId": "botlogin", "redirectUri": botRedirect, "scope": "openid",
 		"type": "code", "state": "st-login",
 	}
-	resp, _ := do(t, app, jsonReq("POST", PathLogin, form))
-	u, err := url.Parse(requireRedirect(t, resp, botRedirect))
-	if err != nil {
-		t.Fatal(err)
+	resp, raw := do(t, app, jsonReq("POST", PathLogin, form))
+	if resp.StatusCode != 400 {
+		t.Fatalf("interactive login for a non-beta user: status=%d location=%q body=%s, want 400 JSON (never a 302)", resp.StatusCode, resp.Header.Get("Location"), raw)
 	}
-	if u.Query().Get("error") != CodeAccessDenied || u.Query().Get("code") != "" {
-		t.Fatalf("interactive login for a non-beta user = %q, want error=access_denied and no code", u)
+	if loc := resp.Header.Get("Location"); loc != "" {
+		t.Fatalf("POST /v1/iam/login returned redirect Location=%q; must never 302 a fetch() login", loc)
+	}
+	m := decode(t, raw)
+	if m["status"] != "error" || m["code"] != CodeAccessDenied || m["data"] != nil {
+		t.Fatalf("interactive login for a non-beta user = %v, want status=error code=access_denied and no data", m)
+	}
+	if m["msg"] != errBetaDenied.Error() {
+		t.Fatalf("interactive login msg = %q, want %q", m["msg"], errBetaDenied.Error())
 	}
 
 	f.on["beta.bot|hanzo/alice"] = true
-	_, raw := do(t, app, jsonReq("POST", PathLogin, form))
-	m := decode(t, raw)
+	_, raw = do(t, app, jsonReq("POST", PathLogin, form))
+	m = decode(t, raw)
 	if m["status"] != "ok" || m["data"] == "" {
 		t.Fatalf("interactive login for a beta-granted user = %v, want ok with a code", m)
 	}
